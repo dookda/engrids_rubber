@@ -1,0 +1,33 @@
+services:
+  postgis:
+    platform: linux/amd64
+    image: postgis/postgis
+    container_name: rub_postgis
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=rub1234
+    ports:
+      - 5433:5432
+    volumes:
+      - ./postgis:/docker-entrypoint-initdb.d
+
+  nodejs:
+    image: node:latest
+    container_name: rub_nodejs
+    restart: always
+    working_dir: /usr/src/app
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - postgis
+    volumes:
+      - ./nodejs:/usr/src/app
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: sh -c "npm i && npm i -g nodemon && nodemon"
