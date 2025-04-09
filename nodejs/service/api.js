@@ -17,6 +17,8 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
+// cal area wt
+
 // get all users
 app.get('/api/getfeatures', async (req, res) => {
     try {
@@ -40,11 +42,7 @@ app.get('/api/getfeatures', async (req, res) => {
 app.post('/api/updatefeatures', async (req, res) => {
     try {
         const { features } = req.body;
-
-        console.log(`Updating ${features.length} features...`);
-
         const client = await pool.connect();
-
         if (!features || !Array.isArray(features)) {
             return res.status(400).json({ error: 'Invalid input data' });
         }
@@ -59,12 +57,14 @@ app.post('/api/updatefeatures', async (req, res) => {
                 client.query(`
                     UPDATE tb_nan_rub
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
-                        shp_sqm = $2
-                    WHERE xls_id = $3
+                        shparea_sqm = ST_Area(ST_Transform(
+                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
+                            32647
+                        ))
+                    WHERE id = $2
                 `, [
                     JSON.stringify(feature.geometry),
-                    feature.properties.shp_sqm,
-                    feature.properties.xls_id
+                    feature.properties.id
                 ])
             );
 
@@ -79,6 +79,54 @@ app.post('/api/updatefeatures', async (req, res) => {
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST endpoint to calculate area from GeoJSON geometry
+app.post('/api/calarea', async (req, res) => {
+    try {
+        const { geometry, srid } = req.body;
+
+        console.log(`Calculating area for geometry: ${JSON.stringify(geometry)}`);
+
+
+        // Validate input
+        if (!geometry || !geometry.type || !geometry.coordinates) {
+            return res.status(400).json({ error: 'Invalid GeoJSON geometry' });
+        }
+
+        // Calculate area using PostGIS
+        const result = await pool.query(`
+            SELECT 
+                ST_Area(
+                    ST_Transform(
+                        ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
+                        $2
+                    )
+                ) AS area
+            `,
+            [JSON.stringify(geometry), 32647] // Default to UTM zone 47N
+        );
+
+        if (!result.rows[0]?.area) {
+            return res.status(400).json({ error: 'Area calculation failed' });
+        }
+
+        res.json({
+            success: true,
+            area: result.rows[0].area,
+            units: 'square meters',
+            srid: srid || 32647,
+            geometry_type: geometry.type
+        });
+
+    } catch (err) {
+        console.error('Area calculation error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            details: 'Ensure valid GeoJSON and appropriate SRID'
+        });
     }
 });
 

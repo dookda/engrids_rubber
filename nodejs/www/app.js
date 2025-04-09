@@ -62,10 +62,11 @@ const formatArea = (area) => {
 };
 
 // Label management
-const updateAreaLabel = (layer) => {
+const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
-        const area = turf.area(geojsonFeature);
+
+        const area = await turf.area(geojsonFeature);
 
         if (layer.areaLabel) layer.areaLabel.remove();
 
@@ -87,18 +88,17 @@ const updateAreaLabel = (layer) => {
 };
 
 function showFeaturePanel(feature, layer) {
-    console.log(feature);
-
     const xls = Number(feature.properties.xls_sqm);
     const shp = Number(feature.properties.shp_sqm);
-    const xls_id = document.getElementById('xls_id');
+    const id = document.getElementById('id');
     const shp_app_no = document.getElementById('shp_app_no');
     const xls_app_no = document.getElementById('xls_app_no');
     const xls_sqm = document.getElementById('xls_sqm');
     const shp_sqm = document.getElementById('shp_sqm');
+    const shpgeom_sqm = document.getElementById('shp_sqm');
     // const shparea_sqm = document.getElementById('shparea_sqm');
 
-    xls_id.textContent = feature.properties.id;
+    id.textContent = feature.properties.id;
     shp_app_no.textContent = feature.properties.shp_app_no;
     xls_app_no.textContent = feature.properties.xls_app_no;
     xls_sqm.textContent = formatArea(xls);
@@ -107,9 +107,12 @@ function showFeaturePanel(feature, layer) {
 }
 
 const getFeatureStyle = (feature) => {
+    const id = feature.properties.id;
     const xls = Number(feature.properties.xls_sqm);
     const shp = Number(feature.properties.shparea_sqm);
-    const isEqual = Math.abs(xls - shp) <= 5;
+    const isEqual = Math.abs(xls - shp) <= 100;
+    // console.log(`id: ${id}, xls: ${xls}, shp: ${shp}, isEqual: ${isEqual}`);
+
     return {
         color: isEqual ? '#00cc00' : '#ca0020',
         weight: 2,
@@ -130,7 +133,7 @@ const loadGeoData = async () => {
                 type: 'Feature',
                 geometry: JSON.parse(item.geom),
                 properties: {
-                    xls_id: item.xls_id,
+                    id: item.id,
                     shp_app_no: item.shp_app_no,
                     xls_app_no: item.xls_app_no,
                     xls_sqm: item.xls_sqm,
@@ -143,7 +146,7 @@ const loadGeoData = async () => {
         L.geoJSON(geoJsonData, {
             style: getFeatureStyle,
             onEachFeature: (feature, layer) => {
-                layer.bindPopup(`${feature.properties.xls_id}`);
+                layer.bindPopup(`${feature.properties.id}`);
                 featureGroup.addLayer(layer);
                 layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
                 layer.on('click', () => {
@@ -189,8 +192,6 @@ document.getElementById('toggleArea').addEventListener('click', () => {
 
 document.getElementById('save').addEventListener('click', async () => {
     const features = featureGroup.toGeoJSON().features;
-    console.log(features);
-
     try {
         const response = await fetch('/api/updatefeatures', {
             method: 'POST',
@@ -199,6 +200,19 @@ document.getElementById('save').addEventListener('click', async () => {
         });
         const result = await response.json();
         alert(`Updated ${result.updated} features`);
+
+
+        if (result.success) {
+            featureGroup.eachLayer(layer => {
+                layer.pm.disable();
+                layer.areaLabel?.remove();
+            });
+
+            featureGroup.clearLayers();
+            loadGeoData();
+        } else {
+            alert('Failed to update features');
+        }
     } catch (error) {
         console.error('Error saving data:', error);
         alert('Failed to save data');
