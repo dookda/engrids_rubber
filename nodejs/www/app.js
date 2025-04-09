@@ -46,9 +46,9 @@ map.pm.addControls({
     drawRectangle: false,
     drawPolygon: true,
     editMode: false,
-    dragMode: false,
+    dragMode: true,
     cutPolygon: true,
-    removalMode: true,
+    removalMode: false,
     rotateMode: false,
     drawText: false,
     drawCircleMarker: false,
@@ -71,7 +71,6 @@ const updateAreaLabel = (layer) => {
 
         if (showAreas) {
             const centroid = turf.centroid(geojsonFeature);
-
             layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
                 icon: L.divIcon({
                     className: 'area-label',
@@ -80,32 +79,49 @@ const updateAreaLabel = (layer) => {
                 }),
                 interactive: false
             }).addTo(map);
+            document.getElementById('shparea_sqm').textContent = formatArea(area);
         }
     } catch (error) {
         console.error('Error updating label:', error);
     }
 };
 
-function showFeaturePanel(feature) {
-    console.log('Feature clicked:', feature);
+function showFeaturePanel(feature, layer) {
+    console.log(feature);
 
-    const panel = document.getElementById('featurePanel');
-    const content = `
-        <h4>id ${feature.properties.xls_id}</h4>
-        <div><strong>Shape App No:</strong> ${feature.properties.shp_app_no}</div>
-        <div><strong>Excel App No:</strong> ${feature.properties.xls_app_no}</div>
-        <div><strong>Excel Area:</strong> ${feature.properties.xls_sqm} m²</div>
-        <div><strong>Shape Area:</strong> ${feature.properties.shp_sqm} m²</div>
-        <div><strong>Calculated Area:</strong> ${feature.properties.shparea_sqm} m²</div>
-    `;
+    const xls = Number(feature.properties.xls_sqm);
+    const shp = Number(feature.properties.shp_sqm);
+    const xls_id = document.getElementById('xls_id');
+    const shp_app_no = document.getElementById('shp_app_no');
+    const xls_app_no = document.getElementById('xls_app_no');
+    const xls_sqm = document.getElementById('xls_sqm');
+    const shp_sqm = document.getElementById('shp_sqm');
+    // const shparea_sqm = document.getElementById('shparea_sqm');
 
-    panel.innerHTML = content;
+    xls_id.textContent = feature.properties.id;
+    shp_app_no.textContent = feature.properties.shp_app_no;
+    xls_app_no.textContent = feature.properties.xls_app_no;
+    xls_sqm.textContent = formatArea(xls);
+    shp_sqm.textContent = formatArea(shp);
+    updateAreaLabel(layer);
 }
 
-// Load initial data from API
+const getFeatureStyle = (feature) => {
+    const xls = Number(feature.properties.xls_sqm);
+    const shp = Number(feature.properties.shparea_sqm);
+    const isEqual = Math.abs(xls - shp) <= 5;
+    return {
+        color: isEqual ? '#00cc00' : '#ca0020',
+        weight: 2,
+        opacity: 0.7,
+        fillColor: isEqual ? '#90ee90' : '#f4a582',
+        fillOpacity: 0.2
+    };
+};
+
 const loadGeoData = async () => {
     try {
-        const response = await fetch('/api/getdata');
+        const response = await fetch('/api/getfeatures');
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -119,40 +135,25 @@ const loadGeoData = async () => {
                     xls_app_no: item.xls_app_no,
                     xls_sqm: item.xls_sqm,
                     shp_sqm: item.shp_sqm,
-                    shparea_sqm: item.shparea_sqm
+                    shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
                 }
             }))
         };
 
         L.geoJSON(geoJsonData, {
-            style: {
-                color: '#3388ff',
-                weight: 2,
-                opacity: 0.7,
-                fillOpacity: 0.2
-            },
+            style: getFeatureStyle,
             onEachFeature: (feature, layer) => {
-                // const popupContent = `
-                //     <div class="feature-popup">
-                //         <h4>Application ${feature.properties.xls_id}</h4>
-                //         <p>Shape App No: ${feature.properties.shp_app_no}</p>
-                //         <p>Excel App No: ${feature.properties.xls_app_no}</p>
-                //         <p>Excel Area: ${feature.properties.xls_sqm} m²</p>
-                //         <p>Shape Area: ${feature.properties.shp_sqm} m²</p>
-                //         <p>Calculated Area: ${feature.properties.shparea_sqm} m²</p>
-                //     </div>
-                // `;
-
-                // layer.bindPopup(popupContent);
+                layer.bindPopup(`${feature.properties.xls_id}`);
                 featureGroup.addLayer(layer);
                 layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
                 layer.on('click', () => {
-                    showFeaturePanel(feature);
+                    map.fitBounds(layer.getBounds());
+                    showFeaturePanel(feature, layer);
                     featureGroup.eachLayer(l => l.pm.disable());
                     layer.pm.enable();
                 });
             }
-        }).addTo(map);
+        });
 
     } catch (error) {
         console.error('Error loading data:', error);
@@ -184,6 +185,24 @@ document.getElementById('toggleArea').addEventListener('click', () => {
     showAreas = !showAreas;
     document.getElementById('toggleArea').textContent = showAreas ? 'Hide Areas' : 'Show Areas';
     featureGroup.eachLayer(updateAreaLabel);
+});
+
+document.getElementById('save').addEventListener('click', async () => {
+    const features = featureGroup.toGeoJSON().features;
+    console.log(features);
+
+    try {
+        const response = await fetch('/api/updatefeatures', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ features })
+        });
+        const result = await response.json();
+        alert(`Updated ${result.updated} features`);
+    } catch (error) {
+        console.error('Error saving data:', error);
+        alert('Failed to save data');
+    }
 });
 
 // Initialize application
