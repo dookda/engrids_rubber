@@ -1,0 +1,18 @@
+###
+POST http://localhost:3000/api/calarea
+Content-Type: application/json
+
+{
+    "geometry": {"type": "Polygon","coordinates": [[ [100.0, 0.0], [101.0, 0.0], [101.0, 1.0], [100.0, 1.0], [100.0, 0.0] ]]},
+    "srid": 32647
+}
+
+###
+POST http://localhost:3000/api/split-polygon
+Content-Type: application/json
+
+{
+  "polygon": {"type": "Polygon", "coordinates": [[[98.94974063401833,18.80288760560407],[98.94974063401833,18.80274987614453],[98.95043452837308,18.80274987614453],[98.95043452837308,18.80288760560407],[98.94974063401833,18.80288760560407]]]},
+  "line": {"type": "LineString", "coordinates": [[98.94995215272888,18.802934088357546],[98.94995954337315,18.802703212750473]]}, 
+  "srid": 32647
+}

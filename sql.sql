@@ -56,3 +56,38 @@ SELECT xls_id,
 FROM v_nan_rub
 WHERE geom IS NOT NULL
 order by geom
+
+
+
+
+
+
+CREATE TABLE tb_nan_rub AS
+WITH b AS (
+    SELECT *,
+        ROW_NUMBER() OVER (PARTITION BY app_no ORDER BY (SELECT NULL)) AS rn
+    FROM nan_4326
+)
+SELECT 
+	a.*,
+    a.app_no as shp_app_no,
+    b.app_no as xls_app_no,
+	a.total_sqm as xls_sqm,
+	b.total_sqm as shp_sqm,
+	b.shparea_sqm,
+    b.geom
+FROM nan_xls a
+LEFT JOIN b
+    ON a.app_no = b.app_no
+    AND b.rn = 1
+order by a.id;
+
+ALTER USER postgres WITH PASSWORD 'rub1234';
+
+-- drop table tb_nan_rub;
+UPDATE nan_4326 SET shparea_sqm = ST_Area(ST_Transform(geom, 32647));
+select * from tb_nan_rub 
+where geom is not null
+
+SELECT  ST_Area( ST_Transform( ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), $2  )
+                AS area

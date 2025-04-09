@@ -1,0 +1,25 @@
+#map {
+    height: 600px;
+}
+
+.area-label {
+    font-size: 11px;
+    color: #ffe033;
+}
+
+.feature-popup {
+    font-family: Arial, sans-serif;
+    min-width: 250px;
+}
+
+.feature-popup h4 {
+    margin: 0 0 10px 0;
+    color: #333;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 5px;
+}
+
+.feature-popup p {
+    margin: 5px 0;
+    font-size: 14px;
+}
