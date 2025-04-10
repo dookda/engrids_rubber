@@ -44,10 +44,10 @@ map.pm.addControls({
     drawMarker: false,
     drawPolyline: false,
     drawRectangle: false,
-    drawPolygon: true,
+    drawPolygon: false,
     editMode: false,
-    dragMode: true,
-    cutPolygon: true,
+    dragMode: false,
+    cutPolygon: false,
     removalMode: false,
     rotateMode: false,
     drawText: false,
@@ -65,24 +65,34 @@ const formatArea = (area) => {
 const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
-        console.log('updateAreaLabel', geojsonFeature);
-
         const area = await turf.area(geojsonFeature);
+        const xls_sqm = document.getElementById('xls_sqm').value;
+
+        document.getElementById('shparea_sqm').value = area.toFixed(0);
+        const diff = Math.abs(area - xls_sqm);
+
+        if (diff >= 100) {
+            document.getElementById('message').style.color = 'red';
+            document.getElementById('message').innerHTML = 'เนื้อที่ไม่ตรงกัน';
+        } else {
+            document.getElementById('message').style.color = 'green';
+            document.getElementById('message').innerHTML = 'เนื้อที่ใกล้เคียงกัน';
+        }
 
         if (layer.areaLabel) layer.areaLabel.remove();
 
-        if (showAreas) {
-            const centroid = turf.centroid(geojsonFeature);
-            layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
-                icon: L.divIcon({
-                    className: 'area-label',
-                    html: formatArea(area),
-                    iconSize: null
-                }),
-                interactive: false
-            }).addTo(map);
-            document.getElementById('shparea_sqm').textContent = formatArea(area);
-        }
+        // if (showAreas) {
+        const centroid = turf.centroid(geojsonFeature);
+        layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
+            icon: L.divIcon({
+                className: 'area-label',
+                html: formatArea(area),
+                iconSize: null
+            }),
+            interactive: false
+        }).addTo(map);
+
+        // }
     } catch (error) {
         console.error('Error updating label:', error);
     }
@@ -90,19 +100,13 @@ const updateAreaLabel = async (layer) => {
 
 function showFeaturePanel(feature, layer) {
     const xls = Number(feature.properties.xls_sqm);
-    const shp = Number(feature.properties.shp_sqm);
     const id = document.getElementById('id');
-    const shp_app_no = document.getElementById('shp_app_no');
     const xls_app_no = document.getElementById('xls_app_no');
     const xls_sqm = document.getElementById('xls_sqm');
-    const shp_sqm = document.getElementById('shp_sqm');
-    // const shparea_sqm = document.getElementById('shparea_sqm');
 
-    id.textContent = feature.properties.id;
-    shp_app_no.textContent = feature.properties.shp_app_no;
-    xls_app_no.textContent = feature.properties.xls_app_no;
-    xls_sqm.textContent = formatArea(xls);
-    shp_sqm.textContent = formatArea(shp);
+    id.value = feature.properties.id;
+    xls_app_no.value = feature.properties.xls_app_no;
+    xls_sqm.value = feature.properties.xls_sqm;
     updateAreaLabel(layer);
 }
 
@@ -134,10 +138,8 @@ const loadGeoData = async () => {
                 geometry: JSON.parse(item.geom),
                 properties: {
                     id: item.id,
-                    shp_app_no: item.shp_app_no,
                     xls_app_no: item.xls_app_no,
                     xls_sqm: item.xls_sqm,
-                    shp_sqm: item.shp_sqm,
                     shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
                 }
             }))
@@ -181,14 +183,14 @@ const handleLayerCreate = (e) => {
 
 map.on('pm:create', handleLayerCreate);
 map.on('pm:remove', (e) => e.layer.areaLabel?.remove());
-map.on('click', () => featureGroup.eachLayer(l => l.pm.disable()));
+map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 
 // Toggle visibility control
-document.getElementById('toggleArea').addEventListener('click', () => {
-    showAreas = !showAreas;
-    document.getElementById('toggleArea').textContent = showAreas ? 'Hide Areas' : 'Show Areas';
-    featureGroup.eachLayer(updateAreaLabel);
-});
+// document.getElementById('toggleArea').addEventListener('click', () => {
+//     showAreas = !showAreas;
+//     document.getElementById('toggleArea').textContent = showAreas ? 'Hide Areas' : 'Show Areas';
+//     featureGroup.eachLayer(updateAreaLabel);
+// });
 
 document.getElementById('save').addEventListener('click', async () => {
     const features = featureGroup.toGeoJSON().features;
@@ -216,6 +218,29 @@ document.getElementById('save').addEventListener('click', async () => {
         console.error('Error saving data:', error);
         alert('Failed to save data');
     }
+});
+
+document.getElementById('classify').addEventListener('click', () => {
+    const id = document.getElementById('id').value;
+    if (!id) {
+        alert('เลือกแปลงที่ต้องการ classify ก่อน');
+        return;
+    }
+    fetch(`/api/create_reclass_layer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+    }).then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.open(`/reclassify/index.html?id=${id}`, '_self');
+            } else {
+                alert('Failed to create reclassification layer');
+            }
+        }).catch(error => {
+            console.error('Error creating reclassification layer:', error);
+            alert('Failed to create reclassification layer');
+        });
 });
 
 // Initialize application

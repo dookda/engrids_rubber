@@ -44,7 +44,7 @@ map.pm.addControls({
     drawPolyline: true,
     drawRectangle: false,
     drawPolygon: false,
-    editMode: false,
+    editMode: true,
     dragMode: false,
     cutPolygon: false,
     removalMode: false,
@@ -92,49 +92,80 @@ const updateAreaLabel = (layer) => {
     }
 };
 
+const sub_id = document.getElementById('sub_id');
+const xls_app_no = document.getElementById('xls_app_no');
+const shparea_sqm = document.getElementById('shparea_sqm');
+const classtype = document.getElementById('classtype');
+
 function showFeaturePanel(feature, layer) {
-    const id = document.getElementById('id');
-    const xls = Number(feature.properties.xls_sqm);
-    const shp = Number(feature.properties.shp_sqm);
-    const shparea = Number(feature.properties.shparea_sqm);
-
-    console.log(shparea);
-
-
-    const shp_app_no = document.getElementById('shp_app_no');
-    const xls_app_no = document.getElementById('xls_app_no');
-    const xls_sqm = document.getElementById('xls_sqm');
-    const shp_sqm = document.getElementById('shp_sqm');
-    const shparea_sqm = document.getElementById('shparea_sqm');
-
-    id.textContent = feature.properties.id;
-    shp_app_no.textContent = feature.properties.shp_app_no;
-    xls_app_no.textContent = feature.properties.xls_app_no;
-    xls_sqm.textContent = formatArea(xls);
-    shp_sqm.textContent = formatArea(shp);
-    shparea_sqm.textContent = formatArea(shparea);
-    // updateAreaLabel(layer);
+    sub_id.value = feature.properties.sub_id;
+    xls_app_no.value = feature.properties.xls_app_no;
+    shparea_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
+    classtype.value = feature.properties.classtype;
 }
 
-const getFeatureStyle = (feature) => {
-    const id = feature.properties.id;
-    const xls = Number(feature.properties.xls_sqm);
-    const shp = Number(feature.properties.shparea_sqm);
-    const isEqual = Math.abs(xls - shp) <= 100;
-    // console.log(`id: ${id}, xls: ${xls}, shp: ${shp}, isEqual: ${isEqual}`);
-
+const style = (feature) => {
+    const color = feature.properties.classtype === 'rubber'
+        ? '#3388ff'
+        : feature.properties.classtype === 'building'
+            ? '#ff0000'
+            : feature.properties.classtype === 'agriculture'
+                ? '#00ff00'
+                : feature.properties.classtype === 'water'
+                    ? '#0000ff'
+                    : '#ff00ff';
     return {
-        color: isEqual ? '#00cc00' : '#ca0020',
+        fillColor: color,
         weight: 2,
-        opacity: 0.7,
-        fillColor: isEqual ? '#90ee90' : '#f4a582',
-        fillOpacity: 0.2
+        opacity: 1,
+        color: 'white',
+        dashArray: '3',
+        fillOpacity: 0.5
     };
 };
 
-const loadGeoData = async () => {
+var selectedPolygon = null;
+let highlightedLayer = null; // Track the currently highlighted layer
+
+function onEachFeature(feature, layer) {
+    featureGroup.addLayer(layer);
+    layer.on({
+        click: function (e) {
+            selectedPolygon = layer;
+            showFeaturePanel(feature, layer);
+            if (highlightedLayer === e.target) {
+                resetHighlight(e);
+                highlightedLayer = null;
+            } else {
+                // Clicked new feature - highlight it
+                if (highlightedLayer) {
+                    resetHighlight({ target: highlightedLayer }); // Remove previous highlight
+                }
+                highlightFeature(e);
+                highlightedLayer = e.target;
+            }
+        }
+    });
+}
+
+function resetHighlight(e) {
+    geojson.resetStyle(e.target);
+}
+
+function highlightFeature(e) {
+    const layer = e.target;
+    layer.setStyle({
+        weight: 5,
+        color: '#0ccbf0',
+        dashArray: '',
+        fillOpacity: 0.7
+    });
+    layer.bringToFront();
+}
+
+const loadGeoData = async (id) => {
     try {
-        const response = await fetch('/api/getfeatures');
+        const response = await fetch('/api/getfeatures/' + id);
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -144,84 +175,131 @@ const loadGeoData = async () => {
                 geometry: JSON.parse(item.geom),
                 properties: {
                     id: item.id,
-                    shp_app_no: item.shp_app_no,
+                    sub_id: item.sub_id,
                     xls_app_no: item.xls_app_no,
-                    xls_sqm: item.xls_sqm,
-                    shp_sqm: item.shp_sqm,
-                    shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
+                    shparea_sqm: item.shparea_sqm,
+                    classtype: item.classtype
                 }
             }))
         };
 
-        L.geoJSON(geoJsonData, {
-            style: {
-                color: '#3388ff',
-                weight: 2,
-                opacity: 0.7,
-                fillOpacity: 0.2
-            },
-            onEachFeature: (feature, layer) => {
-                featureGroup.addLayer(layer);
-                layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
+        geojson = L.geoJson(geoJsonData, {
+            style: style,
+            onEachFeature: onEachFeature
+        }).addTo(map);
 
-                layer.on('click', (e) => {
-                    e.originalEvent.preventDefault();
-                    showFeaturePanel(feature, layer);
-                    // map.fitBounds(layer.getBounds());
-                    // featureGroup.eachLayer(l => l.pm.disable());
-                    // layer.pm.enable();
-                    // layer.bringToFront();
-                    layer.setStyle({
-                        weight: 3,
-                        color: '#ff0000'
-                    });
-
-                    // Reset style on other layers
-                    featureGroup.eachLayer(otherLayer => {
-                        if (otherLayer !== layer) {
-                            otherLayer.setStyle({
-                                weight: 2,
-                                color: '#3388ff'
-                            });
-                        }
-                    });
-                });
-            }
-        })
-
+        map.fitBounds(featureGroup.getBounds());
     } catch (error) {
         console.error('Error loading data:', error);
         alert('Failed to load spatial data');
     }
 };
 
-// Layer event handling
+var selectedLine = null;
 const handleLayerCreate = (e) => {
     const layer = e.layer;
     featureGroup.addLayer(layer);
-
     layer.pm.enable({ allowSelfIntersection: false });
-    // updateAreaLabel(layer);
+    selectedLine = layer;
 
-    // layer.on('pm:edit pm:dragend pm:update', () => updateAreaLabel(layer));
+    layer.on('pm:edit pm:dragend pm:update pm:change', () => console.log(layer));
     layer.on('click', () => {
         featureGroup.eachLayer(l => l.pm.disable());
         layer.pm.enable();
     });
 };
 
-
-// Update event listeners section to include pm:cut
 map.on('pm:create', handleLayerCreate);
+map.on('pm:edit', (e) => {
+    const layer = e.layer;
+    featureGroup.eachLayer(l => l.pm.disable());
+    layer.pm.enable();
+});
 map.on('click', () => featureGroup.eachLayer(l => l.pm.disable()));
 
-// Toggle visibility control
-document.getElementById('toggleArea').addEventListener('click', () => {
-    showAreas = !showAreas;
-    document.getElementById('toggleArea').textContent = showAreas ? 'Hide Areas' : 'Show Areas';
-    featureGroup.eachLayer(updateAreaLabel);
+document.getElementById('classtype').addEventListener('change', (e) => {
+    const selectedValue = e.target.value;
+    fetch('/api/update_landuse', {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            sub_id: sub_id.value,
+            classtype: selectedValue
+        })
+    }).then(response => response.json())
+        .then(async (data) => {
+            if (data.success) {
+                const id = document.getElementById('id').value;
+                featureGroup.clearLayers();
+                await loadGeoData(id);
+            } else {
+                alert('Update failed');
+            }
+        });
+});
+
+document.getElementById('clear').addEventListener('click', () => {
+    if (highlightedLayer) {
+        resetHighlight({ target: highlightedLayer });
+        highlightedLayer = null;
+    }
+
+    selectedPolygon = null;
+    selectedLine = null;
+    sub_id.value = '';
+    xls_app_no.value = '';
+    shparea_sqm.value = '';
+    classtype.value = '';
+})
+
+document.getElementById('split').addEventListener('click', () => {
+    if (!selectedPolygon) {
+        alert('เลือก polygon ก่อน');
+        return;
+    }
+    if (!selectedLine) {
+        alert('สร้าง line ที่จะใช้แบ่ง polygon ก่อน');
+        return;
+    }
+
+    const id = document.getElementById('id').value;
+    const polygon = selectedPolygon.toGeoJSON();
+    const line = selectedLine.toGeoJSON();
+
+    const srid = 32647;
+    const data = {
+        polygon_fc: polygon,
+        line_fc: line,
+        srid: srid,
+    }
+
+    fetch('/api/split', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    }).then(response => response.json())
+        .then(async (data) => {
+            if (data.success) {
+                featureGroup.clearLayers();
+                await loadGeoData(id);
+            } else {
+                alert('Split failed');
+            }
+        })
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    loadGeoData();
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    if (!id || id === 'undefined') {
+        alert('เลือกแปลงยางก่อน');
+        window.location.href = './../reshape/index.html';
+        return;
+    }
+    document.getElementById('id').value = id;
+    loadGeoData(id);
 });

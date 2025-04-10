@@ -5,6 +5,9 @@
     <title>Leaflet Geoman with Turf Area - Click to Edit</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@100..900&display=swap">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -18,20 +21,31 @@
             <div class="col-8">
                 <div id="map"></div>
             </div>
-            <div class="col-4">
-                <h2>Feature Details</h2>
-                <div id="featurePanel">
-                    <h4>ID <span id="id"></span></h4>
-                    <div><strong>Shape App No:</strong><span id="shp_app_no"></span></div>
-                    <div><strong>Excel App No:</strong><span id="xls_app_no"></span></div>
-                    <div><strong>เนื้อที่ใน Excel:</strong><span id="xls_sqm"></span></div>
-                    <div><strong>เนื้อที่ใน Shp:</strong><span id="shp_sqm"></span></div>
-                    <div><strong>เนื้อที่จาก Calculated Area:</strong><span id="shparea_sqm"></span></div>
+            <div class="col-4">ฃ
+                <div id="featurePanel mb-2">
+                    <div>
+                        <strong>ID:</strong>
+                        <input class="form-control" id="id" disabled>
+                    </div>
+                    <div>
+                        <strong>App No:</strong>
+                        <input class="form-control" id="xls_app_no">
+                    </div>
+                    <div>
+                        <strong>เนื้อที่เป้าหมาย (ใน Excel):</strong>
+                        <input class="form-control" id="xls_sqm">
+                    </div>
+                    <div>
+                        <strong>เนื้อที่ขณะนี้:</strong>
+                        <input class="form-control" id="shparea_sqm">
+                    </div>
                 </div>
+                <span class="mt-2" id="message"></span>
                 <hr>
                 <div class="mt-3">
-                    <button class="btn btn-info" id="toggleArea">Hide Area</button>
+                    <!-- <button class="btn btn-info" id="toggleArea">Hide Area</button> -->
                     <button class="btn btn-success" id="save">Save edit</button>
+                    <button class="btn btn-primary" id="classify">classify</button>
                 </div>
             </div>
         </div>

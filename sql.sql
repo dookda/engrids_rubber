@@ -89,5 +89,44 @@ UPDATE nan_4326 SET shparea_sqm = ST_Area(ST_Transform(geom, 32647));
 select * from tb_nan_rub 
 where geom is not null
 
-SELECT  ST_Area( ST_Transform( ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), $2  )
-                AS area
+SELECT  ST_Area( ST_Transform( ST_SetSRID(ST_GeomFromGeoJSON($1), 4326), $2  )) AS area
+
+
+
+-- test
+CREATE TABLE IF NOT EXISTS public.tb_nan_rub_reclass
+(
+    id integer,
+	sub_id text,
+	classtype text,
+    id_farmer bigint,
+    regis_no character varying COLLATE pg_catalog."default",
+    no_plot integer,
+    titl_nam character varying COLLATE pg_catalog."default",
+    f_name character varying COLLATE pg_catalog."default",
+    l_name character varying COLLATE pg_catalog."default",
+    address character varying COLLATE pg_catalog."default",
+    sub_dis character varying COLLATE pg_catalog."default",
+    district character varying COLLATE pg_catalog."default",
+    province character varying COLLATE pg_catalog."default",
+    status character varying COLLATE pg_catalog."default",
+    title_no character varying COLLATE pg_catalog."default",
+    title_type character varying COLLATE pg_catalog."default",
+    age character varying COLLATE pg_catalog."default",
+    x integer,
+    y integer,
+    rai integer,
+    ngan integer,
+    wa integer,
+    rai_sqm integer,
+    ngan_sqm integer,
+    wa_sqm integer,
+    total_sqm integer,
+    app_no character varying(16) COLLATE pg_catalog."default",
+    shp_app_no character varying(16) COLLATE pg_catalog."default",
+    xls_app_no character varying(12) COLLATE pg_catalog."default",
+    xls_sqm integer,
+    shp_sqm numeric,
+    shparea_sqm numeric,
+    geom geometry
+)
