@@ -11,7 +11,7 @@ services:
       - POSTGRES_PASSWORD=rub1234
       - POSTGRES_DB=postgres # Explicitly define database name
     ports:
-      - 5431:5432
+      - 5400:5432
     volumes:
       - ./postgis:/docker-entrypoint-initdb.d
     networks:
@@ -41,7 +41,7 @@ services:
     volumes:
       - ./nodejs:/usr/src/app
     ports:
-      - "3400:3000"
+      - "3300:3000"
     networks:
       - rub-network
     command: sh -c "npm i && npm i -g nodemon && nodemon"
