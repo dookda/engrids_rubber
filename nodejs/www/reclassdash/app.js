@@ -66,31 +66,31 @@ const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
         const area = await turf.area(geojsonFeature);
-        const xls_sqm = document.getElementById('xls_sqm').value;
+        // const xls_sqm = document.getElementById('xls_sqm').value;
 
-        document.getElementById('shparea_sqm').value = area.toFixed(0);
-        const diff = Math.abs(area - xls_sqm);
+        // document.getElementById('shparea_sqm').value = area.toFixed(0);
+        // const diff = Math.abs(area - xls_sqm);
 
-        if (diff >= 100) {
-            document.getElementById('message').style.color = 'red';
-            document.getElementById('message').innerHTML = 'เนื้อที่ไม่ตรงกัน';
-        } else {
-            document.getElementById('message').style.color = 'green';
-            document.getElementById('message').innerHTML = 'เนื้อที่ใกล้เคียงกัน';
-        }
+        // if (diff >= 100) {
+        //     document.getElementById('message').style.color = 'red';
+        //     document.getElementById('message').innerHTML = 'เนื้อที่ไม่ตรงกัน';
+        // } else {
+        //     document.getElementById('message').style.color = 'green';
+        //     document.getElementById('message').innerHTML = 'เนื้อที่ใกล้เคียงกัน';
+        // }
 
-        if (layer.areaLabel) layer.areaLabel.remove();
+        // if (layer.areaLabel) layer.areaLabel.remove();
 
         // if (showAreas) {
-        const centroid = turf.centroid(geojsonFeature);
-        layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
-            icon: L.divIcon({
-                className: 'area-label',
-                html: formatArea(area),
-                iconSize: null
-            }),
-            interactive: false
-        }).addTo(map);
+        // const centroid = turf.centroid(geojsonFeature);
+        // layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
+        //     icon: L.divIcon({
+        //         className: 'area-label',
+        //         html: formatArea(area),
+        //         iconSize: null
+        //     }),
+        //     interactive: false
+        // }).addTo(map);
 
         // }
     } catch (error) {
@@ -102,72 +102,39 @@ function showFeaturePanel(feature, layer) {
     const xls = Number(feature.properties.xls_sqm);
     const id = document.getElementById('id');
     const xls_app_no = document.getElementById('xls_app_no');
-    const xls_sqm = document.getElementById('xls_sqm');
+    const classtype = document.getElementById('classtype');
+    const shparea_sqm = document.getElementById('shparea_sqm');
 
     id.value = feature.properties.id;
     xls_app_no.value = feature.properties.xls_app_no;
-    xls_sqm.value = feature.properties.xls_sqm;
-    updateAreaLabel(layer);
+    classtype.value = feature.properties.classtype === 'rubber' ? 'ยางพารา' : feature.properties.classtype === 'building' ? 'สิ่งปลูกสร้าง' : feature.properties.classtype === 'agriculture' ? 'พท.เกษตร (ไม่ใช่ยางพารา)' : feature.properties.classtype === 'water' ? 'แหล่งน้ำ' : 'อื่นๆ';
+    shparea_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
+    // updateAreaLabel(layer);
 }
 
-const getFeatureStyle = (feature) => {
-    const id = feature.properties.id;
-    const xls = Number(feature.properties.xls_sqm);
-    const shp = Number(feature.properties.shparea_sqm);
-    const isEqual = Math.abs(xls - shp) <= 100;
-
+const style = (feature) => {
+    const color = feature.properties.classtype === 'rubber'
+        ? '#006d2c'
+        : feature.properties.classtype === 'building'
+            ? '#d7191c'
+            : feature.properties.classtype === 'agriculture'
+                ? '#a6d96a'
+                : feature.properties.classtype === 'water'
+                    ? '#2b83ba'
+                    : '#ff00ff';
     return {
-        color: isEqual ? '#00cc00' : '#ca0020',
+        fillColor: color,
         weight: 2,
-        opacity: 0.7,
-        fillColor: isEqual ? '#90ee90' : '#f4a582',
-        fillOpacity: 0.2
+        opacity: 1,
+        color: 'white',
+        dashArray: '3',
+        fillOpacity: 0.5
     };
 };
 
-// const loadGeoData = async () => {
-//     try {
-//         const response = await fetch('/rub/api/getfeatures');
-//         const { data } = await response.json();
-
-//         const geoJsonData = {
-//             type: 'FeatureCollection',
-//             features: data.map(item => ({
-//                 type: 'Feature',
-//                 geometry: JSON.parse(item.geom),
-//                 properties: {
-//                     id: item.id,
-//                     xls_app_no: item.xls_app_no,
-//                     xls_sqm: item.xls_sqm,
-//                     shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
-//                 }
-//             }))
-//         };
-
-//         L.geoJSON(geoJsonData, {
-//             style: getFeatureStyle,
-//             onEachFeature: (feature, layer) => {
-//                 layer.bindPopup(`${feature.properties.id}`);
-//                 featureGroup.addLayer(layer);
-//                 layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
-//                 layer.on('click', () => {
-//                     map.fitBounds(layer.getBounds());
-//                     showFeaturePanel(feature, layer);
-//                     featureGroup.eachLayer(l => l.pm.disable());
-//                     layer.pm.enable();
-//                 });
-//             }
-//         });
-
-//     } catch (error) {
-//         console.error('Error loading data:', error);
-//         alert('Failed to load spatial data');
-//     }
-// };
-
 const loadGeoData = async () => {
     try {
-        const response = await fetch('/rub/api/getfeatures');
+        const response = await fetch('/rub/api/getreclassfeatures');
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -179,37 +146,32 @@ const loadGeoData = async () => {
                     id: item.id,
                     xls_app_no: item.xls_app_no,
                     xls_sqm: item.xls_sqm,
+                    classtype: item.classtype,
                     shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
                 }
             }))
         };
 
-        // Initialize DataTable
         const tableData = geoJsonData.features.map(feature => ({
             id: feature.properties.id,
             xls_app_no: feature.properties.xls_app_no,
             xls_sqm: feature.properties.xls_sqm,
+            classtype: feature.properties.classtype,
             shparea_sqm: feature.properties.shparea_sqm
         }));
 
         const dataTable = $('#featureTable').DataTable({
             data: tableData,
             columns: [
-                { data: 'id', title: 'ID' },
                 { data: 'xls_app_no', title: 'Application No' },
-                { data: 'xls_sqm', title: 'เนื้อที่เป้าหมาย (m²)' },
-                { data: 'shparea_sqm', title: 'เนื้อที่ขณะนี้ (m²)' },
+                { data: 'id', title: 'sub_id' },
+                { data: 'xls_sqm', title: 'เนื้อที่รวมของแปลงนี้ (m²)' },
+                { data: 'shparea_sqm', title: 'เนื้อที่ส่วนนี้ (m²)' },
                 {
-                    data: null,
-                    title: 'Area Difference (m²)',
+                    data: 'classtype',
+                    title: 'ประเภท',
                     render: (data) => {
-                        const xls = Number(data.xls_sqm);
-                        const shp = Number(data.shparea_sqm);
-                        const diff = xls - shp;
-                        const color = Math.abs(diff) <= 100 ? 'green' : 'red';
-                        const diffStyle = `color: ${color}; font-weight: bold;`;
-                        return `<span style="${diffStyle}">${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>`;
-                        // return `${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+                        return data === 'rubber' ? 'แปลงยาง' : data === 'building' ? 'อาคาร' : data === 'agriculture' ? 'เกษตรกรรม' : data === 'water' ? 'น้ำ' : 'อื่นๆ';
                     }
                 },
                 {
@@ -234,17 +196,17 @@ const loadGeoData = async () => {
 
         // Create GeoJSON layer but don't add to map yet
         L.geoJSON(geoJsonData, {
-            style: getFeatureStyle,
+            style: style,
             onEachFeature: (feature, layer) => {
                 layer.bindPopup(`${feature.properties.id}`);
                 layerMap.set(feature.properties.id, layer); // Store layer for filtering and interaction
 
-                layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
+                // layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
                 layer.on('click', () => {
                     map.fitBounds(layer.getBounds());
                     showFeaturePanel(feature, layer);
-                    featureGroup.eachLayer(l => l.pm.disable());
-                    layer.pm.enable();
+                    // featureGroup.eachLayer(l => l.pm.disable());
+                    // layer.pm.enable();
 
                     // Highlight row in DataTable
                     dataTable.rows().deselect();
@@ -282,8 +244,8 @@ const loadGeoData = async () => {
                 if (layer) {
                     map.fitBounds(layer.getBounds());
                     showFeaturePanel(layer.feature, layer);
-                    featureGroup.eachLayer(l => l.pm.disable());
-                    layer.pm.enable();
+                    // featureGroup.eachLayer(l => l.pm.disable());
+                    // layer.pm.enable();
                 }
             }
         });
@@ -295,8 +257,8 @@ const loadGeoData = async () => {
             if (layer) {
                 map.fitBounds(layer.getBounds());
                 showFeaturePanel(layer.feature, layer);
-                featureGroup.eachLayer(l => l.pm.disable());
-                layer.pm.enable();
+                // featureGroup.eachLayer(l => l.pm.disable());
+                // layer.pm.enable();
 
                 // Highlight row in DataTable
                 dataTable.rows().deselect();
@@ -336,56 +298,56 @@ map.on('pm:remove', (e) => e.layer.areaLabel?.remove());
 map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 
 
-document.getElementById('save').addEventListener('click', async () => {
-    const features = featureGroup.toGeoJSON().features;
-    try {
-        const response = await fetch('/rub/api/updatefeatures', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ features })
-        });
-        const result = await response.json();
-        alert(`Updated ${result.updated} features`);
+// document.getElementById('save').addEventListener('click', async () => {
+//     const features = featureGroup.toGeoJSON().features;
+//     try {
+//         const response = await fetch('/rub/api/updatefeatures', {
+//             method: 'POST',
+//             headers: { 'Content-Type': 'application/json' },
+//             body: JSON.stringify({ features })
+//         });
+//         const result = await response.json();
+//         alert(`Updated ${result.updated} features`);
 
-        if (result.success) {
-            featureGroup.eachLayer(layer => {
-                layer.pm.disable();
-                layer.areaLabel?.remove();
-            });
+//         if (result.success) {
+//             featureGroup.eachLayer(layer => {
+//                 layer.pm.disable();
+//                 layer.areaLabel?.remove();
+//             });
 
-            featureGroup.clearLayers();
-            loadGeoData();
-        } else {
-            alert('Failed to update features');
-        }
-    } catch (error) {
-        console.error('Error saving data:', error);
-        alert('Failed to save data');
-    }
-});
+//             featureGroup.clearLayers();
+//             loadGeoData();
+//         } else {
+//             alert('Failed to update features');
+//         }
+//     } catch (error) {
+//         console.error('Error saving data:', error);
+//         alert('Failed to save data');
+//     }
+// });
 
-document.getElementById('classify').addEventListener('click', () => {
-    const id = document.getElementById('id').value;
-    if (!id) {
-        alert('เลือกแปลงที่ต้องการ classify ก่อน');
-        return;
-    }
-    fetch(`/rub/api/create_reclass_layer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
-    }).then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.open(`/rub/reclass/index.html?id=${id}`, '_self');
-            } else {
-                alert('Failed to create reclassification layer');
-            }
-        }).catch(error => {
-            console.error('Error creating reclassification layer:', error);
-            alert('Failed to create reclassification layer');
-        });
-});
+// document.getElementById('classify').addEventListener('click', () => {
+//     const id = document.getElementById('id').value;
+//     if (!id) {
+//         alert('เลือกแปลงที่ต้องการ classify ก่อน');
+//         return;
+//     }
+//     fetch(`/rub/api/create_reclass_layer`, {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({ id })
+//     }).then(response => response.json())
+//         .then(data => {
+//             if (data.success) {
+//                 window.open(`/rub/reclassify/index.html?id=${id}`, '_self');
+//             } else {
+//                 alert('Failed to create reclassification layer');
+//             }
+//         }).catch(error => {
+//             console.error('Error creating reclassification layer:', error);
+//             alert('Failed to create reclassification layer');
+//         });
+// });
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {

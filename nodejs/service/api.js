@@ -104,6 +104,25 @@ app.post('/api/updatefeatures', async (req, res) => {
     }
 });
 
+app.get('/api/getreclassfeatures', async (req, res) => {
+    try {
+        const sql = `SELECT sub_id as id,
+                        id as parent_id,
+                        classtype, 
+                        xls_app_no,
+                        xls_sqm,
+                        shparea_sqm,
+                        ST_ASGeoJSON(geom) AS geom
+                    FROM tb_nan_rub_reclass
+                    WHERE geom IS NOT NULL`;
+        const result = await pool.query(sql);
+        res.status(200).json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.post('/api/create_reclass_layer', async (req, res) => {
     try {
         const { id } = req.body;
@@ -118,11 +137,11 @@ app.post('/api/create_reclass_layer', async (req, res) => {
                 WHERE id = $1
                 RETURNING id  
             )
-            INSERT INTO tb_nan_rub_reclass (id, sub_id, xls_app_no, shparea_sqm, geom)
-            SELECT id, $2, xls_app_no, shparea_sqm, geom
+            INSERT INTO tb_nan_rub_reclass (id, sub_id, xls_app_no, xls_sqm, shparea_sqm, geom)
+            SELECT id, $2, xls_app_no, xls_sqm, shparea_sqm, geom
             FROM tb_nan_rub
             WHERE id = $1
-            RETURNING id, xls_app_no, ST_AsGeoJSON(geom) AS geom;
+            RETURNING id, xls_app_no, xls_sqm, ST_AsGeoJSON(geom) AS geom;
         `;
         const values = [id, sub_id];
         const result = await pool.query(sql, values);
@@ -146,9 +165,6 @@ app.post('/api/split', async (req, res) => {
         const properties = polygon_fc.properties;
         const id = polygon_fc.properties.id;
         const sub_id = polygon_fc.properties.sub_id;
-
-        console.log(properties);
-
 
         if (!properties?.xls_app_no) {
             return res.status(400).json({ error: 'xls_app_no is required in properties' });
@@ -188,14 +204,15 @@ app.post('/api/split', async (req, res) => {
                 FROM split
             ),
             inserted AS (
-                INSERT INTO tb_nan_rub_reclass (xls_app_no, geom, sub_id, id, classtype, shparea_sqm)
+                INSERT INTO tb_nan_rub_reclass (xls_app_no, geom, sub_id, id, classtype, shparea_sqm, xls_sqm)
                 SELECT 
                     $4, 
                     ST_Transform(geom_projected, 4326), 
                     $5 || '-' || row_number() OVER (),
                     $6,
                     $7, 
-                    ST_Area(geom_projected)
+                    ST_Area(geom_projected),
+                    $8
                 FROM parts, inputs
                 WHERE ST_GeometryType(geom_projected) = 'ST_Polygon'
                 RETURNING *
@@ -206,7 +223,8 @@ app.post('/api/split', async (req, res) => {
                 classtype, 
                 xls_app_no, 
                 shparea_sqm, 
-                ST_ASGeoJSON(geom) AS geom
+                ST_ASGeoJSON(geom) AS geom,
+                xls_sqm
             FROM inserted
         `, [
             JSON.stringify(polygon),
@@ -216,6 +234,7 @@ app.post('/api/split', async (req, res) => {
             sub_id,
             id,
             properties.classtype,
+            properties.xls_sqm,
         ]);
 
         if (result.rowCount === 0) {
