@@ -247,3 +247,4 @@ document.getElementById('classify').addEventListener('click', () => {
 document.addEventListener('DOMContentLoaded', () => {
     loadGeoData();
 });
+
