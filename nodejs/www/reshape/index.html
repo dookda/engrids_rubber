@@ -20,39 +20,47 @@
     <div class="container-fluid">
         <div class="row mt-3">
             <div class="col-8">
-                <div id="map"></div>
+                <div class="card" id="map"></div>
             </div>
             <div class="col-4">
-                <div id="featurePanel">
-                    <div>
-                        <strong>ID:</strong>
-                        <input class="form-control" id="id" disabled>
+                <div class="card">
+                    <div class="card-body">
+                        <div id="featurePanel">
+                            <div>
+                                <strong>ID:</strong>
+                                <input class="form-control" id="id" disabled>
+                            </div>
+                            <div>
+                                <strong>App No:</strong>
+                                <input class="form-control" id="xls_app_no">
+                            </div>
+                            <div>
+                                <strong>เนื้อที่เป้าหมาย (m²):</strong>
+                                <input class="form-control" id="xls_sqm">
+                            </div>
+                            <div>
+                                <strong>เนื้อที่ขณะนี้ (m²):</strong>
+                                <input class="form-control" id="shparea_sqm">
+                            </div>
+                        </div>
+                        <strong> <span class="mt-2" id="message"></span></strong>
+                        <hr>
+                        <div class="mt-3">
+                            <!-- <button class="btn btn-info" id="toggleArea">Hide Area</button> -->
+                            <button class="btn btn-success" id="save">Save edit</button>
+                            <button class="btn btn-primary" id="classify">classify</button>
+                        </div>
                     </div>
-                    <div>
-                        <strong>App No:</strong>
-                        <input class="form-control" id="xls_app_no">
-                    </div>
-                    <div>
-                        <strong>เนื้อที่เป้าหมาย (m²):</strong>
-                        <input class="form-control" id="xls_sqm">
-                    </div>
-                    <div>
-                        <strong>เนื้อที่ขณะนี้ (m²):</strong>
-                        <input class="form-control" id="shparea_sqm">
-                    </div>
-                </div>
-                <strong> <span class="mt-2" id="message"></span></strong>
-                <hr>
-                <div class="mt-3">
-                    <!-- <button class="btn btn-info" id="toggleArea">Hide Area</button> -->
-                    <button class="btn btn-success" id="save">Save edit</button>
-                    <button class="btn btn-primary" id="classify">classify</button>
                 </div>
             </div>
         </div>
         <div class="row mt-3">
             <div class="col-12">
-                <table id="featureTable" class="display" style="width: 100%;"></table>
+                <div class="card">
+                    <div class="card-body">
+                        <table id="featureTable" class="display" style="width: 100%;"></table>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -106,13 +106,13 @@ function showFeaturePanel(feature, layer) {
 
 const style = (feature) => {
     const color = feature.properties.classtype === 'rubber'
-        ? '#3388ff'
+        ? '#006d2c'
         : feature.properties.classtype === 'building'
-            ? '#ff0000'
+            ? '#d7191c'
             : feature.properties.classtype === 'agriculture'
-                ? '#00ff00'
+                ? '#a6d96a'
                 : feature.properties.classtype === 'water'
-                    ? '#0000ff'
+                    ? '#2b83ba'
                     : '#ff00ff';
     return {
         fillColor: color,

@@ -19,42 +19,74 @@
     <div class="container-fluid">
         <div class="row mt-3">
             <div class="col-8">
-                <div id="map"></div>
+                <div class="card" id="map"></div>
             </div>
             <div class="col-4">
-                <div id="featurePanel">
-                    <div>
-                        <strong>ID</strong>
-                        <input class="form-control" id="id" disabled>
-                    </div>
-                    <div>
-                        <strong>Subid:</strong>
-                        <input class="form-control" id="sub_id">
-                    </div>
-                    <div>
-                        <strong>App No:</strong>
-                        <input class="form-control" id="xls_app_no">
-                    </div>
-                    <div>
-                        <strong>เนื้อที่ (m²):</strong>
-                        <input class="form-control" id="shparea_sqm">
-                    </div>
-                    <div><strong>ประเภท:</strong>
-                        <select class="form-select" id="classtype">
-                            <option></option>
-                            <option value="rubber">ยาง</option>
-                            <option value="building">สิ่งปลูกสร้าง</option>
-                            <option value="agriculture">พท.เกษตร (ไม่ใช่ยางพารา)</option>
-                            <option value="water">แหล่งน้ำ</option>
-                            <option value="other">อื่นๆ</option>
-                        </select>
+                <div class="card">
+                    <div class="card-body">
+
+                        <div id="featurePanel">
+                            <div>
+                                <strong>ID</strong>
+                                <input class="form-control" id="id" disabled>
+                            </div>
+                            <div>
+                                <strong>Subid:</strong>
+                                <input class="form-control" id="sub_id">
+                            </div>
+                            <div>
+                                <strong>App No:</strong>
+                                <input class="form-control" id="xls_app_no">
+                            </div>
+                            <div>
+                                <strong>เนื้อที่ (m²):</strong>
+                                <input class="form-control" id="shparea_sqm">
+                            </div>
+                            <div><strong>ประเภท:</strong>
+                                <select class="form-select" id="classtype">
+                                    <option></option>
+                                    <option value="rubber">ยาง</option>
+                                    <option value="building">สิ่งปลูกสร้าง</option>
+                                    <option value="agriculture">พท.เกษตร (ไม่ใช่ยางพารา)</option>
+                                    <option value="water">แหล่งน้ำ</option>
+                                    <option value="other">อื่นๆ</option>
+                                </select>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="mt-3">
+                            <button class="btn btn-info" id="clear">Clear selection</button>
+                            <button class="btn btn-success" id="split">Split</button>
+                            <a href="./../reshape/index.html" class="btn btn-light" id="reshape">หน้า Reshape</a>
+                        </div>
                     </div>
                 </div>
-                <hr>
-                <div class="mt-3">
-                    <button class="btn btn-info" id="clear">Clear selection</button>
-                    <button class="btn btn-success" id="split">Split</button>
-                    <a href="./../reshape/index.html" class="btn btn-light" id="reshape">หน้า Reshape</a>
+
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <div id="legend" class="legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: #006d2c"></div>
+                                <div class="legend-label">Rubber Plantation</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: #a6d96a"></div>
+                                <div class="legend-label">Agriculture</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: #2b83ba"></div>
+                                <div class="legend-label">Water</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: #d7191c"></div>
+                                <div class="legend-label">Building</div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background-color: #ff00ff"></div>
+                                <div class="legend-label">Other</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
