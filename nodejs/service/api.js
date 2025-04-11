@@ -166,6 +166,32 @@ app.get('/api/getreclassfeatures', async (req, res) => {
     }
 });
 
+app.get('/api/countsfeatures', async (req, res) => {
+    try {
+        const query = `
+        WITH a AS (
+            SELECT COUNT(*) AS reshp
+            FROM public.tb_nan_rub
+            WHERE ABS(xls_sqm - shparea_sqm) <= 100
+        ),
+        c AS (
+            SELECT COUNT(DISTINCT id) AS reclass
+            FROM public.tb_nan_rub_reclass
+        )
+        SELECT (SELECT COUNT(*) FROM public.tb_nan_rub) AS total,
+                c.reclass,
+                a.reshp
+        FROM a
+        CROSS JOIN c;
+      `;
+        const result = await pool.query(query);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err.stack);
+        res.status(500).json({ error: 'Database query failed' });
+    }
+});
+
 app.post('/api/create_reclass_layer', async (req, res) => {
     try {
         const { id } = req.body;

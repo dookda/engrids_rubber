@@ -37,23 +37,6 @@ const overlayMaps = {
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
 
-// Configure Geoman controls
-map.pm.addControls({
-    position: 'topleft',
-    drawCircle: false,
-    drawMarker: false,
-    drawPolyline: false,
-    drawRectangle: false,
-    drawPolygon: false,
-    editMode: false,
-    dragMode: false,
-    cutPolygon: false,
-    removalMode: false,
-    rotateMode: false,
-    drawText: false,
-    drawCircleMarker: false,
-});
-
 // Area calculation utilities
 const formatArea = (area) => {
     return area >= 1e6
@@ -66,33 +49,6 @@ const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
         const area = await turf.area(geojsonFeature);
-        // const xls_sqm = document.getElementById('xls_sqm').value;
-
-        // document.getElementById('shparea_sqm').value = area.toFixed(0);
-        // const diff = Math.abs(area - xls_sqm);
-
-        // if (diff >= 100) {
-        //     document.getElementById('message').style.color = 'red';
-        //     document.getElementById('message').innerHTML = 'เนื้อที่ไม่ตรงกัน';
-        // } else {
-        //     document.getElementById('message').style.color = 'green';
-        //     document.getElementById('message').innerHTML = 'เนื้อที่ใกล้เคียงกัน';
-        // }
-
-        // if (layer.areaLabel) layer.areaLabel.remove();
-
-        // if (showAreas) {
-        // const centroid = turf.centroid(geojsonFeature);
-        // layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
-        //     icon: L.divIcon({
-        //         className: 'area-label',
-        //         html: formatArea(area),
-        //         iconSize: null
-        //     }),
-        //     interactive: false
-        // }).addTo(map);
-
-        // }
     } catch (error) {
         console.error('Error updating label:', error);
     }
@@ -174,15 +130,6 @@ const loadGeoData = async () => {
                         return data === 'rubber' ? 'แปลงยาง' : data === 'building' ? 'อาคาร' : data === 'agriculture' ? 'เกษตรกรรม' : data === 'water' ? 'น้ำ' : 'อื่นๆ';
                     }
                 },
-                // {
-                //     data: null,
-                //     title: 'Actions',
-                //     orderable: false,
-                //     searchable: false,
-                //     render: (data, type, row) => {
-                //         return `<button class="btn btn-info zoom-btn" data-id="${row.id}">Zoom to Feature</button>`;
-                //     }
-                // }
             ],
             pageLength: 10,
             responsive: true,
@@ -191,24 +138,16 @@ const loadGeoData = async () => {
             scrollX: true,
         });
 
-        // Map features to layers for easy lookup
         const layerMap = new Map();
 
-        // Create GeoJSON layer but don't add to map yet
         L.geoJSON(geoJsonData, {
             style: style,
             onEachFeature: (feature, layer) => {
                 layer.bindPopup(`${feature.properties.id}`);
-                layerMap.set(feature.properties.id, layer); // Store layer for filtering and interaction
-
-                // layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
+                layerMap.set(feature.properties.id, layer);
                 layer.on('click', () => {
                     map.fitBounds(layer.getBounds());
                     showFeaturePanel(feature, layer);
-                    // featureGroup.eachLayer(l => l.pm.disable());
-                    // layer.pm.enable();
-
-                    // Highlight row in DataTable
                     dataTable.rows().deselect();
                     dataTable.row(`#row_${feature.properties.id}`).select();
                 });
@@ -227,25 +166,18 @@ const loadGeoData = async () => {
             });
         };
 
-        // Initial map population
         updateMap();
-
-        // Update map when DataTable is filtered or redrawn
         dataTable.on('draw', () => {
             updateMap();
         });
 
-        // Add click event to DataTable rows
         $('#featureTable tbody').on('click', 'tr', function (e) {
-            // Avoid triggering row click if zoom button is clicked
             if (!$(e.target).hasClass('zoom-btn')) {
                 const rowData = dataTable.row(this).data();
                 const layer = layerMap.get(rowData.id);
                 if (layer) {
                     map.fitBounds(layer.getBounds());
                     showFeaturePanel(layer.feature, layer);
-                    // featureGroup.eachLayer(l => l.pm.disable());
-                    // layer.pm.enable();
                 }
             }
         });
@@ -257,10 +189,6 @@ const loadGeoData = async () => {
             if (layer) {
                 map.fitBounds(layer.getBounds());
                 showFeaturePanel(layer.feature, layer);
-                // featureGroup.eachLayer(l => l.pm.disable());
-                // layer.pm.enable();
-
-                // Highlight row in DataTable
                 dataTable.rows().deselect();
                 dataTable.row(`#row_${id}`).select();
             }
@@ -278,79 +206,38 @@ const loadGeoData = async () => {
     }
 };
 
-// Event handlers
-const handleLayerCreate = (e) => {
-    const layer = e.layer;
-    featureGroup.addLayer(layer);
-
-    layer.pm.enable({ allowSelfIntersection: false });
-    updateAreaLabel(layer);
-
-    layer.on('pm:edit pm:dragend pm:update', () => updateAreaLabel(layer));
-    layer.on('click', () => {
-        featureGroup.eachLayer(l => l.pm.disable());
-        layer.pm.enable();
-    });
-};
-
-map.on('pm:create', handleLayerCreate);
-map.on('pm:remove', (e) => e.layer.areaLabel?.remove());
 map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 
-
-// document.getElementById('save').addEventListener('click', async () => {
-//     const features = featureGroup.toGeoJSON().features;
-//     try {
-//         const response = await fetch('/rub/api/updatefeatures', {
-//             method: 'POST',
-//             headers: { 'Content-Type': 'application/json' },
-//             body: JSON.stringify({ features })
-//         });
-//         const result = await response.json();
-//         alert(`Updated ${result.updated} features`);
-
-//         if (result.success) {
-//             featureGroup.eachLayer(layer => {
-//                 layer.pm.disable();
-//                 layer.areaLabel?.remove();
-//             });
-
-//             featureGroup.clearLayers();
-//             loadGeoData();
-//         } else {
-//             alert('Failed to update features');
-//         }
-//     } catch (error) {
-//         console.error('Error saving data:', error);
-//         alert('Failed to save data');
-//     }
-// });
-
-// document.getElementById('classify').addEventListener('click', () => {
-//     const id = document.getElementById('id').value;
-//     if (!id) {
-//         alert('เลือกแปลงที่ต้องการ classify ก่อน');
-//         return;
-//     }
-//     fetch(`/rub/api/create_reclass_layer`, {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ id })
-//     }).then(response => response.json())
-//         .then(data => {
-//             if (data.success) {
-//                 window.open(`/rub/reclassify/index.html?id=${id}`, '_self');
-//             } else {
-//                 alert('Failed to create reclassification layer');
-//             }
-//         }).catch(error => {
-//             console.error('Error creating reclassification layer:', error);
-//             alert('Failed to create reclassification layer');
-//         });
-// });
-
-// Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     loadGeoData();
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/rub/api/countsfeatures');
+        const data = await response.json();
+
+        const chartData = [
+            { name: 'จำนวนทั้งหมด (แปลง)', y: parseInt(data.total), color: '#7cb5ec' },
+            { name: 'ปรับแก้เนื้อที่แล้ว (แปลง)', y: parseInt(data.reshp), color: '#434348' },
+            { name: 'จำแนก landuse แล้ว (แปลง)', y: parseInt(data.reclass), color: '#90ed7d' }
+        ];
+
+        Highcharts.chart('container', {
+            chart: { type: 'bar', style: { fontFamily: 'Noto Sans Thai' } },
+            title: { text: null },
+            xAxis: { type: 'category', title: { text: 'แปลงยางพารา', style: { fontFamily: 'Noto Sans Thai' } } },
+            yAxis: { min: 0, title: { text: 'จำนวนแปลง', style: { fontFamily: 'Noto Sans Thai' } } },
+            series: [{
+                name: 'Counts',
+                data: chartData,
+                dataLabels: { enabled: true, format: '{y}' }
+            }],
+            tooltip: { pointFormat: '<b>{point.y}</b> records' },
+            legend: { enabled: false }
+        });
+    } catch (err) {
+        console.error('Error fetching data:', err);
+    }
 });
 

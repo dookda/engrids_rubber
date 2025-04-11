@@ -159,7 +159,7 @@ const loadGeoData = async () => {
                 }
             ],
             pageLength: 10,
-            responsive: true,
+            responsive: false,
             select: true,
             destroy: true,
             scrollX: true,

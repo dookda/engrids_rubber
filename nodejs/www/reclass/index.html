@@ -12,29 +12,29 @@
         integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.css" />
+    <link rel="stylesheet" href="./../assets/bootstrap.min.css">
     <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
-    <nav class="navbar navbar-light bg-light">
+    <nav class="navbar navbar-expand-lg bg-light" data-bs-theme="light">
         <div class="container-fluid d-flex">
             <div>
             </div>
             <div class="d-flex flex-grow-1 justify-content-center gap-2">
-                <a href="./../reshape/index.html" class="btn btn-warning">หน้า Reshape</a>
-                <a href="./../reclassdash/index.html" class="btn btn-warning">หน้า reclassify
-                    dashboard</a>
+                <a href="./../reshape/index.html" class="btn btn-success">หน้า Reshape</a>
+                <a href="./../reclassdash/index.html" class="btn btn-success">หน้า dashboard</a>
             </div>
             <div style="width: 100px;"></div>
         </div>
     </nav>
     <div class="container-fluid">
-        <div class="row mt-3">
-            <div class="col-8">
+        <div class="row">
+            <div class="col-sm-8 mt-3">
                 <div class="card" id="map"></div>
                 *ใช้วิธีการลากเส้นเพื่อตัดแบ่งพื้นที่
             </div>
-            <div class="col-4">
+            <div class="col-sm-4 mt-3">
                 <div class="card">
                     <div class="card-body">
 
