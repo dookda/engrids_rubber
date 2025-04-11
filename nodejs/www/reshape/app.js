@@ -128,7 +128,7 @@ const getFeatureStyle = (feature) => {
 
 const loadGeoData = async () => {
     try {
-        const response = await fetch('/api/getfeatures');
+        const response = await fetch('/rub/api/getfeatures');
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -195,7 +195,7 @@ map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 document.getElementById('save').addEventListener('click', async () => {
     const features = featureGroup.toGeoJSON().features;
     try {
-        const response = await fetch('/api/updatefeatures', {
+        const response = await fetch('/rub/api/updatefeatures', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ features })
@@ -226,14 +226,14 @@ document.getElementById('classify').addEventListener('click', () => {
         alert('เลือกแปลงที่ต้องการ classify ก่อน');
         return;
     }
-    fetch(`/api/create_reclass_layer`, {
+    fetch(`/rub/api/create_reclass_layer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
     }).then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.open(`/reclassify/index.html?id=${id}`, '_self');
+                window.open(`/rub/reclassify/index.html?id=${id}`, '_self');
             } else {
                 alert('Failed to create reclassification layer');
             }

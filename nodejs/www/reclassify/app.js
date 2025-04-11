@@ -165,7 +165,7 @@ function highlightFeature(e) {
 
 const loadGeoData = async (id) => {
     try {
-        const response = await fetch('/api/getfeatures/' + id);
+        const response = await fetch('/rub/api/getfeatures/' + id);
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -219,7 +219,7 @@ map.on('click', () => featureGroup.eachLayer(l => l.pm.disable()));
 
 document.getElementById('classtype').addEventListener('change', (e) => {
     const selectedValue = e.target.value;
-    fetch('/api/update_landuse', {
+    fetch('/rub/api/update_landuse', {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -275,7 +275,7 @@ document.getElementById('split').addEventListener('click', () => {
         srid: srid,
     }
 
-    fetch('/api/split', {
+    fetch('/rub/api/split', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = urlParams.get('id');
     if (!id || id === 'undefined') {
         alert('เลือกแปลงยางก่อน');
-        window.location.href = './../reshape/index.html';
+        window.location.href = './../../reshape/index.html';
         return;
     }
     document.getElementById('id').value = id;
