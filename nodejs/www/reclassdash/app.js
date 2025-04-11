@@ -174,15 +174,15 @@ const loadGeoData = async () => {
                         return data === 'rubber' ? 'แปลงยาง' : data === 'building' ? 'อาคาร' : data === 'agriculture' ? 'เกษตรกรรม' : data === 'water' ? 'น้ำ' : 'อื่นๆ';
                     }
                 },
-                {
-                    data: null,
-                    title: 'Actions',
-                    orderable: false,
-                    searchable: false,
-                    render: (data, type, row) => {
-                        return `<button class="btn btn-info zoom-btn" data-id="${row.id}">Zoom to Feature</button>`;
-                    }
-                }
+                // {
+                //     data: null,
+                //     title: 'Actions',
+                //     orderable: false,
+                //     searchable: false,
+                //     render: (data, type, row) => {
+                //         return `<button class="btn btn-info zoom-btn" data-id="${row.id}">Zoom to Feature</button>`;
+                //     }
+                // }
             ],
             pageLength: 10,
             responsive: true,
