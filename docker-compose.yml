@@ -1,5 +1,5 @@
 services:
-  rubpostgis:
+  postgis:
     platform: linux/amd64
     image: postgis/postgis
     container_name: rub_postgis
@@ -8,7 +8,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=rub1234
     ports:
-      - 5431:5432
+      - 5400:5432
     volumes:
       - ./postgis:/docker-entrypoint-initdb.d
 
@@ -20,7 +20,7 @@ services:
     environment:
       - NODE_ENV=development
     depends_on:
-      - rubpostgis
+      - postgis
     volumes:
       - ./nodejs:/usr/src/app
     ports:
