@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgis:
     platform: linux/amd64
@@ -7,10 +9,19 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=rub1234
+      - POSTGRES_DB=postgres # Explicitly define database name
     ports:
       - 5400:5432
     volumes:
       - ./postgis:/docker-entrypoint-initdb.d
+    networks:
+      - rub-network
+    healthcheck:
+      # Added database readiness check
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   nodejs:
     image: node:latest
@@ -19,15 +30,23 @@ services:
     working_dir: /usr/src/app
     environment:
       - NODE_ENV=development
+      - DB_HOST=postgis # ✅ Use service name instead of localhost
+      - DB_PORT=5432 # ✅ Use container port (not host-mapped 5400)
+      - DB_USER=postgres
+      - DB_PASSWORD=rub1234
+      - DB_NAME=rub
     depends_on:
-      - postgis
+      postgis:
+        condition: service_healthy # Wait for healthy DB
     volumes:
       - ./nodejs:/usr/src/app
     ports:
       - "3400:3000"
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3000" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    networks:
+      - rub-network
     command: sh -c "npm i && npm i -g nodemon && nodemon"
+
+networks:
+  # Explicit network configuration
+  rub-network:
+    driver: bridge
