@@ -1,7 +1,6 @@
 // Initialize map and feature group
 const map = L.map('map').setView([18.819620993471577, 100.8784385963758], 13);
 const featureGroup = L.featureGroup();
-let showAreas = true;
 
 // Configure base layer
 const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
@@ -73,26 +72,11 @@ const updateAreaLabel = async (layer) => {
 
         if (diff >= 100) {
             document.getElementById('message').style.color = 'red';
-            document.getElementById('message').innerHTML = 'เนื้อที่ไม่ตรงกัน';
+            document.getElementById('message').innerHTML = 'เนื้อที่ไม่เท่ากัน';
         } else {
             document.getElementById('message').style.color = 'green';
             document.getElementById('message').innerHTML = 'เนื้อที่ใกล้เคียงกัน';
         }
-
-        if (layer.areaLabel) layer.areaLabel.remove();
-
-        // if (showAreas) {
-        const centroid = turf.centroid(geojsonFeature);
-        layer.areaLabel = L.marker([centroid.geometry.coordinates[1], centroid.geometry.coordinates[0]], {
-            icon: L.divIcon({
-                className: 'area-label',
-                html: formatArea(area),
-                iconSize: null
-            }),
-            interactive: false
-        }).addTo(map);
-
-        // }
     } catch (error) {
         console.error('Error updating label:', error);
     }
@@ -125,46 +109,7 @@ const getFeatureStyle = (feature) => {
     };
 };
 
-// const loadGeoData = async () => {
-//     try {
-//         const response = await fetch('/rub/api/getfeatures');
-//         const { data } = await response.json();
-
-//         const geoJsonData = {
-//             type: 'FeatureCollection',
-//             features: data.map(item => ({
-//                 type: 'Feature',
-//                 geometry: JSON.parse(item.geom),
-//                 properties: {
-//                     id: item.id,
-//                     xls_app_no: item.xls_app_no,
-//                     xls_sqm: item.xls_sqm,
-//                     shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
-//                 }
-//             }))
-//         };
-
-//         L.geoJSON(geoJsonData, {
-//             style: getFeatureStyle,
-//             onEachFeature: (feature, layer) => {
-//                 layer.bindPopup(`${feature.properties.id}`);
-//                 featureGroup.addLayer(layer);
-//                 layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
-//                 layer.on('click', () => {
-//                     map.fitBounds(layer.getBounds());
-//                     showFeaturePanel(feature, layer);
-//                     featureGroup.eachLayer(l => l.pm.disable());
-//                     layer.pm.enable();
-//                 });
-//             }
-//         });
-
-//     } catch (error) {
-//         console.error('Error loading data:', error);
-//         alert('Failed to load spatial data');
-//     }
-// };
-
+var selectedLayer = null;
 const loadGeoData = async () => {
     try {
         const response = await fetch('/rub/api/getfeatures');
@@ -211,15 +156,6 @@ const loadGeoData = async () => {
                         return `<span style="${diffStyle}">${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>`;
                         // return `${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
                     }
-                },
-                {
-                    data: null,
-                    title: 'Actions',
-                    orderable: false,
-                    searchable: false,
-                    render: (data, type, row) => {
-                        return `<button class="btn btn-info zoom-btn" data-id="${row.id}">Zoom to Feature</button>`;
-                    }
                 }
             ],
             pageLength: 10,
@@ -246,9 +182,7 @@ const loadGeoData = async () => {
                     featureGroup.eachLayer(l => l.pm.disable());
                     layer.pm.enable();
 
-                    // Highlight row in DataTable
-                    dataTable.rows().deselect();
-                    dataTable.row(`#row_${feature.properties.id}`).select();
+                    selectedLayer = layer;
                 });
             }
         });
@@ -265,15 +199,12 @@ const loadGeoData = async () => {
             });
         };
 
-        // Initial map population
         updateMap();
 
-        // Update map when DataTable is filtered or redrawn
         dataTable.on('draw', () => {
             updateMap();
         });
 
-        // Add click event to DataTable rows
         $('#featureTable tbody').on('click', 'tr', function (e) {
             // Avoid triggering row click if zoom button is clicked
             if (!$(e.target).hasClass('zoom-btn')) {
@@ -284,23 +215,9 @@ const loadGeoData = async () => {
                     showFeaturePanel(layer.feature, layer);
                     featureGroup.eachLayer(l => l.pm.disable());
                     layer.pm.enable();
+
+                    selectedLayer = layer;
                 }
-            }
-        });
-
-        // Add click event for zoom buttons
-        $('#featureTable tbody').on('click', '.zoom-btn', function () {
-            const id = $(this).data('id');
-            const layer = layerMap.get(id);
-            if (layer) {
-                map.fitBounds(layer.getBounds());
-                showFeaturePanel(layer.feature, layer);
-                featureGroup.eachLayer(l => l.pm.disable());
-                layer.pm.enable();
-
-                // Highlight row in DataTable
-                dataTable.rows().deselect();
-                dataTable.row(`#row_${id}`).select();
             }
         });
 
@@ -316,28 +233,17 @@ const loadGeoData = async () => {
     }
 };
 
-// Event handlers
-const handleLayerCreate = (e) => {
-    const layer = e.layer;
-    featureGroup.addLayer(layer);
-
-    layer.pm.enable({ allowSelfIntersection: false });
-    updateAreaLabel(layer);
-
-    layer.on('pm:edit pm:dragend pm:update', () => updateAreaLabel(layer));
-    layer.on('click', () => {
-        featureGroup.eachLayer(l => l.pm.disable());
-        layer.pm.enable();
-    });
-};
-
-map.on('pm:create', handleLayerCreate);
-map.on('pm:remove', (e) => e.layer.areaLabel?.remove());
 map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 
-
 document.getElementById('save').addEventListener('click', async () => {
-    const features = featureGroup.toGeoJSON().features;
+    if (!selectedLayer) {
+        alert('กรุณาเลือกแปลงที่ต้องการบันทึกก่อน');
+        return;
+    }
+
+    const features = [];
+    features.push(selectedLayer.toGeoJSON());
+
     try {
         const response = await fetch('/rub/api/updatefeatures', {
             method: 'POST',

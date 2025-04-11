@@ -61,6 +61,49 @@ app.get('/api/getfeatures/:fid', async (req, res) => {
     }
 });
 
+app.put('/api/updateselectedfeatures', async (req, res) => {
+    try {
+        const { features } = req.body;
+        const client = await pool.connect();
+        if (!features || !Array.isArray(features)) {
+            return res.status(400).json({ error: 'Invalid input data' });
+        }
+        if (features.length === 0) {
+            return res.status(400).json({ error: 'No features to update' });
+        }
+
+        try {
+            await client.query('BEGIN');
+
+            const queries = features.map(feature =>
+                client.query(`
+                    UPDATE tb_nan_rub_reclass
+                    SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
+                        shparea_sqm = ST_Area(ST_Transform(
+                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
+                            32647
+                        ))
+                    WHERE sub_id = $2
+                `, [
+                    JSON.stringify(feature.geometry),
+                    feature.properties.sub_id
+                ])
+            );
+
+            await Promise.all(queries);
+            await client.query('COMMIT');
+            res.json({ success: true, updated: features.length });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/updatefeatures', async (req, res) => {
     try {
         const { features } = req.body;
