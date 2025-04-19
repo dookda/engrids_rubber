@@ -9,7 +9,7 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=rub1234
-      - POSTGRES_DB=postgres # Explicitly define database name
+      - POSTGRES_DB=postgres
     ports:
       - 5400:5432
     volumes:
@@ -17,7 +17,6 @@ services:
     networks:
       - rub-network
     healthcheck:
-      # Added database readiness check
       test: [ "CMD-SHELL", "pg_isready -U postgres -d postgres" ]
       interval: 5s
       timeout: 5s
@@ -30,14 +29,14 @@ services:
     working_dir: /usr/src/app
     environment:
       - NODE_ENV=development
-      - DB_HOST=postgis # ✅ Use service name instead of localhost
-      - DB_PORT=5432 # ✅ Use container port (not host-mapped 5400)
+      - DB_HOST=postgis
+      - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASSWORD=rub1234
       - DB_NAME=rub
     depends_on:
       postgis:
-        condition: service_healthy # Wait for healthy DB
+        condition: service_healthy
     volumes:
       - ./nodejs:/usr/src/app
     ports:
@@ -46,7 +45,23 @@ services:
       - rub-network
     command: sh -c "npm i && npm i -g nodemon && nodemon"
 
+#   react:
+#     image: node:latest
+#     container_name: rub_react
+#     restart: always
+#     working_dir: /usr/src/app
+#     environment:
+#       - NODE_ENV=development
+#       - REACT_APP_API_URL=http://nodejs:3000 
+#     depends_on:
+#       - nodejs
+#     volumes:
+#       - ./react:/usr/src/app
+#     ports:
+#       - "3000:5173" 
+#     networks:
+#       - rub-network
+#     command: sh -c "npm i && npm run dev" 
 networks:
-  # Explicit network configuration
   rub-network:
     driver: bridge

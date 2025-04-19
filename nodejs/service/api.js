@@ -39,6 +39,41 @@ app.get('/api/getfeatures', async (req, res) => {
     }
 });
 
+// get all feature as feature collection
+app.get('/api/getfeaturescollection', async (req, res) => {
+    try {
+        const sql = `SELECT id,
+                        shp_app_no,
+                        xls_app_no,
+                        xls_sqm,
+                        shp_sqm,
+                        shparea_sqm,
+                        ST_ASGeoJSON(geom) AS geom
+                    FROM tb_nan_rub
+                    WHERE geom IS NOT NULL`;
+        const result = await pool.query(sql);
+        const featureCollection = {
+            type: 'FeatureCollection',
+            features: result.rows.map(row => ({
+                type: 'Feature',
+                properties: {
+                    id: row.id,
+                    shp_app_no: row.shp_app_no,
+                    xls_app_no: row.xls_app_no,
+                    xls_sqm: row.xls_sqm,
+                    shp_sqm: row.shp_sqm,
+                    shparea_sqm: row.shparea_sqm
+                },
+                geometry: JSON.parse(row.geom)
+            }))
+        };
+        res.status(200).json({ success: true, data: featureCollection });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.get('/api/getfeatures/:fid', async (req, res) => {
     try {
         const fid = req.params.fid;
