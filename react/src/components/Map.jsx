@@ -114,6 +114,33 @@ export const Map = ({ onMapClick }) => {
                         }
                     });
 
+                    map.on('click', ['geojson-layer', 'geojson-outline'], (e) => {
+                        const features = map.queryRenderedFeatures(e.point, {
+                            layers: ['geojson-layer', 'geojson-outline']
+                        });
+
+                        console.log('Clicked features:', features);
+
+
+                        if (features.length > 0) {
+                            const clickedFeature = features[0];
+                            console.log('Clicked feature data:', {
+                                id: clickedFeature.id,
+                                properties: clickedFeature.properties,
+                                geometry: clickedFeature.geometry
+                            });
+                        }
+                    });
+
+                    // Visual feedback
+                    map.on('mousemove', ['geojson-layer', 'geojson-outline'], (e) => {
+                        map.getCanvas().style.cursor = 'pointer';
+                    });
+
+                    map.on('mouseleave', ['geojson-layer', 'geojson-outline'], (e) => {
+                        map.getCanvas().style.cursor = '';
+                    });
+
                     if (!bounds.isEmpty()) {
                         map.fitBounds(bounds, {
                             padding: 30,
@@ -130,10 +157,10 @@ export const Map = ({ onMapClick }) => {
             map.on('gm:editend', handleEvent);
         });
 
-        map.on('click', async (e) => {
-            onMapClick(e);
-            gm.disableGlobalEditMode();
-        });
+        // map.on('click', async (e) => {
+        //     onMapClick(e);
+        //     gm.disableGlobalEditMode();
+        // });
 
         return () => {
             map?.remove();

@@ -12,6 +12,7 @@
   "dependencies": {
     "@geoman-io/maplibre-geoman-free": "^0.3.0",
     "bootstrap": "^5.3.5",
+    "mapbox-gl": "^3.11.0",
     "maplibre-gl": "^5.3.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Map } from './components/Map'
+import { MapEdit } from './components/MapEdit'
 import { InputPosition } from './components/InputPosition'
+import { MapBox } from './components/MapBox'
 
 function App() {
   const [pos, setPos] = useState({ lat: 0, lng: 0 })
@@ -16,7 +18,9 @@ function App() {
   return (
     <div className='container'>
       <div className="mt-5">
-        <Map onMapClick={handlePosition} />
+        {/* <Map onMapClick={handlePosition} /> */}
+        {/* <MapEdit onMapClick={handlePosition} /> */}
+        <MapBox />
         <div className="row">
           <div className="col">
             <h5>Latitude</h5>
