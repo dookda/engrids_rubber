@@ -3,6 +3,7 @@ import React from 'react'
 export const SelectBasemap = ({ value, onChange }) => {
     const baseMaps = {
         streets: 'mapbox://styles/mapbox/streets-v12',
+        standard: 'mapbox://styles/mapbox/standard',
         satellite: 'mapbox://styles/mapbox/satellite-v9',
         light: 'mapbox://styles/mapbox/light-v11',
         dark: 'mapbox://styles/mapbox/dark-v11',

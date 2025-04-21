@@ -11,8 +11,12 @@
   },
   "dependencies": {
     "@geoman-io/maplibre-geoman-free": "^0.3.0",
+    "@mapbox/mapbox-gl-draw": "^1.5.0",
+    "@turf/area": "^7.2.0",
+    "@turf/turf": "^7.2.0",
     "bootstrap": "^5.3.5",
     "mapbox-gl": "^3.11.0",
+    "mapbox-gl-draw-snap-mode": "^0.4.0",
     "maplibre-gl": "^5.3.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
