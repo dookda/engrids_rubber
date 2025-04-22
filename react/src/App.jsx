@@ -51,38 +51,51 @@ function App() {
 
   return (
     <div className='container'>
-      <div className="mt-5">
-        <SelectBasemap
-          value={mapType}
-          onChange={handleMapTypeChange} />
-        <MapBox
-          mapStyle={mapType}
-          onMapClick={handlePosition}
-          onRoundedArea={handleRoundedArea}
-          onFeatureClick={handleFeatureClick}
-        />
-        <div className="row">
-          <div className="col">
-            <h5>Latitude</h5>
-            <InputPosition
-              type="number"
-              name="lat"
-              value={pos.lat}
-              onChange={handleInput}
-            />
+      <div className="row mt-5">
+        <div className="col-md-8">
+          <MapBox
+            mapStyle={mapType}
+            onMapClick={handlePosition}
+            onRoundedArea={handleRoundedArea}
+            onFeatureClick={handleFeatureClick}
+          />
+        </div>
+        <div className="col-md-4">
+          <h5>Basemap</h5>
+          <SelectBasemap
+            value={mapType}
+            onChange={handleMapTypeChange} />
+
+          <div className="row">
+            <div className="col">
+              <h5>Latitude</h5>
+              <InputPosition
+                type="number"
+                name="lat"
+                value={pos.lat}
+                onChange={handleInput}
+              />
+            </div>
+            <div className="col">
+              <h5>Longitude</h5>
+              <InputPosition
+                type="number"
+                name="lng"
+                value={pos.lng}
+                onChange={handleInput}
+              />
+            </div>
           </div>
-          <div className="col">
-            <h5>Longitude</h5>
-            <InputPosition
-              type="number"
-              name="lng"
-              value={pos.lng}
-              onChange={handleInput}
-            />
+
+          <div className="col mt-2">
+            <h5>Feature ID</h5>
+            <input className='form-control' type="text" value={featId} readOnly />
+          </div>
+          <div className="col mt-2">
+            <h5>เนื้อที่</h5>
+            <input className='form-control' type="text" value={roundedArea} readOnly />
           </div>
         </div>
-        <input type="text" value={roundedArea} readOnly />
-        <input type="text" value={featId} readOnly />
       </div>
     </div>
   )

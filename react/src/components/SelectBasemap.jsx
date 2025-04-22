@@ -7,7 +7,11 @@ export const SelectBasemap = ({ value, onChange }) => {
         satellite: 'mapbox://styles/mapbox/satellite-v9',
         light: 'mapbox://styles/mapbox/light-v11',
         dark: 'mapbox://styles/mapbox/dark-v11',
-        outdoors: 'mapbox://styles/mapbox/outdoors-v12'
+        outdoors: 'mapbox://styles/mapbox/outdoors-v12',
+        google_satellite: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+        google_terrain: 'https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',
+        google_street: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+        google_hybrid: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
     };
 
     return (
