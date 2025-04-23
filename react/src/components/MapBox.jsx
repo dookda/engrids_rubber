@@ -159,3 +159,5 @@ export const MapBox = ({ mapStyle, onMapClick, onRoundedArea, onFeatureClick }) 
         </>
     )
 }
+
+
