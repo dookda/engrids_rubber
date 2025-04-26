@@ -1,18 +1,50 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { use, useEffect, useRef, useState } from 'react';
 
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
+import * as turf from "@turf/turf";
 
 const Map = () => {
     const mapContainer = useRef(null)
     const mapRef = useRef(null)
 
     const [features, setFeatures] = useState(null)
+    const [area, setArea] = useState(null)
 
-    const mapCenter = [13.7563, 100.5018] // Bangkok coordinates
+    const mapCenter = [13.7563, 100.5018]
     const mapZoom = 13
+
+    const formatArea = (geojson) => {
+        const area = turf.area(geojson);
+        const diff = Math.abs(area - Number(geojson.properties.xls_sqm));
+
+        if (diff > 100) {
+            return `นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
+                นท.ปัจจุบัน: <br><span style="color:red; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>`;
+
+        } else {
+            return `นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
+                นท.ปัจจุบัน: <br><span style="color:green; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>
+                <p><button class="btn btn-primary" >บันทึก</button></p>`;
+        }
+    }
+
+    const getFeatureStyle = (feature) => {
+        const id = feature.properties.id;
+        const xls = Number(feature.properties.xls_sqm);
+        const shp = Number(feature.properties.shparea_sqm);
+        const isEqual = Math.abs(xls - shp) <= 100;
+
+        return {
+            color: isEqual ? '#00cc00' : '#ca0020',
+            weight: 2,
+            opacity: 0.7,
+            fillColor: isEqual ? '#90ee90' : '#f4a582',
+            fillOpacity: 0.2
+        };
+    };
 
     useEffect(() => {
         mapRef.current = L.map(mapContainer.current, {
@@ -57,22 +89,33 @@ const Map = () => {
         L.control.layers(baseMaps, overlayMaps).addTo(mapRef.current)
 
         const handleFeature = (feature, layer) => {
-            // layer.bindPopup(feature.properties.shp_app_no)
             layer.on('click', (e) => {
+                const geojsonFeature = e.target.toGeoJSON();
+                const area = formatArea(geojsonFeature);
+                info.update(area);
+            });
+
+            layer.on('dblclick', (e) => {
                 const { properties } = e.target.feature;
                 mapRef.current.pm.disableGlobalEditMode();
                 layer.pm.enable();
             });
+
+            layer.on('pm:editstart', (e) => {
+                const geojsonFeature = e.target.toGeoJSON();
+                const area = formatArea(geojsonFeature);
+                info.update(area);
+            });
+
+            layer.on('pm:change pm:editstart', (e) => {
+                const geojsonFeature = e.target.toGeoJSON();
+                const area = formatArea(geojsonFeature);
+                info.update(area);
+            });
         }
 
         L.geoJSON(features, {
-            style: {
-                color: '#ff0000',
-                weight: 2,
-                opacity: 1,
-                fillColor: '#ff0000',
-                fillOpacity: 0.2
-            },
+            style: getFeatureStyle,
             onEachFeature: handleFeature
         }).addTo(parcel)
 
@@ -86,7 +129,7 @@ const Map = () => {
             drawMarker: false,
             drawPolyline: false,
             drawPolygon: false,
-            drawRectangle: true,
+            drawRectangle: false,
             drawText: false,
             rotateMode: false,
             cutPolygon: false,
@@ -95,9 +138,32 @@ const Map = () => {
             removalMode: false,
         });
 
-        mapRef.current.on('click', (e) => {
-            mapRef.current.pm.disableGlobalEditMode();
+        mapRef.current.on('pm:change', (e) => {
+            console.log('pm:change', e);
+            info.update(layer.feature.properties);
         });
+
+        mapRef.current.on('click', (e) => {
+            parcel.eachLayer((layer) => {
+                if (layer.pm?.enabled()) {
+                    layer.pm?.disable()
+                }
+            });
+        });
+
+        var info = L.control();
+
+        info.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+
+        info.update = function (area) {
+            this._div.innerHTML = (area ? area : '<h4>คลิ๊กที่แปลงยาง</h4>');
+        };
+
+        info.addTo(mapRef.current);
 
         return () => {
             if (mapRef.current) {
@@ -110,9 +176,7 @@ const Map = () => {
     useEffect(() => {
         fetch('http://localhost:3300/rub/api/getfeaturescollection')
             .then(response => response.json())
-            .then(apiData => {
-                setFeatures(apiData.data)
-            })
+            .then(apiData => setFeatures(apiData.data))
     }, [])
 
     return (
