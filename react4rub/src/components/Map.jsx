@@ -5,29 +5,41 @@ import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import * as turf from "@turf/turf";
+import { SaveButton } from './SaveButton';
+
+
 
 const Map = () => {
     const mapContainer = useRef(null)
     const mapRef = useRef(null)
+    const infoRef = useRef(null);
 
     const [features, setFeatures] = useState(null)
-    const [area, setArea] = useState(null)
+    const [currentFeature, setCurrentFeature] = useState(null);
 
     const mapCenter = [13.7563, 100.5018]
     const mapZoom = 13
+
+    const saveData = () => {
+        console.log('Save data');
+
+    }
 
     const formatArea = (geojson) => {
         const area = turf.area(geojson);
         const diff = Math.abs(area - Number(geojson.properties.xls_sqm));
 
+        const buttonHTML = `<button class="btn btn-primary save-button" data-id="${geojson.properties.id}">บันทึก</button>`;
+
         if (diff > 100) {
             return `นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
-                นท.ปัจจุบัน: <br><span style="color:red; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>`;
+                นท.ปัจจุบัน: <br><span style="color:red; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>
+                <p>${buttonHTML}`;
 
         } else {
             return `นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
                 นท.ปัจจุบัน: <br><span style="color:green; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>
-                <p><button class="btn btn-primary" >บันทึก</button></p>`;
+                <p>${buttonHTML}`;
         }
     }
 
@@ -45,6 +57,24 @@ const Map = () => {
             fillOpacity: 0.2
         };
     };
+
+    useEffect(() => {
+        const handleSaveClick = (e) => {
+            if (e.target.classList.contains('save-button')) {
+                saveData();
+            }
+        };
+
+        if (infoRef.current) {
+            infoRef.current.addEventListener('click', handleSaveClick);
+        }
+
+        return () => {
+            if (infoRef.current) {
+                infoRef.current.removeEventListener('click', handleSaveClick);
+            }
+        };
+    }, [currentFeature]);
 
     useEffect(() => {
         mapRef.current = L.map(mapContainer.current, {
@@ -180,12 +210,19 @@ const Map = () => {
     }, [])
 
     return (
-        <div ref={mapContainer}
-            style={{
-                height: '70vh',
-                width: '100%',
-                minHeight: '400px'
-            }}></div>
+        <>
+            <div ref={mapContainer}
+                style={{
+                    height: '70vh',
+                    width: '100%',
+                    minHeight: '400px'
+                }}></div>
+
+            <div >
+                <SaveButton onSave={saveData} feature={currentFeature} />
+            </div>
+        </>
+
     )
 }
 
