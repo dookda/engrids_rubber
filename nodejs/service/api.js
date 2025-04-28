@@ -142,6 +142,7 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
 app.post('/api/updatefeatures', async (req, res) => {
     try {
         const { features } = req.body;
+
         const client = await pool.connect();
         if (!features || !Array.isArray(features)) {
             return res.status(400).json({ error: 'Invalid input data' });
@@ -152,7 +153,6 @@ app.post('/api/updatefeatures', async (req, res) => {
 
         try {
             await client.query('BEGIN');
-
             const queries = features.map(feature =>
                 client.query(`
                     UPDATE tb_nan_rub
@@ -170,7 +170,8 @@ app.post('/api/updatefeatures', async (req, res) => {
 
             await Promise.all(queries);
             await client.query('COMMIT');
-            res.json({ success: true, updated: features.length });
+
+            res.json({ success: true, updated: features[0].properties.id });
         } catch (err) {
             await client.query('ROLLBACK');
             throw err;
@@ -261,7 +262,7 @@ app.post('/api/create_reclass_layer', async (req, res) => {
     }
 });
 
-app.post('/api/split', async (req, res) => {
+app.post('/api/split1', async (req, res) => {
     try {
         const { polygon_fc, line_fc, srid } = req.body;
         const polygon = polygon_fc.geometry;
@@ -346,6 +347,76 @@ app.post('/api/split', async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: result.rows });
+
+    } catch (err) {
+        console.error('Split error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            details: 'Ensure valid intersecting geometries'
+        });
+    }
+});
+
+app.post('/api/split', async (req, res) => {
+    try {
+        const { polygon_fc, line_fc, srid } = req.body;
+        const polygon = polygon_fc.geometry;
+        const line = line_fc.geometry;
+        const properties = polygon_fc.properties;
+        const id = polygon_fc.properties.id;
+
+        const result = await pool.query(
+            `WITH inputs AS (
+                SELECT 
+                    ST_Force2D(ST_MakeValid(ST_GeomFromGeoJSON($1))) AS polygon,
+                    ST_Force2D(ST_MakeValid(ST_GeomFromGeoJSON($2))) AS line,
+                    $3::integer AS srid
+            ),
+            split AS (
+                SELECT 
+                    ST_Split(polygon, line) AS split_geom
+                FROM inputs
+                WHERE ST_Intersects(polygon, line)
+            ),
+            parts AS (
+                SELECT 
+                    (ST_Dump(split_geom)).geom AS part_geom
+                FROM split
+            )
+            SELECT 
+                ST_AsGeoJSON(ST_Transform(
+                    ST_MakeValid(part_geom), 
+                    srid
+                ))::json AS geometry
+            FROM parts, inputs
+            WHERE ST_GeometryType(part_geom) = 'ST_Polygon'`,
+            [JSON.stringify(polygon), JSON.stringify(line), srid]
+        );
+
+        if (result.rows.length < 2) {
+            return res.status(400).json({
+                success: false,
+                error: 'Line does not split polygon into multiple parts'
+            });
+        }
+
+        // Create new features with original properties
+        const splitFeatures = result.rows.map((row, index) => ({
+            type: "Feature",
+            properties: {
+                ...properties,
+                split_id: `${id}_${index + 1}`,
+                parent_id: id
+            },
+            geometry: row.geometry
+        }));
+
+        res.json({
+            success: true,
+            split_count: result.rowCount,
+            data: splitFeatures
+        });
 
     } catch (err) {
         console.error('Split error:', err);
