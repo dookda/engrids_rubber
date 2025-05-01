@@ -23,11 +23,13 @@ const pool = new Pool({
 app.get('/api/getfeatures', async (req, res) => {
     try {
         const sql = `SELECT id,
+                        refinal,
                         shp_app_no,
                         xls_app_no,
                         xls_sqm,
                         shp_sqm,
                         shparea_sqm,
+                        classtype,
                         ST_ASGeoJSON(geom) AS geom
                     FROM tb_nan_rub
                     WHERE geom IS NOT NULL`;
@@ -43,11 +45,13 @@ app.get('/api/getfeatures', async (req, res) => {
 app.get('/api/getfeaturescollection', async (req, res) => {
     try {
         const sql = `SELECT id,
+                        sub_id,
                         shp_app_no,
                         xls_app_no,
                         xls_sqm,
                         shp_sqm,
                         shparea_sqm,
+                        classtype,
                         ST_ASGeoJSON(geom) AS geom
                     FROM tb_nan_rub
                     WHERE geom IS NOT NULL`;
@@ -58,10 +62,12 @@ app.get('/api/getfeaturescollection', async (req, res) => {
                 type: 'Feature',
                 properties: {
                     id: row.id,
+                    sub_id: row.sub_id,
                     shp_app_no: row.shp_app_no,
                     xls_app_no: row.xls_app_no,
                     xls_sqm: row.xls_sqm,
                     shp_sqm: row.shp_sqm,
+                    classtype: row.classtype,
                     shparea_sqm: row.shparea_sqm
                 },
                 geometry: JSON.parse(row.geom)
@@ -141,7 +147,8 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
 
 app.post('/api/updatefeatures', async (req, res) => {
     try {
-        const { features } = req.body;
+        const { id, refinal, features } = req.body;
+        // console.log(features);
 
         const client = await pool.connect();
         if (!features || !Array.isArray(features)) {
@@ -160,11 +167,13 @@ app.post('/api/updatefeatures', async (req, res) => {
                         shparea_sqm = ST_Area(ST_Transform(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
                             32647
-                        ))
+                        )),
+                        refinal = $3
                     WHERE id = $2
                 `, [
                     JSON.stringify(feature.geometry),
-                    feature.properties.id
+                    id,
+                    refinal
                 ])
             );
 
@@ -262,7 +271,102 @@ app.post('/api/create_reclass_layer', async (req, res) => {
     }
 });
 
-app.post('/api/split1', async (req, res) => {
+app.post('/api/split_react', async (req, res) => {
+    try {
+        const { polygon_fc, line_fc, srid } = req.body;
+        const polygon = polygon_fc.geometry;
+        const line = line_fc.geometry;
+        const properties = polygon_fc.properties;
+        const id = polygon_fc.properties.id;
+        const sub_id = polygon_fc.properties.sub_id;
+
+        if (!properties?.xls_app_no) {
+            return res.status(400).json({ error: 'xls_app_no is required in properties' });
+        }
+
+        if (!polygon?.type || !['Polygon', 'MultiPolygon'].includes(polygon.type) || !polygon.coordinates) {
+            return res.status(400).json({ error: 'Invalid polygon GeoJSON' });
+        }
+        if (!line?.type || !['LineString', 'MultiLineString'].includes(line.type) || !line.coordinates) {
+            return res.status(400).json({ error: 'Invalid line GeoJSON' });
+        }
+
+        const result = await pool.query(`
+            WITH delete_existing AS (
+                DELETE FROM tb_nan_rub
+                WHERE sub_id LIKE $5 || '%'
+                RETURNING sub_id
+            ),
+            inputs AS (
+                SELECT 
+                    ST_Force2D(ST_GeomFromGeoJSON($1)) AS poly,
+                    ST_Force2D(ST_GeomFromGeoJSON($2)) AS line,
+                    $3::integer AS processing_srid
+            ),
+            transformed AS (
+                SELECT 
+                    ST_Transform(poly, processing_srid) AS poly_projected,
+                    ST_Transform(line, processing_srid) AS line_projected
+                FROM inputs
+            ),
+            split AS (
+                SELECT ST_Split(poly_projected, line_projected) AS split_geom
+                FROM transformed
+            ),
+            parts AS (
+                SELECT (ST_Dump(split_geom)).geom AS geom_projected 
+                FROM split
+            ),
+            inserted AS (
+                INSERT INTO tb_nan_rub (xls_app_no, geom, sub_id, id, classtype, shparea_sqm, xls_sqm)
+                SELECT 
+                    $4, 
+                    ST_Transform(geom_projected, 4326), 
+                    $5 || '-' || row_number() OVER (),
+                    $6,
+                    $7, 
+                    ST_Area(geom_projected),
+                    $8
+                FROM parts, inputs
+                WHERE ST_GeometryType(geom_projected) = 'ST_Polygon'
+                RETURNING *
+            )
+            SELECT 
+                id, 
+                sub_id, 
+                classtype, 
+                xls_app_no, 
+                shparea_sqm, 
+                ST_ASGeoJSON(geom) AS geom,
+                xls_sqm
+            FROM inserted
+        `, [
+            JSON.stringify(polygon),
+            JSON.stringify(line),
+            srid || 32647,
+            properties.xls_app_no,
+            sub_id,
+            id,
+            properties.classtype,
+            properties.xls_sqm,
+        ]);
+
+        if (result.rowCount === 0) {
+            return res.status(400).json({ error: 'No split results - check input geometries' });
+        }
+
+        res.status(200).json({ success: true, data: result.rows });
+
+    } catch (err) {
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            details: 'Ensure valid intersecting geometries'
+        });
+    }
+});
+
+app.post('/api/split', async (req, res) => {
     try {
         const { polygon_fc, line_fc, srid } = req.body;
         const polygon = polygon_fc.geometry;
@@ -347,76 +451,6 @@ app.post('/api/split1', async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: result.rows });
-
-    } catch (err) {
-        console.error('Split error:', err);
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            details: 'Ensure valid intersecting geometries'
-        });
-    }
-});
-
-app.post('/api/split', async (req, res) => {
-    try {
-        const { polygon_fc, line_fc, srid } = req.body;
-        const polygon = polygon_fc.geometry;
-        const line = line_fc.geometry;
-        const properties = polygon_fc.properties;
-        const id = polygon_fc.properties.id;
-
-        const result = await pool.query(
-            `WITH inputs AS (
-                SELECT 
-                    ST_Force2D(ST_MakeValid(ST_GeomFromGeoJSON($1))) AS polygon,
-                    ST_Force2D(ST_MakeValid(ST_GeomFromGeoJSON($2))) AS line,
-                    $3::integer AS srid
-            ),
-            split AS (
-                SELECT 
-                    ST_Split(polygon, line) AS split_geom
-                FROM inputs
-                WHERE ST_Intersects(polygon, line)
-            ),
-            parts AS (
-                SELECT 
-                    (ST_Dump(split_geom)).geom AS part_geom
-                FROM split
-            )
-            SELECT 
-                ST_AsGeoJSON(ST_Transform(
-                    ST_MakeValid(part_geom), 
-                    srid
-                ))::json AS geometry
-            FROM parts, inputs
-            WHERE ST_GeometryType(part_geom) = 'ST_Polygon'`,
-            [JSON.stringify(polygon), JSON.stringify(line), srid]
-        );
-
-        if (result.rows.length < 2) {
-            return res.status(400).json({
-                success: false,
-                error: 'Line does not split polygon into multiple parts'
-            });
-        }
-
-        // Create new features with original properties
-        const splitFeatures = result.rows.map((row, index) => ({
-            type: "Feature",
-            properties: {
-                ...properties,
-                split_id: `${id}_${index + 1}`,
-                parent_id: id
-            },
-            geometry: row.geometry
-        }));
-
-        res.json({
-            success: true,
-            split_count: result.rowCount,
-            data: splitFeatures
-        });
 
     } catch (err) {
         console.error('Split error:', err);

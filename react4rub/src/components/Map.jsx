@@ -5,19 +5,25 @@ import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import * as turf from "@turf/turf";
 
-const Map = () => {
+const Map = ({ onClickFeature }) => {
     const mapContainer = useRef(null)
     const mapRef = useRef(null)
     const parcelRef = useRef(L.featureGroup());
-    const infoRef = useRef(L.control());
+    const infoRef = useRef(L.control({ position: 'bottomright' }));
     const [currentFeature, setCurrentFeature] = useState(null);
     const [updateFeature, setUpdateFeature] = useState(null);
     const [id, setId] = useState(null);
     const [selectedPolygon, setSelectedPolygon] = useState(null);
     const [selectedLine, setSelectedLine] = useState(null);
 
+    // const [className, setClassName] = useState('ruber');
+
     const mapCenter = [13.7563, 100.5018]
     const mapZoom = 13
+
+    // const getClassName = (classname) => {
+    //     setClassName(classname)
+    // }
 
     const formatArea = (geojson) => {
         try {
@@ -27,7 +33,6 @@ const Map = () => {
                 return `id: ${geojson.properties.id}<br>
                 นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
                 นท.ปัจจุบัน: <br><span style="color:red; font-weight:900;">${area.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²</span>`;
-
             } else {
                 return `id: ${geojson.properties.id}<br>
                 นท.เป้าหมาย: <br><span style="color: green;">${geojson.properties.xls_sqm.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²</span><br>
@@ -66,10 +71,11 @@ const Map = () => {
             infoRef.current.update(area);
             setId(geojsonFeature.properties.id);
             setSelectedPolygon(geojsonFeature);
+            onClickFeature(geojsonFeature.properties);
         });
 
         layer.on('dblclick', (e) => {
-            const { properties } = e.target.feature;
+            // const { properties } = e.target.feature.classtype;
             mapRef.current.pm.disableGlobalEditMode();
             layer.pm.enable();
         });
@@ -148,7 +154,6 @@ const Map = () => {
             removalMode: false,
         });
 
-
         mapRef.current.on('pm:drawstart', (e) => {
             parcelRef.current.eachLayer((layer) => {
                 if (layer.pm?.enabled()) {
@@ -158,32 +163,28 @@ const Map = () => {
         });
 
         mapRef.current.on('pm:create', (e) => {
-            console.log('pm:change', e.layer.toGeoJSON());
+            console.log('pm:change', e);
             setSelectedLine(e.layer.toGeoJSON());
 
-            console.log(selectedLine);
-            console.log(selectedPolygon);
-
-
+            if (mapRef.current.pm.getGeomanDrawLayers()) {
+                mapRef.current.pm.getGeomanDrawLayers().forEach(layer => {
+                    console.log('pm:drawstart', layer);
+                    layer.remove();
+                });
+            }
         });
 
-        mapRef.current.on('click', (e) => {
-            parcelRef.current.eachLayer((layer) => {
-                if (layer.pm?.enabled()) {
-                    layer.pm?.disable()
-                }
-            });
-            setId(null);
+        mapRef.current.on('pm:remove', (e) => {
+            console.log(e);
+            // if (e.layer._leaflet_id === id) {
+            //     setId(null);
+            // }
         });
 
-
-
-
-        // clearbutton 
         const saveButton = L.control({ position: 'topright' });
         saveButton.onAdd = function (map) {
-            const button = L.DomUtil.create('button', 'btn-clear');
-            button.innerHTML = 'clear';
+            const button = L.DomUtil.create('div', 'btn-clear');
+            button.innerHTML = 'ok';
 
             button.onclick = () => {
                 parcelRef.current.eachLayer((layer) => {
@@ -191,9 +192,15 @@ const Map = () => {
                         layer.pm?.disable()
                     }
                 });
+
+                if (mapRef.current.pm.getGeomanDrawLayers()) {
+                    mapRef.current.pm.getGeomanDrawLayers().forEach(layer => {
+                        console.log('pm:drawstart', layer);
+                        layer.remove();
+                    });
+                }
                 setId(null);
             };
-
             return button;
         };
         saveButton.addTo(mapRef.current);
@@ -218,9 +225,6 @@ const Map = () => {
     }, [])
 
     useEffect(() => {
-        console.log('selectedLine', selectedLine);
-        console.log('selectedPolygon', selectedPolygon);
-
         if (!selectedPolygon) {
             console.log('เลือก polygon ก่อน');
             return;
@@ -230,7 +234,6 @@ const Map = () => {
             return;
         }
         if (selectedLine && selectedPolygon) {
-
             const srid = 32647;
             const data = {
                 polygon_fc: selectedPolygon,
@@ -246,14 +249,13 @@ const Map = () => {
                 body: JSON.stringify(data)
             }).then(response => response.json())
                 .then(async (data) => {
-                    console.log(data);
-
                     if (data.success) {
-                        parcelRef.current.clearLayers();
-                        L.geoJSON(data.data, {
-                            style: getFeatureStyle,
-                            onEachFeature: handleFeature
-                        }).addTo(parcelRef.current);
+                        alert('Split success');
+                        const newFeature = data.data;
+                        setUpdateFeature(newFeature);
+                        setId(null);
+                        setSelectedLine(null);
+                        setSelectedPolygon(null);
                     } else {
                         alert('Split failed');
                     }
@@ -321,11 +323,10 @@ const Map = () => {
 
     return (
         <>
-            <div ref={mapContainer}
+            <div className="card" ref={mapContainer}
                 style={{
                     height: '70vh',
-                    width: '100%',
-                    minHeight: '400px'
+                    width: '100%'
                 }}></div>
         </>
     )

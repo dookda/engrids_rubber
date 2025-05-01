@@ -46,23 +46,36 @@
                             </div>
                             <div>
                                 <strong>App No:</strong>
-                                <input class="form-control" id="xls_app_no">
+                                <input class="form-control" id="xls_app_no" disabled>
                             </div>
                             <div>
                                 <strong>เนื้อที่เป้าหมาย (m²):</strong>
-                                <input class="form-control" id="xls_sqm">
+                                <input class="form-control" id="xls_sqm" disabled>
                             </div>
                             <div>
                                 <strong>เนื้อที่ขณะนี้ (m²):</strong>
-                                <input class="form-control" id="shparea_sqm">
+                                <input class="form-control" id="shparea_sqm" disabled>
+                            </div>
+                            <p> <span class="mt-2" id="message"></span></p>
+
+                            <div>
+                                <strong>re final:</strong>
+                                <select class="form-select" name="refinal" id="refinal">
+                                    <option></option>
+                                    <option value="1">ใช้ได้</option>
+                                    <option value="2">ไม่สามารถแบ่งขอบเขตได้</option>
+                                    <option value="3">พื้นที่ทับซ้อนกัน</option>
+                                    <option value="4">basemap ไม่ตรงอายุยางที่ลงทะเบียน</option>
+                                    <option value="0">ชื่อไม่ตรงกัน</option>
+                                </select>
                             </div>
                         </div>
-                        <strong> <span class="mt-2" id="message"></span></strong>
+
                         <hr>
                         <div class="mt-3">
                             <!-- <button class="btn btn-info" id="toggleArea">Hide Area</button> -->
                             <button class="btn btn-success" id="save">Save</button>
-                            <button class="btn btn-primary" id="classify">Classify</button>
+                            <button class="btn btn-primary" id="classify">นำแปลงนี้ไป Classify</button>
                         </div>
                     </div>
                 </div>
