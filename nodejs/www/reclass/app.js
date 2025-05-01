@@ -199,7 +199,7 @@ var selectedLine = null;
 const handleLayerCreate = (e) => {
     const layer = e.layer;
     featureGroup.addLayer(layer);
-    layer.pm.enable({ allowSelfIntersection: false });
+    layer.pm.enable({ allowSelfIntersection: true });
     selectedLine = layer;
 
     layer.on('pm:edit pm:dragend pm:update pm:change', () => console.log(layer));

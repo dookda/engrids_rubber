@@ -71,11 +71,9 @@ const updateAreaLabel = async (layer) => {
         const diff = Math.abs(area - xls_sqm);
 
         if (diff >= 100) {
-            document.getElementById('message').style.color = 'red';
-            document.getElementById('message').innerHTML = '<span class="badge bg-danger">เนื้อที่ไม่เท่ากัน</span>';
+            document.getElementById('message').innerHTML = '<h5><span class="badge bg-danger">เนื้อที่ยังไม่เท่ากัน</span></h5>';
         } else {
-            document.getElementById('message').style.color = 'green';
-            document.getElementById('message').innerHTML = '<span class="badge bg-success">เนื้อที่ใกล้เคียงกัน</span>';
+            document.getElementById('message').innerHTML = '<h5><span class="badge bg-success">เนื้อที่ใกล้เคียงกัน</span></h5>';
         }
     } catch (error) {
         console.error('Error updating label:', error);
