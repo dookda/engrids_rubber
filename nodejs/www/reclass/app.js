@@ -158,7 +158,7 @@ function highlightFeature(e) {
         weight: 5,
         color: '#0ccbf0',
         dashArray: '',
-        fillOpacity: 0.7
+        fillOpacity: 0.3
     });
     layer.bringToFront();
 }
