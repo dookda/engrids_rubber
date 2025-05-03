@@ -64,7 +64,19 @@ const formatArea = (area) => {
 const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
-        const area = await turf.area(geojsonFeature);
+
+        const res = await fetch('/rub/api/area', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geometry: geojsonFeature.geometry })
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`API error ${res.status}: ${errText}`);
+        }
+
+        const { area } = await res.json();
         const xls_sqm = document.getElementById('xls_sqm').value;
 
         document.getElementById('shparea_sqm').value = area.toFixed(0);
@@ -93,7 +105,6 @@ function showFeaturePanel(feature, layer) {
     refinal.value = feature.properties.refinal;
 
     // console.log(feature.properties);
-
     updateAreaLabel(layer);
 }
 
@@ -111,13 +122,6 @@ const getFeatureStyle = (feature) => {
         fillOpacity: 0.1
     };
 };
-
-function zoomToFeature(feature) {
-    console.log(feature);
-
-    // const bounds = L.geoJson(feature).getBounds();
-    // map.fitBounds(bounds);
-}
 
 var selectedLayer = null;
 const loadGeoData = async () => {
@@ -141,10 +145,7 @@ const loadGeoData = async () => {
                     data: null,
                     title: 'Zoom',
                     render: (data, type, row) => {
-                        // console.log(row);
-
                         const _geojson = JSON.stringify(row.geom);
-
                         return `<button class="btn btn-success map-btn" data-refid="${row.id}" data-geojson='${_geojson}'>
                                     <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
                                 </button>`
@@ -186,9 +187,6 @@ const loadGeoData = async () => {
             destroy: true,
             scrollX: true,
         });
-
-        // Map features to layers for easy lookup
-        const layerMap = new Map();
 
         const updateMap = () => {
             featureGroup.clearLayers(); // Clear existing layers

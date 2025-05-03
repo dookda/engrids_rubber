@@ -60,60 +60,24 @@ const formatArea = (area) => {
         : `${area.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²`;
 };
 
-const calculateArea = (layer) => {
-    const feature = layer instanceof L.Polygon
-        ? turf.polygon([layer.getLatLngs()[0].map(latlng => [latlng.lng, latlng.lat])])
-        : turf.bboxPolygon(layer.getBounds().toBBoxString());
-
-    return turf.area(feature);
-};
-
-// Label management
-const updateAreaLabel = (layer) => {
-    if (layer.areaLabel) {
-        layer.areaLabel.remove();
-    }
-
-    if (showAreas) {
-        const area = calculateArea(layer);
-        const centroid = turf.centroid(layer instanceof L.Polygon
-            ? turf.polygon([layer.getLatLngs()[0].map(latlng => [latlng.lng, latlng.lat])])
-            : turf.bboxPolygon(layer.getBounds().toBBoxString())
-        ).geometry.coordinates;
-
-        layer.areaLabel = L.marker(L.latLng(centroid[1], centroid[0]), {
-            icon: L.divIcon({
-                className: 'area-label',
-                html: formatArea(area),
-                iconSize: null
-            }),
-            interactive: false
-        }).addTo(map);
-    }
-};
-
 const sub_id = document.getElementById('sub_id');
 const xls_app_no = document.getElementById('xls_app_no');
-const shparea_sqm = document.getElementById('shparea_sqm');
+const shpsplit_sqm = document.getElementById('shpsplit_sqm');
 const classtype = document.getElementById('classtype');
 
 function showFeaturePanel(feature, layer) {
     sub_id.value = feature.properties.sub_id;
     xls_app_no.value = feature.properties.xls_app_no;
-    shparea_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
+    shpsplit_sqm.value = Number(feature.properties.shpsplit_sqm).toFixed(0);
     classtype.value = feature.properties.classtype;
 }
 
 const style = (feature) => {
     const color = feature.properties.classtype === 'rubber'
         ? '#006d2c'
-        : feature.properties.classtype === 'building'
+        : feature.properties.classtype === 'non-rubber'
             ? '#d7191c'
-            : feature.properties.classtype === 'agriculture'
-                ? '#a6d96a'
-                : feature.properties.classtype === 'water'
-                    ? '#2b83ba'
-                    : '#ff00ff';
+            : '#ff00ff';
     return {
         fillColor: color,
         weight: 2,
@@ -177,7 +141,7 @@ const loadGeoData = async (id) => {
                     id: item.id,
                     sub_id: item.sub_id,
                     xls_app_no: item.xls_app_no,
-                    shparea_sqm: item.shparea_sqm,
+                    shpsplit_sqm: item.shpsplit_sqm,
                     classtype: item.classtype
                 }
             }))
@@ -250,7 +214,7 @@ document.getElementById('clear').addEventListener('click', () => {
     selectedLine = null;
     sub_id.value = '';
     xls_app_no.value = '';
-    shparea_sqm.value = '';
+    shpsplit_sqm.value = '';
     classtype.value = '';
 })
 
@@ -268,6 +232,9 @@ document.getElementById('split').addEventListener('click', () => {
     const polygon = selectedPolygon.toGeoJSON();
     const line = selectedLine.toGeoJSON();
 
+    console.log(polygon);
+    console.log(line);
+
     const srid = 32647;
     const data = {
         polygon_fc: polygon,
@@ -275,7 +242,7 @@ document.getElementById('split').addEventListener('click', () => {
         srid: srid,
     }
 
-    fetch('/rub/api/split', {
+    fetch('/rub/api/splitfeature', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -284,6 +251,7 @@ document.getElementById('split').addEventListener('click', () => {
     }).then(response => response.json())
         .then(async (data) => {
             if (data.success) {
+                console.log(data);
                 featureGroup.clearLayers();
                 await loadGeoData(id);
             } else {

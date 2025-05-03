@@ -130,3 +130,15 @@ CREATE TABLE IF NOT EXISTS public.tb_nan_rub_reclass
     shparea_sqm numeric,
     geom geometry
 )
+
+-- reclass table
+CREATE TABLE IF NOT EXISTS public.tb_nan_rub_reclass
+(
+    fid serial not null,
+	id integer,
+	sub_id text,
+    xls_app_no text,
+    shparea_sqm numeric,
+    geom geometry(MultiPolygon,4326),
+	classtype text
+);

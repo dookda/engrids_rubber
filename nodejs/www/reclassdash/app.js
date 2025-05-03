@@ -37,38 +37,19 @@ const overlayMaps = {
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
 
-// Area calculation utilities
-const formatArea = (area) => {
-    return area >= 1e6
-        ? `${(area / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })} km²`
-        : `${area.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²`;
-};
-
-// Label management
-const updateAreaLabel = async (layer) => {
-    try {
-        const geojsonFeature = layer.toGeoJSON();
-        const area = await turf.area(geojsonFeature);
-    } catch (error) {
-        console.error('Error updating label:', error);
-    }
-};
-
 function showFeaturePanel(feature, layer) {
-    const xls = Number(feature.properties.xls_sqm);
     const id = document.getElementById('id');
     const xls_app_no = document.getElementById('xls_app_no');
     const classtype = document.getElementById('classtype');
-    const shparea_sqm = document.getElementById('shparea_sqm');
+    const shpsplit_sqm = document.getElementById('shpsplit_sqm');
 
     id.value = feature.properties.id;
     xls_app_no.value = feature.properties.xls_app_no;
     classtype.value = feature.properties.classtype === 'rubber' ? 'ยางพารา' : feature.properties.classtype === 'building' ? 'สิ่งปลูกสร้าง' : feature.properties.classtype === 'agriculture' ? 'พท.เกษตร (ไม่ใช่ยางพารา)' : feature.properties.classtype === 'water' ? 'แหล่งน้ำ' : 'อื่นๆ';
-    shparea_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
-    // updateAreaLabel(layer);
+    shpsplit_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
 }
 
-const style = (feature) => {
+const getFeatureStyle = (feature) => {
     const color = feature.properties.classtype === 'rubber'
         ? '#006d2c'
         : feature.properties.classtype === 'building'
@@ -93,36 +74,33 @@ const loadGeoData = async () => {
         const response = await fetch('/rub/api/getreclassfeatures');
         const { data } = await response.json();
 
-        const geoJsonData = {
-            type: 'FeatureCollection',
-            features: data.map(item => ({
-                type: 'Feature',
-                geometry: JSON.parse(item.geom),
-                properties: {
-                    id: item.id,
-                    xls_app_no: item.xls_app_no,
-                    xls_sqm: item.xls_sqm,
-                    classtype: item.classtype,
-                    shparea_sqm: Number(item.shparea_sqm || 0).toFixed(0)
-                }
-            }))
-        };
-
-        const tableData = geoJsonData.features.map(feature => ({
-            id: feature.properties.id,
-            xls_app_no: feature.properties.xls_app_no,
-            xls_sqm: feature.properties.xls_sqm,
-            classtype: feature.properties.classtype,
-            shparea_sqm: feature.properties.shparea_sqm
+        const tableData = data.map(item => ({
+            id: item.id,
+            refinal: item.refinal,
+            geom: JSON.parse(item.geom),
+            xls_app_no: item.xls_app_no,
+            shparea_sqm: item.shparea_sqm,
+            shpsplit_sqm: item.shpsplit_sqm,
+            classtype: item.classtype
         }));
 
         const dataTable = $('#featureTable').DataTable({
             data: tableData,
             columns: [
+                {
+                    data: null,
+                    title: 'Zoom',
+                    render: (data, type, row) => {
+                        const _geojson = JSON.stringify(row.geom);
+                        return `<button class="btn btn-success map-btn" data-refid="${row.id}" data-geojson='${_geojson}'>
+                                <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
+                            </button>`
+                    }
+                },
                 { data: 'xls_app_no', title: 'Application No' },
-                { data: 'id', title: 'sub_id' },
-                { data: 'xls_sqm', title: 'เนื้อที่รวมของแปลงนี้ (m²)' },
-                { data: 'shparea_sqm', title: 'เนื้อที่ส่วนนี้ (m²)' },
+                { data: 'id', title: 'id' },
+                { data: 'shparea_sqm', title: 'เนื้อที่รวมของแปลงนี้ (m²)' },
+                { data: 'shpsplit_sqm', title: 'เนื้อที่ส่วนนี้ (m²)' },
                 {
                     data: 'classtype',
                     title: 'ประเภท',
@@ -138,63 +116,61 @@ const loadGeoData = async () => {
             scrollX: true,
         });
 
-        const layerMap = new Map();
-
-        L.geoJSON(geoJsonData, {
-            style: style,
-            onEachFeature: (feature, layer) => {
-                layer.bindPopup(`${feature.properties.id}`);
-                layerMap.set(feature.properties.id, layer);
-                layer.on('click', () => {
-                    map.fitBounds(layer.getBounds());
-                    showFeaturePanel(feature, layer);
-                    dataTable.rows().deselect();
-                    dataTable.row(`#row_${feature.properties.id}`).select();
-                });
-            }
-        });
-
-        // Function to update map based on filtered DataTable rows
         const updateMap = () => {
             featureGroup.clearLayers(); // Clear existing layers
             const visibleRows = dataTable.rows({ search: 'applied' }).data().toArray();
+
             visibleRows.forEach(row => {
-                const layer = layerMap.get(row.id);
-                if (layer) {
-                    featureGroup.addLayer(layer);
+                const geojson = {
+                    type: 'Feature',
+                    geometry: row.geom,
+                    properties: {
+                        id: row.id,
+                        refinal: row.refinal,
+                        xls_app_no: row.xls_app_no,
+                        xls_sqm: row.xls_sqm,
+                        shparea_sqm: row.shparea_sqm,
+                        classtype: row.classtype
+                    }
                 }
+
+                L.geoJson(geojson, {
+                    style: getFeatureStyle,
+                    onEachFeature: (feature, layer) => {
+                        layer.bindPopup(`${feature.properties.id}`);
+
+                        layer.on('click', () => {
+                            map.fitBounds(layer.getBounds());
+                            showFeaturePanel(feature, layer);
+                            selectedLayer = layer;
+                        });
+
+                        layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
+                    }
+                }).addTo(featureGroup);
             });
         };
 
         updateMap();
-        dataTable.on('draw', () => {
-            updateMap();
-        });
 
-        $('#featureTable tbody').on('click', 'tr', function (e) {
-            if (!$(e.target).hasClass('zoom-btn')) {
-                const rowData = dataTable.row(this).data();
-                const layer = layerMap.get(rowData.id);
-                if (layer) {
-                    map.fitBounds(layer.getBounds());
-                    showFeaturePanel(layer.feature, layer);
-                }
+        $('#featureTable tbody').on('click', '.map-btn', function (e) {
+            try {
+                e.stopPropagation();
+                const geojson = $(this).data('geojson');
+                const layer = L.geoJSON(geojson)
+                // console.log(layer);
+
+                const bounds = layer.getBounds();
+                map.fitBounds(bounds, {
+                    padding: [20, 20],
+                    // maxZoom: 16         
+                });
+                selectedLayer = layer;
+            } catch (error) {
+                console.error('Failed to parse GeoJSON:', error);
             }
         });
 
-        // Add click event for zoom buttons
-        $('#featureTable tbody').on('click', '.zoom-btn', function () {
-            const id = $(this).data('id');
-            const layer = layerMap.get(id);
-            if (layer) {
-                map.fitBounds(layer.getBounds());
-                showFeaturePanel(layer.feature, layer);
-                dataTable.rows().deselect();
-                dataTable.row(`#row_${id}`).select();
-            }
-        });
-
-        // Add row IDs for selection
         dataTable.rows().every(function () {
             const rowData = this.data();
             $(this.node()).attr('id', `row_${rowData.id}`);
@@ -205,8 +181,6 @@ const loadGeoData = async () => {
         alert('Failed to load spatial data');
     }
 };
-
-map.on('click', (e) => featureGroup.eachLayer(l => l.pm.disable()));
 
 document.addEventListener('DOMContentLoaded', () => {
     loadGeoData();
@@ -224,7 +198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ];
 
         Highcharts.chart('container', {
-            chart: { type: 'bar', style: { fontFamily: 'Noto Sans Thai' } },
+            chart: { type: 'bar', height: 240, style: { fontFamily: 'Noto Sans Thai' } },
             title: { text: null },
             xAxis: { type: 'category', title: { text: 'แปลงยางพารา', style: { fontFamily: 'Noto Sans Thai' } } },
             yAxis: { min: 0, title: { text: 'จำนวนแปลง', style: { fontFamily: 'Noto Sans Thai' } } },

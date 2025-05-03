@@ -17,8 +17,6 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
-// cal area wt
-
 // get all users
 app.get('/api/getfeatures', async (req, res) => {
     try {
@@ -29,51 +27,11 @@ app.get('/api/getfeatures', async (req, res) => {
                         xls_sqm,
                         shp_sqm,
                         shparea_sqm,
-                        classtype,
                         ST_ASGeoJSON(geom) AS geom
                     FROM tb_nan_rub
                     WHERE geom IS NOT NULL`;
         const result = await pool.query(sql);
         res.status(200).json({ success: true, data: result.rows });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// get all feature as feature collection
-app.get('/api/getfeaturescollection', async (req, res) => {
-    try {
-        const sql = `SELECT id,
-                        sub_id,
-                        shp_app_no,
-                        xls_app_no,
-                        xls_sqm,
-                        shp_sqm,
-                        shparea_sqm,
-                        classtype,
-                        ST_ASGeoJSON(geom) AS geom
-                    FROM tb_nan_rub
-                    WHERE geom IS NOT NULL`;
-        const result = await pool.query(sql);
-        const featureCollection = {
-            type: 'FeatureCollection',
-            features: result.rows.map(row => ({
-                type: 'Feature',
-                properties: {
-                    id: row.id,
-                    sub_id: row.sub_id,
-                    shp_app_no: row.shp_app_no,
-                    xls_app_no: row.xls_app_no,
-                    xls_sqm: row.xls_sqm,
-                    shp_sqm: row.shp_sqm,
-                    classtype: row.classtype,
-                    shparea_sqm: row.shparea_sqm
-                },
-                geometry: JSON.parse(row.geom)
-            }))
-        };
-        res.status(200).json({ success: true, data: featureCollection });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, error: err.message });
@@ -87,7 +45,12 @@ app.get('/api/getfeatures/:fid', async (req, res) => {
             return res.status(400).json({ error: 'Feature ID is required' });
         }
 
-        const sql = `SELECT id, sub_id, classtype, xls_app_no, shparea_sqm, ST_ASGeoJSON(geom) AS geom
+        const sql = `SELECT id, 
+                        sub_id, 
+                        classtype, 
+                        xls_app_no, 
+                        shpsplit_sqm, 
+                        ST_ASGeoJSON(geom) AS geom
                     FROM tb_nan_rub_reclass
                     WHERE geom IS NOT NULL AND id = $1`;
         const values = [fid];
@@ -120,10 +83,9 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
                 client.query(`
                     UPDATE tb_nan_rub_reclass
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
-                        shparea_sqm = ST_Area(ST_Transform(
-                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
-                            32647
-                        ))
+                        shparea_sqm = ST_Area(
+                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
+                        )
                     WHERE sub_id = $2
                 `, [
                     JSON.stringify(feature.geometry),
@@ -148,7 +110,6 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
 app.post('/api/updatefeatures', async (req, res) => {
     try {
         const { id, refinal, features } = req.body;
-        // console.log(features);
 
         const client = await pool.connect();
         if (!features || !Array.isArray(features)) {
@@ -164,10 +125,9 @@ app.post('/api/updatefeatures', async (req, res) => {
                 client.query(`
                     UPDATE tb_nan_rub
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
-                        shparea_sqm = ST_Area(ST_Transform(
-                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
-                            32647
-                        )),
+                        shparea_sqm = ST_Area(
+                            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
+                        ),
                         refinal = $3
                     WHERE id = $2
                 `, [
@@ -194,15 +154,17 @@ app.post('/api/updatefeatures', async (req, res) => {
 
 app.get('/api/getreclassfeatures', async (req, res) => {
     try {
-        const sql = `SELECT sub_id as id,
-                        id as parent_id,
-                        classtype, 
-                        xls_app_no,
-                        xls_sqm,
-                        shparea_sqm,
-                        ST_ASGeoJSON(geom) AS geom
-                    FROM tb_nan_rub_reclass
-                    WHERE geom IS NOT NULL`;
+        const sql = `SELECT a.id,
+                    a.sub_id,
+                    b.refinal,
+                    a.classtype, 
+                    a.xls_app_no,
+                    b.shparea_sqm,
+                    a.shpsplit_sqm,
+                    ST_ASGeoJSON(a.geom) AS geom from tb_nan_rub_reclass a
+                LEFT JOIN tb_nan_rub b
+                ON a.id = b.id
+                WHERE a.geom IS NOT NULL`;
         const result = await pool.query(sql);
         res.status(200).json({ success: true, data: result.rows });
     } catch (err) {
@@ -251,11 +213,11 @@ app.post('/api/create_reclass_layer', async (req, res) => {
                 WHERE id = $1
                 RETURNING id  
             )
-            INSERT INTO tb_nan_rub_reclass (id, sub_id, xls_app_no, xls_sqm, shparea_sqm, geom)
-            SELECT id, $2, xls_app_no, xls_sqm, shparea_sqm, geom
+            INSERT INTO tb_nan_rub_reclass (id, sub_id, xls_app_no, shpsplit_sqm, geom)
+            SELECT id, $2, xls_app_no, shparea_sqm, geom
             FROM tb_nan_rub
             WHERE id = $1
-            RETURNING id, xls_app_no, xls_sqm, ST_AsGeoJSON(geom) AS geom;
+            RETURNING id, xls_app_no, ST_AsGeoJSON(geom) AS geom;
         `;
         const values = [id, sub_id];
         const result = await pool.query(sql, values);
@@ -271,102 +233,7 @@ app.post('/api/create_reclass_layer', async (req, res) => {
     }
 });
 
-app.post('/api/split_react', async (req, res) => {
-    try {
-        const { polygon_fc, line_fc, srid } = req.body;
-        const polygon = polygon_fc.geometry;
-        const line = line_fc.geometry;
-        const properties = polygon_fc.properties;
-        const id = polygon_fc.properties.id;
-        const sub_id = polygon_fc.properties.sub_id;
-
-        if (!properties?.xls_app_no) {
-            return res.status(400).json({ error: 'xls_app_no is required in properties' });
-        }
-
-        if (!polygon?.type || !['Polygon', 'MultiPolygon'].includes(polygon.type) || !polygon.coordinates) {
-            return res.status(400).json({ error: 'Invalid polygon GeoJSON' });
-        }
-        if (!line?.type || !['LineString', 'MultiLineString'].includes(line.type) || !line.coordinates) {
-            return res.status(400).json({ error: 'Invalid line GeoJSON' });
-        }
-
-        const result = await pool.query(`
-            WITH delete_existing AS (
-                DELETE FROM tb_nan_rub
-                WHERE sub_id LIKE $5 || '%'
-                RETURNING sub_id
-            ),
-            inputs AS (
-                SELECT 
-                    ST_Force2D(ST_GeomFromGeoJSON($1)) AS poly,
-                    ST_Force2D(ST_GeomFromGeoJSON($2)) AS line,
-                    $3::integer AS processing_srid
-            ),
-            transformed AS (
-                SELECT 
-                    ST_Transform(poly, processing_srid) AS poly_projected,
-                    ST_Transform(line, processing_srid) AS line_projected
-                FROM inputs
-            ),
-            split AS (
-                SELECT ST_Split(poly_projected, line_projected) AS split_geom
-                FROM transformed
-            ),
-            parts AS (
-                SELECT (ST_Dump(split_geom)).geom AS geom_projected 
-                FROM split
-            ),
-            inserted AS (
-                INSERT INTO tb_nan_rub (xls_app_no, geom, sub_id, id, classtype, shparea_sqm, xls_sqm)
-                SELECT 
-                    $4, 
-                    ST_Transform(geom_projected, 4326), 
-                    $5 || '-' || row_number() OVER (),
-                    $6,
-                    $7, 
-                    ST_Area(geom_projected),
-                    $8
-                FROM parts, inputs
-                WHERE ST_GeometryType(geom_projected) = 'ST_Polygon'
-                RETURNING *
-            )
-            SELECT 
-                id, 
-                sub_id, 
-                classtype, 
-                xls_app_no, 
-                shparea_sqm, 
-                ST_ASGeoJSON(geom) AS geom,
-                xls_sqm
-            FROM inserted
-        `, [
-            JSON.stringify(polygon),
-            JSON.stringify(line),
-            srid || 32647,
-            properties.xls_app_no,
-            sub_id,
-            id,
-            properties.classtype,
-            properties.xls_sqm,
-        ]);
-
-        if (result.rowCount === 0) {
-            return res.status(400).json({ error: 'No split results - check input geometries' });
-        }
-
-        res.status(200).json({ success: true, data: result.rows });
-
-    } catch (err) {
-        res.status(500).json({
-            success: false,
-            error: err.message,
-            details: 'Ensure valid intersecting geometries'
-        });
-    }
-});
-
-app.post('/api/split', async (req, res) => {
+app.post('/api/splitfeature', async (req, res) => {
     try {
         const { polygon_fc, line_fc, srid } = req.body;
         const polygon = polygon_fc.geometry;
@@ -413,15 +280,14 @@ app.post('/api/split', async (req, res) => {
                 FROM split
             ),
             inserted AS (
-                INSERT INTO tb_nan_rub_reclass (xls_app_no, geom, sub_id, id, classtype, shparea_sqm, xls_sqm)
+                INSERT INTO tb_nan_rub_reclass (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm)
                 SELECT 
                     $4, 
                     ST_Transform(geom_projected, 4326), 
                     $5 || '-' || row_number() OVER (),
                     $6,
                     $7, 
-                    ST_Area(geom_projected),
-                    $8
+                    ST_Area(geom_projected)
                 FROM parts, inputs
                 WHERE ST_GeometryType(geom_projected) = 'ST_Polygon'
                 RETURNING *
@@ -431,9 +297,8 @@ app.post('/api/split', async (req, res) => {
                 sub_id, 
                 classtype, 
                 xls_app_no, 
-                shparea_sqm, 
-                ST_ASGeoJSON(geom) AS geom,
-                xls_sqm
+                shpsplit_sqm, 
+                ST_ASGeoJSON(geom) AS geom
             FROM inserted
         `, [
             JSON.stringify(polygon),
@@ -442,8 +307,7 @@ app.post('/api/split', async (req, res) => {
             properties.xls_app_no,
             sub_id,
             id,
-            properties.classtype,
-            properties.xls_sqm,
+            properties.classtype
         ]);
 
         if (result.rowCount === 0) {
@@ -489,6 +353,90 @@ app.put('/api/update_landuse', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.post('/api/area', async (req, res) => {
+    const geojson = req.body;
+    const geometry = geojson.geometry || geojson;
+    if (!geometry || !geometry.type) {
+        return res.status(400).json({ error: 'Missing GeoJSON geometry' });
+    }
+
+    try {
+        const sql = `
+        SELECT ST_Area(
+          ST_SetSRID(
+            ST_GeomFromGeoJSON($1),
+            4326
+          )::geography
+        ) AS area;
+      `;
+        const { rows } = await pool.query(sql, [JSON.stringify(geometry)]);
+        return res.json({ area: rows[0].area });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/split', async (req, res) => {
+    // const { polygon, line } = req.body;
+    const { polygon_fc, line_fc, srid } = req.body;
+    // if (!polygon || !line) {
+    //     return res.status(400).json({ error: 'Require both polygon and line geometries' });
+    // }
+
+    try {
+        // Build and execute SQL to split and return each part as GeoJSON
+        const sql = `
+        WITH inputs AS (
+          SELECT
+            ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS poly_geom,
+            ST_SetSRID(ST_GeomFromGeoJSON($2), 4326) AS line_geom
+        ),
+        split AS (
+          SELECT ST_Split(poly_geom, line_geom) AS geom_collection
+          FROM inputs
+        ),
+        dumped AS (
+          -- Dump each piece out of the GeometryCollection
+          SELECT (ST_Dump(geom_collection)).geom AS part_geom
+          FROM split
+        )
+        SELECT ST_AsGeoJSON(part_geom) AS geojson
+        FROM dumped;
+      `;
+        const params = [
+            JSON.stringify(polygon_fc.geometry),
+            JSON.stringify(line_fc.geometry)
+        ];
+        const { rows } = await pool.query(sql, params);
+
+        // Parse each GeoJSON string back to an object
+        const features = rows.map(r => ({
+            type: 'Feature',
+            geometry: JSON.parse(r.geojson),
+            properties: {}
+        }));
+
+        // Wrap as FeatureCollection
+        // res.json({
+        //     type: 'FeatureCollection',
+        //     features
+        // });
+
+        res.status(200).json({
+            success: true, data: {
+                type: 'FeatureCollection',
+                features
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // export module
 module.exports = app;

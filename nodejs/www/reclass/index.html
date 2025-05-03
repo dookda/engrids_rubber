@@ -17,7 +17,7 @@
 </head>
 
 <body>
-    <nav class="navbar navbar-expand-lg bg-light" data-bs-theme="light">
+    <!-- <nav class="navbar navbar-expand-lg bg-light" data-bs-theme="light">
         <div class="container-fluid d-flex">
             <div>
             </div>
@@ -27,7 +27,7 @@
             </div>
             <div style="width: 100px;"></div>
         </div>
-    </nav>
+    </nav> -->
     <div class="container-fluid">
         <div class="row">
             <div class="col-sm-8 mt-3">
@@ -53,23 +53,24 @@
                             </div>
                             <div>
                                 <strong>เนื้อที่ (m²):</strong>
-                                <input class="form-control" id="shparea_sqm" disabled>
+                                <input class="form-control" id="shpsplit_sqm" disabled>
                             </div>
                             <div><strong>ประเภท:</strong>
                                 <select class="form-select" id="classtype">
                                     <option></option>
-                                    <option value="rubber">ยาง</option>
-                                    <option value="building">สิ่งปลูกสร้าง</option>
-                                    <option value="agriculture">พท.เกษตร (ไม่ใช่ยางพารา)</option>
-                                    <option value="water">แหล่งน้ำ</option>
-                                    <option value="other">อื่นๆ</option>
+                                    <option value="rubber">ยางพารา</option>
+                                    <option value="non-rubber">ไม่ใช่ยางพารา</option>
+                                    <option value="other">ไม่มั่นใจ</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="mt-3">
                             <button class="btn btn-info" id="clear">Clear selection</button>
-                            <button class="btn btn-success" id="split">Split</button>
+                            <button class="btn btn-success" id="split">Split แปลงยาง</button>
+                            <hr>
+                            <a class="btn btn-light" href="./../reshape/index.html">Reshape</a>
+                            <a class="btn btn-light" href="./../reclassdash/index.html">Dashboard</a>
                         </div>
                     </div>
                 </div>
@@ -82,20 +83,12 @@
                                 <div class="legend-label">ยางพารา</div>
                             </div>
                             <div class="legend-item">
-                                <div class="legend-color" style="background-color: #a6d96a"></div>
-                                <div class="legend-label">พท.เกษตร (ไม่ใช่ยางพารา)</div>
-                            </div>
-                            <div class="legend-item">
-                                <div class="legend-color" style="background-color: #2b83ba"></div>
-                                <div class="legend-label">แหล่งน้ำ</div>
-                            </div>
-                            <div class="legend-item">
                                 <div class="legend-color" style="background-color: #d7191c"></div>
-                                <div class="legend-label">สิ่งปลูกสร้าง</div>
+                                <div class="legend-label">ไม่ใช่ยางพารา</div>
                             </div>
                             <div class="legend-item">
                                 <div class="legend-color" style="background-color: #ff00ff"></div>
-                                <div class="legend-label">อื่นๆ</div>
+                                <div class="legend-label">ไม่มั่นใจ</div>
                             </div>
                         </div>
                     </div>
