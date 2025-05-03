@@ -206,7 +206,7 @@ app.post('/api/create_reclass_layer', async (req, res) => {
             return res.status(400).json({ error: 'Feature ID is required' });
         }
 
-        const sub_id = new Date().getTime();
+        const sub_id = id.toString();
         const sql = `
             WITH delete_existing AS (
                 DELETE FROM tb_nan_rub_reclass 

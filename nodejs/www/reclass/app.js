@@ -232,9 +232,6 @@ document.getElementById('split').addEventListener('click', () => {
     const polygon = selectedPolygon.toGeoJSON();
     const line = selectedLine.toGeoJSON();
 
-    console.log(polygon);
-    console.log(line);
-
     const srid = 32647;
     const data = {
         polygon_fc: polygon,
@@ -251,7 +248,6 @@ document.getElementById('split').addEventListener('click', () => {
     }).then(response => response.json())
         .then(async (data) => {
             if (data.success) {
-                console.log(data);
                 featureGroup.clearLayers();
                 await loadGeoData(id);
             } else {
