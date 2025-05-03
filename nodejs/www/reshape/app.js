@@ -72,7 +72,7 @@ const updateAreaLabel = async (layer) => {
     try {
         const geojsonFeature = layer.toGeoJSON();
 
-        const res = await fetch('/rub/api/area', {
+        const res = await fetch(`/rub/api/area`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ geometry: geojsonFeature.geometry })
@@ -148,7 +148,8 @@ const onEachFeature = (feature, layer) => {
 var selectedLayer = null;
 const loadGeoData = async () => {
     try {
-        const response = await fetch('/rub/api/getfeatures');
+        const tb = document.getElementById('tb').value;
+        const response = await fetch(`/rub/api/getfeatures/${tb}`);
         const { data } = await response.json();
 
         const tableData = data.map(item => ({
@@ -291,7 +292,8 @@ document.getElementById('save').addEventListener('click', async () => {
     features.push(selectedLayer.toGeoJSON());
 
     try {
-        const response = await fetch('/rub/api/updatefeatures', {
+        const tb = document.getElementById('tb').value;
+        const response = await fetch('/rub/api/updatefeatures/' + tb, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, refinal, features })
@@ -322,14 +324,15 @@ document.getElementById('classify').addEventListener('click', () => {
         alert('เลือกแปลงที่ต้องการ classify ก่อน');
         return;
     }
-    fetch(`/rub/api/create_reclass_layer`, {
+    const tb = document.getElementById('tb').value;
+    fetch(`/rub/api/create_reclass_layer/${tb}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
     }).then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.open(`/rub/reclass/index.html?id=${id}`, '_self');
+                window.open(`/rub/reclass/index.html?tb=${tb}&id=${id}`, '_self');
             } else {
                 alert('Failed to create reclassification layer');
             }
@@ -339,10 +342,24 @@ document.getElementById('classify').addEventListener('click', () => {
         });
 });
 
+document.getElementById('dashboard').addEventListener('click', (e) => {
+    e.preventDefault();
+    const tb = document.getElementById('tb').value;
+    window.location.href = './../reclassdash/index.html?tb=' + tb;
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        await loadGeoData();
-        map.fitBounds(featureGroup.getBounds());
+        const urlParams = new URLSearchParams(window.location.search);
+        const tb = urlParams.get('tb');
+        if (!tb || tb === 'undefined') {
+            alert('พื้นที่ไม่ถูกต้อง');
+            window.location.href = './../index.html';
+        } else {
+            document.getElementById('tb').value = tb;
+            await loadGeoData();
+            map.fitBounds(featureGroup.getBounds());
+        }
     } catch (error) {
         console.error('Error loading data:', error);
     }

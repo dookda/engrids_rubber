@@ -18,8 +18,12 @@ const pool = new Pool({
 });
 
 // get all users
-app.get('/api/getfeatures', async (req, res) => {
+app.get('/api/getfeatures/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const sql = `SELECT id,
                         refinal,
                         shp_app_no,
@@ -29,7 +33,7 @@ app.get('/api/getfeatures', async (req, res) => {
                         shparea_sqm,
                         classified,
                         ST_ASGeoJSON(geom) AS geom
-                    FROM tb_nan_rub
+                    FROM tb_rub_${tb}
                     WHERE geom IS NOT NULL`;
         const result = await pool.query(sql);
         res.status(200).json({ success: true, data: result.rows });
@@ -39,8 +43,13 @@ app.get('/api/getfeatures', async (req, res) => {
     }
 });
 
-app.get('/api/getfeatures/:fid', async (req, res) => {
+app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+
         const fid = req.params.fid;
         if (!fid) {
             return res.status(400).json({ error: 'Feature ID is required' });
@@ -52,7 +61,7 @@ app.get('/api/getfeatures/:fid', async (req, res) => {
                         xls_app_no, 
                         shpsplit_sqm, 
                         ST_ASGeoJSON(geom) AS geom
-                    FROM tb_nan_rub_reclass
+                    FROM tb_rub_reclass_${tb}
                     WHERE geom IS NOT NULL AND id = $1`;
         const values = [fid];
         const result = await pool.query(sql, values);
@@ -66,8 +75,13 @@ app.get('/api/getfeatures/:fid', async (req, res) => {
     }
 });
 
-app.put('/api/updateselectedfeatures', async (req, res) => {
+app.put('/api/updateselectedfeatures/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const { features } = req.body;
         const client = await pool.connect();
         if (!features || !Array.isArray(features)) {
@@ -82,7 +96,7 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
 
             const queries = features.map(feature =>
                 client.query(`
-                    UPDATE tb_nan_rub_reclass
+                    UPDATE tb_rub_reclass_${tb}
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
                         shparea_sqm = ST_Area(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
@@ -108,8 +122,12 @@ app.put('/api/updateselectedfeatures', async (req, res) => {
     }
 });
 
-app.post('/api/updatefeatures', async (req, res) => {
+app.post('/api/updatefeatures/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const { id, refinal, features } = req.body;
 
         const client = await pool.connect();
@@ -124,7 +142,7 @@ app.post('/api/updatefeatures', async (req, res) => {
             await client.query('BEGIN');
             const queries = features.map(feature =>
                 client.query(`
-                    UPDATE tb_nan_rub
+                    UPDATE tb_rub_${tb}
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
                         shparea_sqm = ST_Area(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
@@ -153,8 +171,12 @@ app.post('/api/updatefeatures', async (req, res) => {
     }
 });
 
-app.get('/api/getreclassfeatures', async (req, res) => {
+app.get('/api/getreclassfeatures/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const sql = `SELECT a.id,
                     a.sub_id,
                     b.refinal,
@@ -162,8 +184,8 @@ app.get('/api/getreclassfeatures', async (req, res) => {
                     a.xls_app_no,
                     b.shparea_sqm,
                     a.shpsplit_sqm,
-                    ST_ASGeoJSON(a.geom) AS geom from tb_nan_rub_reclass a
-                LEFT JOIN tb_nan_rub b
+                    ST_ASGeoJSON(a.geom) AS geom FROM tb_rub_reclass_${tb} a
+                LEFT JOIN tb_rub_${tb} b
                 ON a.id = b.id
                 WHERE a.geom IS NOT NULL`;
         const result = await pool.query(sql);
@@ -174,19 +196,23 @@ app.get('/api/getreclassfeatures', async (req, res) => {
     }
 });
 
-app.get('/api/countsfeatures', async (req, res) => {
+app.get('/api/countsfeatures/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const query = `
         WITH a AS (
             SELECT COUNT(*) AS reshp
-            FROM public.tb_nan_rub
+            FROM tb_rub_${tb}
             WHERE ABS(xls_sqm - shparea_sqm) <= 100
         ),
         c AS (
             SELECT COUNT(DISTINCT id) AS reclass
-            FROM public.tb_nan_rub_reclass
+            FROM tb_rub_reclass_${tb}
         )
-        SELECT (SELECT COUNT(*) FROM public.tb_nan_rub) AS total,
+        SELECT (SELECT COUNT(*) FROM tb_rub_${tb}) AS total,
                 c.reclass,
                 a.reshp
         FROM a
@@ -200,8 +226,12 @@ app.get('/api/countsfeatures', async (req, res) => {
     }
 });
 
-app.post('/api/create_reclass_layer', async (req, res) => {
+app.post('/api/create_reclass_layer/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const { id } = req.body;
         if (!id) {
             return res.status(400).json({ error: 'Feature ID is required' });
@@ -210,13 +240,13 @@ app.post('/api/create_reclass_layer', async (req, res) => {
         const sub_id = id.toString();
         const sql = `
             WITH delete_existing AS (
-                DELETE FROM tb_nan_rub_reclass 
+                DELETE FROM tb_rub_reclass_${tb}
                 WHERE id = $1
                 RETURNING id  
             )
-            INSERT INTO tb_nan_rub_reclass (id, sub_id, xls_app_no, shpsplit_sqm, geom)
+            INSERT INTO tb_rub_reclass_${tb} (id, sub_id, xls_app_no, shpsplit_sqm, geom)
             SELECT id, $2, xls_app_no, shparea_sqm, geom
-            FROM tb_nan_rub
+            FROM tb_rub_${tb}
             WHERE id = $1
             RETURNING id, xls_app_no, ST_AsGeoJSON(geom) AS geom;
         `;
@@ -229,7 +259,7 @@ app.post('/api/create_reclass_layer', async (req, res) => {
 
         // uudate reclass column
         const updateSql = `
-            UPDATE tb_nan_rub
+            UPDATE tb_rub_${tb}
             SET classified = TRUE
             WHERE id = $1
             RETURNING *;
@@ -248,8 +278,12 @@ app.post('/api/create_reclass_layer', async (req, res) => {
     }
 });
 
-app.post('/api/splitfeature', async (req, res) => {
+app.post('/api/splitfeature/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const { polygon_fc, line_fc, srid } = req.body;
         const polygon = polygon_fc.geometry;
         const line = line_fc.geometry;
@@ -270,7 +304,7 @@ app.post('/api/splitfeature', async (req, res) => {
 
         const result = await pool.query(`
             WITH delete_existing AS (
-                DELETE FROM tb_nan_rub_reclass 
+                DELETE FROM tb_rub_reclass_${tb} 
                 WHERE sub_id LIKE $5 || '%'
                 RETURNING sub_id
             ),
@@ -295,7 +329,7 @@ app.post('/api/splitfeature', async (req, res) => {
                 FROM split
             ),
             inserted AS (
-                INSERT INTO tb_nan_rub_reclass (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm)
+                INSERT INTO tb_rub_reclass_${tb} (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm)
                 SELECT 
                     $4, 
                     ST_Transform(geom_projected, 4326), 
@@ -341,15 +375,19 @@ app.post('/api/splitfeature', async (req, res) => {
     }
 });
 
-app.put('/api/update_landuse', async (req, res) => {
+app.put('/api/update_landuse/:tb', async (req, res) => {
     try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
         const { sub_id, classtype } = req.body;
         if (!sub_id || !classtype) {
             return res.status(400).json({ error: 'ID and classtype are required' });
         }
 
         const sql = `
-            UPDATE tb_nan_rub_reclass
+            UPDATE tb_rub_reclass_${tb}
             SET classtype = $1
             WHERE sub_id = $2
             RETURNING *;
@@ -394,14 +432,9 @@ app.post('/api/area', async (req, res) => {
 });
 
 app.post('/api/split', async (req, res) => {
-    // const { polygon, line } = req.body;
     const { polygon_fc, line_fc, srid } = req.body;
-    // if (!polygon || !line) {
-    //     return res.status(400).json({ error: 'Require both polygon and line geometries' });
-    // }
 
     try {
-        // Build and execute SQL to split and return each part as GeoJSON
         const sql = `
         WITH inputs AS (
           SELECT

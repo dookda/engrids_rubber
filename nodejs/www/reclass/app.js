@@ -138,7 +138,8 @@ function highlightFeature(e) {
 
 const loadGeoData = async (id) => {
     try {
-        const response = await fetch('/rub/api/getfeatures/' + id);
+        const tb = document.getElementById('tb').value;
+        const response = await fetch('/rub/api/getfeatures/' + tb + '/' + id);
         const { data } = await response.json();
 
         const geoJsonData = {
@@ -211,7 +212,8 @@ legend.addTo(map);
 
 document.getElementById('classtype').addEventListener('change', (e) => {
     const selectedValue = e.target.value;
-    fetch('/rub/api/update_landuse', {
+    const tb = document.getElementById('tb').value;
+    fetch('/rub/api/update_landuse/' + tb, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -267,7 +269,8 @@ document.getElementById('split').addEventListener('click', () => {
         srid: srid,
     }
 
-    fetch('/rub/api/splitfeature', {
+    const tb = document.getElementById('tb').value;
+    fetch('/rub/api/splitfeature/' + tb, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -284,16 +287,30 @@ document.getElementById('split').addEventListener('click', () => {
         })
 });
 
+document.getElementById('reshape').addEventListener('click', (e) => {
+    e.preventDefault();
+    const tb = document.getElementById('tb').value;
+    window.location.href = './../reshape/index.html?tb=' + tb;
+})
+
+document.getElementById('dashboard').addEventListener('click', (e) => {
+    e.preventDefault();
+    const tb = document.getElementById('tb').value;
+    window.location.href = './../reclassdash/index.html?tb=' + tb;
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const id = urlParams.get('id');
-        if (!id || id === 'undefined') {
-            alert('เลือกแปลงยางก่อน');
-            window.location.href = './../../reshape/index.html';
-            return;
+        const tb = urlParams.get('tb');
+        if (!tb || tb === 'undefined') {
+            alert('พื้นที่ไม่ถูกต้อง');
+            window.location.href = './../index.html';
         }
+
         document.getElementById('id').value = id;
+        document.getElementById('tb').value = tb;
         await loadGeoData(id);
     } catch (error) {
         console.error('Error loading data:', error);

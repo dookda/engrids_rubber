@@ -48,12 +48,10 @@ L.control.layers(baseLayers, overlayMaps).addTo(map);
 function showFeaturePanel(feature, layer) {
     const id = document.getElementById('id');
     const xls_app_no = document.getElementById('xls_app_no');
-    // const classtype = document.getElementById('classtype');
     const shpsplit_sqm = document.getElementById('shpsplit_sqm');
 
     id.value = feature.properties.id;
     xls_app_no.value = feature.properties.xls_app_no;
-    // classtype.value = feature.properties.classtype === 'rubber' ? 'ยางพารา' : feature.properties.classtype === 'building' ? 'สิ่งปลูกสร้าง' : feature.properties.classtype === 'agriculture' ? 'พท.เกษตร (ไม่ใช่ยางพารา)' : feature.properties.classtype === 'water' ? 'แหล่งน้ำ' : 'อื่นๆ';
     shpsplit_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
 }
 
@@ -85,7 +83,8 @@ const onEachFeature = (feature, layer) => {
 
 const loadGeoData = async () => {
     try {
-        const response = await fetch('/rub/api/getreclassfeatures');
+        const tb = document.getElementById('tb').value;
+        const response = await fetch(`/rub/api/getreclassfeatures/${tb}`);
         const { data } = await response.json();
 
         const tableData = data.map(item => ({
@@ -207,12 +206,26 @@ legend.onAdd = function (map) {
 
 legend.addTo(map);
 
+document.getElementById('reshape').addEventListener('click', (e) => {
+    e.preventDefault();
+    const tb = document.getElementById('tb').value;
+    window.location.href = './../reshape/index.html?tb=' + tb;
+})
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tb = urlParams.get('tb');
+        if (!tb || tb === 'undefined') {
+            alert('พื้นที่ไม่ถูกต้อง');
+            window.location.href = './../index.html';
+        }
+
+        document.getElementById('tb').value = tb;
         await loadGeoData();
         map.fitBounds(featureGroup.getBounds());
 
-        const response = await fetch('/rub/api/countsfeatures');
+        const response = await fetch('/rub/api/countsfeatures/' + tb);
         const data = await response.json();
 
         const chartData = [

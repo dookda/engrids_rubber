@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Leaflet Geoman with Turf Area - Click to Edit</title>
+    <title>Leaflet</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,7 +17,7 @@
 </head>
 
 <body>
-    <div class="container-fluid">
+    <div class="container">
         <div class="row">
             <div class="col-sm-8 mt-3">
                 <div class="card" id="map"></div>
@@ -27,8 +27,8 @@
                     <div class="card-body ">
                         <!-- <a class="btn btn-light" href="./../reshape/index.html">Reshape</a> -->
                         <!-- <a class="btn btn-info" href="./../reshape/index.html">หน้า Reshape</a> -->
-                        <a class="btn btn-secondary" href="./../reshape/index.html">ปรับขนาดแปลง</a>
-                        <a class="btn btn-secondary" href="./../reclassdash/index.html">Dashboard</a>
+                        <button class="btn btn-secondary" id="reshape">ปรับขนาดแปลง</button>
+                        <button class="btn btn-secondary" id="dashboard">Dashboard</button>
                     </div>
                 </div>
                 <div class="card">
@@ -38,6 +38,7 @@
                             <div>
                                 <strong>ID</strong>
                                 <input class="form-control" id="id" disabled>
+                                <input type="hidden" id="tb">
                             </div>
                             <div>
                                 <strong>Subid:</strong>

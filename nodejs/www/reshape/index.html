@@ -18,7 +18,7 @@
 </head>
 
 <body>
-    <div class="container-fluid">
+    <div class="container">
         <div class="row">
             <div class="col-sm-8 mt-3">
                 <div class="card" id="map"></div>
@@ -26,8 +26,7 @@
             <div class="col-sm-4 mt-3 ">
                 <div class="card mb-3">
                     <div class="card-body ">
-                        <!-- <a class="btn btn-light" href="./../reshape/index.html">Reshape</a> -->
-                        <a class="btn btn-secondary" href="./../reclassdash/index.html">Dashboard</a>
+                        <button class="btn btn-secondary" id="dashboard">Dashboard</button>
                     </div>
                 </div>
                 <div class="card">
@@ -36,6 +35,7 @@
                             <div>
                                 <strong>ID:</strong>
                                 <input class="form-control" id="id" disabled>
+                                <input type="hidden" id="tb">
                             </div>
                             <div>
                                 <strong>App No:</strong>
