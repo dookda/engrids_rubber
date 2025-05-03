@@ -23,11 +23,18 @@ const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z=
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
+const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 22
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
     "Google Terrain": gmap_terrain,
-    "Google Hybrid": gmap_hybrid
+    "Google Hybrid": gmap_hybrid,
+    "Stadia Light": light
 };
 
 const overlayMaps = {
@@ -38,7 +45,7 @@ L.control.layers(baseLayers, overlayMaps).addTo(map);
 
 // Configure Geoman controls
 map.pm.addControls({
-    position: 'topleft',
+    position: 'topright',
     drawCircle: false,
     drawMarker: false,
     drawPolyline: true,
@@ -72,7 +79,7 @@ function showFeaturePanel(feature, layer) {
     classtype.value = feature.properties.classtype;
 }
 
-const style = (feature) => {
+const getFeatureStyle = (feature) => {
     const color = feature.properties.classtype === 'rubber'
         ? '#006d2c'
         : feature.properties.classtype === 'non-rubber'
@@ -112,6 +119,8 @@ function onEachFeature(feature, layer) {
     });
 }
 
+var geojson;
+
 function resetHighlight(e) {
     geojson.resetStyle(e.target);
 }
@@ -148,7 +157,7 @@ const loadGeoData = async (id) => {
         };
 
         geojson = L.geoJson(geoJsonData, {
-            style: style,
+            style: getFeatureStyle,
             onEachFeature: onEachFeature
         }).addTo(map);
 
@@ -180,6 +189,25 @@ map.on('pm:edit', (e) => {
     layer.pm.enable();
 });
 map.on('click', () => featureGroup.eachLayer(l => l.pm.disable()));
+
+const legend = L.control({ position: 'bottomright' });
+
+legend.onAdd = function (map) {
+    const div = L.DomUtil.create('div', 'legend'),
+        categories = ['rubber', 'non-rubber', 'other'],
+        labels = ['ยางพารา', 'ไม่ใช่ยางพารา', 'ไม่แน่ใจ'];
+
+    for (let i = 0; i < categories.length; i++) {
+        const dummy = { properties: { classtype: categories[i] } },
+            style = getFeatureStyle(dummy);
+
+        div.innerHTML +=
+            `<i style="background:${style.fillColor};"></i> ${labels[i]}<br>`;
+    }
+    return div;
+};
+
+legend.addTo(map);
 
 document.getElementById('classtype').addEventListener('change', (e) => {
     const selectedValue = e.target.value;
@@ -256,14 +284,19 @@ document.getElementById('split').addEventListener('click', () => {
         })
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get('id');
-    if (!id || id === 'undefined') {
-        alert('เลือกแปลงยางก่อน');
-        window.location.href = './../../reshape/index.html';
-        return;
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = urlParams.get('id');
+        if (!id || id === 'undefined') {
+            alert('เลือกแปลงยางก่อน');
+            window.location.href = './../../reshape/index.html';
+            return;
+        }
+        document.getElementById('id').value = id;
+        await loadGeoData(id);
+    } catch (error) {
+        console.error('Error loading data:', error);
     }
-    document.getElementById('id').value = id;
-    loadGeoData(id);
+
 });

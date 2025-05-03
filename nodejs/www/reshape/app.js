@@ -23,11 +23,18 @@ const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z=
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
+const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 22
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
     "Google Terrain": gmap_terrain,
-    "Google Hybrid": gmap_hybrid
+    "Google Hybrid": gmap_hybrid,
+    "Stadia Light": light
 };
 
 const overlayMaps = {
@@ -123,6 +130,21 @@ const getFeatureStyle = (feature) => {
     };
 };
 
+const onEachFeature = (feature, layer) => {
+    layer.bindPopup(`${feature.properties.id}`);
+
+    layer.on('click', () => {
+        map.fitBounds(layer.getBounds());
+        showFeaturePanel(feature, layer);
+        featureGroup.eachLayer(l => l.pm.disable());
+        layer.pm.enable();
+
+        selectedLayer = layer;
+    });
+
+    layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
+}
+
 var selectedLayer = null;
 const loadGeoData = async () => {
     try {
@@ -135,7 +157,8 @@ const loadGeoData = async () => {
             geom: JSON.parse(item.geom),
             xls_app_no: item.xls_app_no,
             xls_sqm: item.xls_sqm,
-            shparea_sqm: item.shparea_sqm
+            shparea_sqm: item.shparea_sqm,
+            classified: item.classified,
         }));
 
         const dataTable = $('#featureTable').DataTable({
@@ -146,40 +169,46 @@ const loadGeoData = async () => {
                     title: 'Zoom',
                     render: (data, type, row) => {
                         const _geojson = JSON.stringify(row.geom);
-                        return `<button class="btn btn-success map-btn" data-refid="${row.id}" data-geojson='${_geojson}'>
+                        return `<a class="btn btn-success map-btn" 
+                                    data-refid="${row.id}" 
+                                    data-geojson='${_geojson}'
+                                    href="#">
                                     <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
-                                </button>`
+                                </a>`
                     }
                 },
                 { data: 'id', title: 'ID' },
                 { data: 'xls_app_no', title: 'Application No' },
                 { data: 'xls_sqm', title: 'เนื้อที่เป้าหมาย (m²)' },
-                { data: 'shparea_sqm', title: 'เนื้อที่ขณะนี้ (m²)' },
+                {
+                    data: 'shparea_sqm',
+                    title: 'เนื้อที่ขณะนี้ (m²)',
+                    render: (data, type, row) => Number(data).toFixed(0)
+                },
                 {
                     data: null,
-                    title: 'Area Difference (m²)',
-                    render: (data) => {
+                    title: 'ตรวจสอบ (m²)',
+                    render: (data, type, row) => {
                         const xls = Number(data.xls_sqm);
                         const shp = Number(data.shparea_sqm);
                         const diff = xls - shp;
                         const color = Math.abs(diff) <= 100 ? 'green' : 'red';
                         const diffStyle = `color: ${color}; font-weight: bold;`;
-                        return `<span style="${diffStyle}">${diff.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>`;
+                        return `<span style="${diffStyle}">
+                                    ${Math.abs(diff) <= 100 ? "เนื้อที่ถูกต้อง" : "เนื้อที่ไม่ถูกต้อง"}
+                                    (${diff.toLocaleString(undefined, { maximumFractionDigits: 1 })})
+                                </span>`;
                     }
                 },
                 {
-                    data: null,
-                    title: 'Area Difference (m²)',
-                    render: (data) => {
-                        const xls = Number(data.xls_sqm);
-                        const shp = Number(data.shparea_sqm);
-                        const diff = xls - shp;
-                        const color = Math.abs(diff) <= 100 ? 'green' : 'red';
+                    data: 'classified',
+                    title: 'Classified',
+                    render: (data, type, row) => {
+                        const color = data ? 'green' : 'red';
                         const diffStyle = `color: ${color}; font-weight: bold;`;
-                        return `<span style="${diffStyle}">${Math.abs(diff) <= 100 ? "ขนาดถูกต้อง" : "ขนาดไม่ถูกต้อง"}</span>`;
+                        return `<span style="${diffStyle}">${data ? "classify แล้ว" : "ยังไม่ classify"}</span>`;
                     }
-                },
-
+                }
             ],
             pageLength: 10,
             responsive: false,
@@ -193,7 +222,7 @@ const loadGeoData = async () => {
             const visibleRows = dataTable.rows({ search: 'applied' }).data().toArray();
 
             visibleRows.forEach(row => {
-                const geojson = {
+                const geoJsonData = {
                     type: 'Feature',
                     geometry: row.geom,
                     properties: {
@@ -205,22 +234,9 @@ const loadGeoData = async () => {
                     }
                 }
 
-                L.geoJson(geojson, {
+                L.geoJson(geoJsonData, {
                     style: getFeatureStyle,
-                    onEachFeature: (feature, layer) => {
-                        layer.bindPopup(`${feature.properties.id}`);
-
-                        layer.on('click', () => {
-                            map.fitBounds(layer.getBounds());
-                            showFeaturePanel(feature, layer);
-                            featureGroup.eachLayer(l => l.pm.disable());
-                            layer.pm.enable();
-
-                            selectedLayer = layer;
-                        });
-
-                        layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
-                    }
+                    onEachFeature: onEachFeature,
                 }).addTo(featureGroup);
             });
         };
@@ -281,7 +297,7 @@ document.getElementById('save').addEventListener('click', async () => {
             body: JSON.stringify({ id, refinal, features })
         });
         const result = await response.json();
-        alert(`Updated ${result.updated} features`);
+        alert(`อัพเดท features ${result.updated} เรียบร้อย`);
 
         if (result.success) {
             featureGroup.eachLayer(layer => {
@@ -323,8 +339,12 @@ document.getElementById('classify').addEventListener('click', () => {
         });
 });
 
-// Initialize application
-document.addEventListener('DOMContentLoaded', () => {
-    loadGeoData();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await loadGeoData();
+        map.fitBounds(featureGroup.getBounds());
+    } catch (error) {
+        console.error('Error loading data:', error);
+    }
 });
 

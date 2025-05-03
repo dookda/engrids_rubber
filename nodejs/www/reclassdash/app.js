@@ -24,12 +24,20 @@ const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z=
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
+const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 22
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
-    "Google Satellite": gmap_sat.addTo(map),
+    "Google Satellite": gmap_sat,
     "Google Terrain": gmap_terrain,
-    "Google Hybrid": gmap_hybrid
+    "Google Hybrid": gmap_hybrid,
+    "Stadia Light": light.addTo(map)
 };
+
 
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map)
@@ -40,25 +48,21 @@ L.control.layers(baseLayers, overlayMaps).addTo(map);
 function showFeaturePanel(feature, layer) {
     const id = document.getElementById('id');
     const xls_app_no = document.getElementById('xls_app_no');
-    const classtype = document.getElementById('classtype');
+    // const classtype = document.getElementById('classtype');
     const shpsplit_sqm = document.getElementById('shpsplit_sqm');
 
     id.value = feature.properties.id;
     xls_app_no.value = feature.properties.xls_app_no;
-    classtype.value = feature.properties.classtype === 'rubber' ? 'ยางพารา' : feature.properties.classtype === 'building' ? 'สิ่งปลูกสร้าง' : feature.properties.classtype === 'agriculture' ? 'พท.เกษตร (ไม่ใช่ยางพารา)' : feature.properties.classtype === 'water' ? 'แหล่งน้ำ' : 'อื่นๆ';
+    // classtype.value = feature.properties.classtype === 'rubber' ? 'ยางพารา' : feature.properties.classtype === 'building' ? 'สิ่งปลูกสร้าง' : feature.properties.classtype === 'agriculture' ? 'พท.เกษตร (ไม่ใช่ยางพารา)' : feature.properties.classtype === 'water' ? 'แหล่งน้ำ' : 'อื่นๆ';
     shpsplit_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
 }
 
 const getFeatureStyle = (feature) => {
     const color = feature.properties.classtype === 'rubber'
         ? '#006d2c'
-        : feature.properties.classtype === 'building'
+        : feature.properties.classtype === 'non-rubber'
             ? '#d7191c'
-            : feature.properties.classtype === 'agriculture'
-                ? '#a6d96a'
-                : feature.properties.classtype === 'water'
-                    ? '#2b83ba'
-                    : '#ff00ff';
+            : '#ff00ff';
     return {
         fillColor: color,
         weight: 2,
@@ -68,6 +72,16 @@ const getFeatureStyle = (feature) => {
         fillOpacity: 0.5
     };
 };
+
+const onEachFeature = (feature, layer) => {
+    layer.bindPopup(`${feature.properties.id}`);
+
+    layer.on('click', () => {
+        map.fitBounds(layer.getBounds());
+        showFeaturePanel(feature, layer);
+        selectedLayer = layer;
+    });
+}
 
 const loadGeoData = async () => {
     try {
@@ -92,9 +106,12 @@ const loadGeoData = async () => {
                     title: 'Zoom',
                     render: (data, type, row) => {
                         const _geojson = JSON.stringify(row.geom);
-                        return `<button class="btn btn-success map-btn" data-refid="${row.id}" data-geojson='${_geojson}'>
-                                <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
-                            </button>`
+                        return `<a class="btn btn-success map-btn" 
+                                    data-refid="${row.id}" 
+                                    data-geojson='${_geojson}'
+                                    href="#">
+                                    <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
+                                </a>`
                     }
                 },
                 { data: 'xls_app_no', title: 'Application No' },
@@ -136,17 +153,7 @@ const loadGeoData = async () => {
 
                 L.geoJson(geojson, {
                     style: getFeatureStyle,
-                    onEachFeature: (feature, layer) => {
-                        layer.bindPopup(`${feature.properties.id}`);
-
-                        layer.on('click', () => {
-                            map.fitBounds(layer.getBounds());
-                            showFeaturePanel(feature, layer);
-                            selectedLayer = layer;
-                        });
-
-                        layer.on('pm:edit pm:dragend pm:update pm:change', () => updateAreaLabel(layer));
-                    }
+                    onEachFeature: onEachFeature
                 }).addTo(featureGroup);
             });
         };
@@ -158,7 +165,6 @@ const loadGeoData = async () => {
                 e.stopPropagation();
                 const geojson = $(this).data('geojson');
                 const layer = L.geoJSON(geojson)
-                // console.log(layer);
 
                 const bounds = layer.getBounds();
                 map.fitBounds(bounds, {
@@ -182,12 +188,30 @@ const loadGeoData = async () => {
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
-    loadGeoData();
-});
+const legend = L.control({ position: 'bottomright' });
+
+legend.onAdd = function (map) {
+    const div = L.DomUtil.create('div', 'legend'),
+        categories = ['rubber', 'non-rubber', 'other'],
+        labels = ['ยางพารา', 'ไม่ใช่ยางพารา', 'ไม่แน่ใจ'];
+
+    for (let i = 0; i < categories.length; i++) {
+        const dummy = { properties: { classtype: categories[i] } },
+            style = getFeatureStyle(dummy);
+
+        div.innerHTML +=
+            `<i style="background:${style.fillColor};"></i> ${labels[i]}<br>`;
+    }
+    return div;
+};
+
+legend.addTo(map);
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        await loadGeoData();
+        map.fitBounds(featureGroup.getBounds());
+
         const response = await fetch('/rub/api/countsfeatures');
         const data = await response.json();
 

@@ -27,6 +27,7 @@ app.get('/api/getfeatures', async (req, res) => {
                         xls_sqm,
                         shp_sqm,
                         shparea_sqm,
+                        classified,
                         ST_ASGeoJSON(geom) AS geom
                     FROM tb_nan_rub
                     WHERE geom IS NOT NULL`;
@@ -224,6 +225,20 @@ app.post('/api/create_reclass_layer', async (req, res) => {
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Feature not found in source table' });
+        }
+
+        // uudate reclass column
+        const updateSql = `
+            UPDATE tb_nan_rub
+            SET classified = TRUE
+            WHERE id = $1
+            RETURNING *;
+        `;
+
+        const updateValues = [id];
+        const updateResult = await pool.query(updateSql, updateValues);
+        if (updateResult.rowCount === 0) {
+            return res.status(404).json({ error: 'Feature not found in reclass table' });
         }
 
         res.status(200).json({ success: true, data: result.rows });

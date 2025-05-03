@@ -10,6 +10,10 @@ h1 h2 h3 h4 h5 h6 {
     font-family: "Noto Sans Thai", serif !important;
 }
 
+.btn {
+    font-family: "Noto Sans Thai", serif !important;
+}
+
 #map {
     height: 600px;
 }
@@ -34,4 +38,27 @@ h1 h2 h3 h4 h5 h6 {
 .feature-popup p {
     margin: 5px 0;
     font-size: 14px;
+}
+
+.legend {
+    background: rgba(255, 255, 255, 0.7);
+    padding: 6px 8px;
+    border-radius: 5px;
+    line-height: 18px;
+    color: #333;
+}
+
+.legend {
+    font-family: "Noto Sans Thai", serif !important;
+}
+
+.legend i {
+    width: 18px;
+    height: 18px;
+    float: left;
+    margin-right: 8px;
+    opacity: 0.5;
+    border: 1px solid #fff;
+    box-sizing: border-box;
+    border-radius: 20%;
 }
