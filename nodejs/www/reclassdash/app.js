@@ -32,10 +32,10 @@ const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/
 
 const baseLayers = {
     "Google Road": gmap_road,
-    "Google Satellite": gmap_sat,
+    "Google Satellite": gmap_sat.addTo(map),
     "Google Terrain": gmap_terrain,
     "Google Hybrid": gmap_hybrid,
-    "Stadia Light": light.addTo(map)
+    "Stadia Light": light
 };
 
 
