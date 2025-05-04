@@ -237,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         Highcharts.chart('container', {
             chart: { type: 'bar', height: 240, style: { fontFamily: 'Noto Sans Thai' } },
             title: { text: null },
-            xAxis: { type: 'category', title: { text: 'แปลงยางพารา', style: { fontFamily: 'Noto Sans Thai' } } },
+            xAxis: { type: 'category', title: { text: 'ประเภท', style: { fontFamily: 'Noto Sans Thai' } } },
             yAxis: { min: 0, title: { text: 'จำนวนแปลง', style: { fontFamily: 'Noto Sans Thai' } } },
             series: [{
                 name: 'Counts',

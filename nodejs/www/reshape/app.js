@@ -134,7 +134,7 @@ const onEachFeature = (feature, layer) => {
     layer.bindPopup(`${feature.properties.id}`);
 
     layer.on('click', () => {
-        map.fitBounds(layer.getBounds());
+        // map.fitBounds(layer.getBounds());
         showFeaturePanel(feature, layer);
         featureGroup.eachLayer(l => l.pm.disable());
         layer.pm.enable();
