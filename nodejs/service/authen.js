@@ -14,20 +14,17 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
-// — Session middleware (required for Passport)
 app.use(session({
     secret: process.env.SESSION_SECRET || 'keyboard cat',
     resave: false,
     saveUninitialized: false
 }));
 
-// — Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
 
-// — Serialize & deserialize user into the session
 passport.serializeUser((user, done) => {
-    done(null, user.id);            // store only the user ID in session
+    done(null, user.id);
 });
 passport.deserializeUser(async (id, done) => {
     try {
@@ -41,11 +38,10 @@ passport.deserializeUser(async (id, done) => {
     }
 });
 
-// — Configure GoogleStrategy
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: 'https://engrids.soc.cmu.ac.th/rub/auth/callback'
+    callbackURL: '/rub/auth/callback'
 },
     async (accessToken, refreshToken, profile, done) => {
         const googleId = profile.id;

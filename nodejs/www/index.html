@@ -20,6 +20,7 @@
 
 <body>
     <div class="container mt-5">
+        <input type="hidden" id="chkLogin">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
             </div>
@@ -44,10 +45,10 @@
 
         <div class="alert alert-dismissible alert-info">
             <strong>แปลงยาง จ.น่าน</strong>
-            <a class="btn btn-secondary" href="./reshape/index.html?tb=nan">ปรับขนาดแปลง</a>
-            <a class="btn btn-secondary" href="./reclassdash/index.html?tb=nan">Dashboard</a>
-            <button class="btn btn-success" id="nan_reshape">download แปลงยาง</button>
-            <button class="btn btn-success">download reclassify</button>
+            <button class="btn btn-secondary reshape" tb="nan">ปรับขนาดแปลง</button>
+            <button class="btn btn-secondary dashboard" tb="nan">Dashboard</button>
+            <button class="btn btn-success reshape_download" tb="nan">Download แปลงยาง</button>
+            <button class="btn btn-success classify_download" tb="nan">Download reclassify</button>
         </div>
     </div>
 
@@ -57,20 +58,78 @@
         crossorigin="anonymous"></script>
 
     <script>
+        const initApp = async () => {
+            try {
+                const reshape = document.getElementsByClassName('reshape');
+                for (let i = 0; i < reshape.length; i++) {
+                    reshape[i].addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const chkLogin = document.getElementById('chkLogin').value;
+                        if (chkLogin === 'false') {
+                            alert('กรุณาเข้าสู่ระบบ');
+                            return;
+                        }
+                        const tb = this.getAttribute('tb');
+                        window.location.href = `./reshape/index.html?tb=${tb}`;
+                    });
+                }
+
+                const dashboard = document.getElementsByClassName('dashboard');
+                for (let i = 0; i < dashboard.length; i++) {
+                    dashboard[i].addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const chkLogin = document.getElementById('chkLogin').value;
+                        if (chkLogin === 'false') {
+                            alert('กรุณาเข้าสู่ระบบ');
+                            return;
+                        }
+                        const tb = this.getAttribute('tb');
+                        window.location.href = `./reclassdash/index.html?tb=${tb}`;
+                    });
+                }
+
+                const reshape_download = document.getElementsByClassName('reshape_download');
+                for (let i = 0; i < reshape_download.length; i++) {
+                    reshape_download[i].addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const tb = this.getAttribute('tb');
+                        fetch(`/rub/api/download/reshape/${tb}`)
+                            .then(res => {
+                                if (!res.ok) throw new Error(res.statusText);
+                                return res.blob();
+                            })
+                            .then(blob => {
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${tb}.geojson`;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                                URL.revokeObjectURL(url);
+                            })
+                            .catch(err => console.error('Download failed:', err));
+                    });
+                }
+            } catch (error) {
+                console.error('Error initializing app:', error);
+
+            }
+        };
+
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 const res = await fetch('/rub/auth/me');
                 const { user } = await res.json();
-                // console.log(user);
+
+                document.getElementById('chkLogin').value = user ? 'true' : 'false';
 
                 if (user) {
-                    // Show profile section
                     document.getElementById('google-login-link').style.display = 'none';
                     document.getElementById('profile-section').style.display = 'flex';
                     document.getElementById('profile-image').src = user.photo;
                     document.getElementById('display-name').textContent = user.displayName;
 
-                    // Logout handler
                     document.getElementById('logout-link').addEventListener('click', async (e) => {
                         e.preventDefault();
                         try {
@@ -81,31 +140,13 @@
                         }
                     });
                 }
+                await initApp();
             } catch (err) {
                 console.error('Failed to fetch user:', err);
             }
         });
 
-        // Download button handler
-        document.getElementById('nan_reshape').addEventListener('click', () => {
-            const tb = 'nan';
-            fetch(`/rub/api/download/reshape/${tb}`)
-                .then(res => {
-                    if (!res.ok) throw new Error(res.statusText);
-                    return res.blob();
-                })
-                .then(blob => {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${tb}.geojson`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    URL.revokeObjectURL(url);
-                })
-                .catch(err => console.error('Download failed:', err));
-        });
+
     </script>
 </body>
 
