@@ -1,5 +1,3 @@
-// app.js (or index.js)
-require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
@@ -7,6 +5,7 @@ const { Pool } = require('pg');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 
 const app = express();
+require('dotenv').config();
 const pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
