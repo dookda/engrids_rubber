@@ -38,7 +38,7 @@ services:
     volumes:
       - ./nodejs:/usr/src/app
     ports:
-      - "3300:3000"
+      - "3400:3000"
     networks:
       - rub-network
     command: sh -c "npm i && npm i -g nodemon && nodemon"
