@@ -4,8 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- redirect -->
-    <!-- <meta http-equiv="refresh" content="0; url=./home/index.html" /> -->
     <title>rub</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,16 +20,73 @@
 
 <body style="background-color: aliceblue;">
     <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+            </div>
+            <div id="user-panel" class="d-flex align-items-center">
+                <div id="profile-section" class="dropdown d-flex align-items-center" style="display: none !important;">
+                    <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        <img id="profile-image" class="rounded-circle me-2"
+                            style="width: 32px; height: 32px; object-fit: cover" alt="Profile picture">
+                        <span id="display-name" class="fw-medium"></span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item " href="#" id="logout-link">Logout</a></li>
+                    </ul>
+                </div>
+                <a href="/rub/auth/google" id="google-login-link">
+                    <img src="https://developers.google.com/identity/images/btn_google_signin_dark_normal_web.png"
+                        alt="Sign in with Google">
+                </a>
+            </div>
+        </div>
 
         <div class="alert alert-dismissible alert-light">
             <strong>แปลงยาง จ.น่าน</strong>
             <a class="btn btn-secondary" href="./reshape/index.html?tb=nan">ปรับขนาดแปลง</a>
             <a class="btn btn-secondary" href="./reclassdash/index.html?tb=nan">Dashboard</a>
-            <button class="btn btn-success" id="nan_reshape">dowload แปลงยาง</button>
-            <button class="btn btn-success">dowload reclassify</button>
+            <button class="btn btn-success" id="nan_reshape">download แปลงยาง</button>
+            <button class="btn btn-success">download reclassify</button>
         </div>
     </div>
+
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+
     <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const res = await fetch('/rub/auth/me');
+                const { user } = await res.json();
+                // console.log(user);
+
+                if (user) {
+                    // Show profile section
+                    document.getElementById('google-login-link').style.display = 'none';
+                    document.getElementById('profile-section').style.display = 'flex';
+                    document.getElementById('profile-image').src = user.photo;
+                    document.getElementById('display-name').textContent = user.displayName;
+
+                    // Logout handler
+                    document.getElementById('logout-link').addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        try {
+                            await fetch('/rub/auth/logout');
+                            window.location.reload();
+                        } catch (err) {
+                            console.error('Logout failed:', err);
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch user:', err);
+            }
+        });
+
+        // Download button handler
         document.getElementById('nan_reshape').addEventListener('click', () => {
             const tb = 'nan';
             fetch(`/rub/api/download/reshape/${tb}`)
@@ -40,9 +95,7 @@
                     return res.blob();
                 })
                 .then(blob => {
-                    // create a temporary URL for the blob
                     const url = URL.createObjectURL(blob);
-                    // create a hidden <a> and click it
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = `${tb}.geojson`;

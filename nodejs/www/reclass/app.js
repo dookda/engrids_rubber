@@ -317,3 +317,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 });
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/rub/auth/me');
+        const { user } = await res.json();
+        // console.log(user);
+
+        if (user) {
+            // Show profile section
+            document.getElementById('google-login-link').style.display = 'none';
+            document.getElementById('profile-section').style.display = 'flex';
+            document.getElementById('profile-image').src = user.photo;
+            document.getElementById('display-name').textContent = user.displayName;
+
+            // Logout handler
+            document.getElementById('logout-link').addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    await fetch('/rub/auth/logout');
+                    window.location.reload();
+                } catch (err) {
+                    console.error('Logout failed:', err);
+                }
+            });
+        }
+    } catch (err) {
+        console.error('Failed to fetch user:', err);
+    }
+});
