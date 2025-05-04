@@ -485,6 +485,47 @@ app.post('/api/split', async (req, res) => {
     }
 });
 
+app.get('/api/download/reshape/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb;
+        // console.log('tb:', tb);
+
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+        const { rows } = await pool.query(`
+        SELECT json_build_object(
+          'type',     'FeatureCollection',
+          'features', json_agg(features.feature)
+        ) AS geojson
+        FROM (
+          SELECT json_build_object(
+            'type',       'Feature',
+            'geometry',   ST_AsGeoJSON(geom)::json,
+            'properties', to_jsonb(props) - 'geom'
+          ) AS feature
+          FROM (
+            SELECT *
+            FROM tb_rub_${tb}
+            WHERE geom IS NOT NULL
+          ) AS props
+        ) AS features;
+      `);
+
+        const geojson = rows[0].geojson;
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader(
+            'Content-Disposition',
+            'attachment; filename="data.geojson"'
+        );
+        res.send(JSON.stringify(geojson));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // export module
 module.exports = app;
