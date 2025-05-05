@@ -42,110 +42,68 @@
                 </a>
             </div>
         </div>
+        <div class="row">
+            <div class="col-sm-8">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div class="label">แปลงยาง</div>
+                            <button class="btn btn-light" id="addData">เพิ่ม</button>
+                        </div>
+                        <div class="mt-3" id="layerList"> </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-4">
+                <div class="card">
+                    <div class="card-body">
+                        ทีมงานคุณภาพ
+                        <div class="dropdown d-flex align-items-center" id="usersList"> </div>
+                    </div>
+                </div>
 
-        <div class="alert alert-dismissible alert-info">
-            <strong>แปลงยาง จ.น่าน</strong>
-            <button class="btn btn-secondary reshape" tb="nan">ปรับรูปแปลง</button>
-            <button class="btn btn-secondary dashboard" tb="nan">Dashboard</button>
-            <button class="btn btn-success reshape_download" tb="nan">Download แปลงยาง</button>
-            <button class="btn btn-success classify_download" tb="nan">Download reclassify</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- add modal  -->
+    <div class="modal fade" id="addModal" tabindex="-1" aria-labelledby="addModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addModalLabel">เพิ่มแปลงยาง</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="tb_name" class="form-label">ชื่อย่อ</label>
+                        <input type="text" class="form-control" id="tb_name" placeholder="ชื่อแปลงยาง">
+                    </div>
+                    <div class="mb-3">
+                        <label for="tb_fullname" class="form-label">ชื่อเต็มของ layer</label>
+                        <input type="text" class="form-control" id="tb_fullname">
+                    </div>
+                    <div class="mb-3">
+                        <label for="remark" class="form-label">remark</label>
+                        <input type="text" class="form-control" id="tb_remark">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="btnAdd" data-bs-dismiss="modal">Save</button>
+                </div>
+            </div>
         </div>
     </div>
+
 
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
         crossorigin="anonymous"></script>
 
-    <script>
-        const initApp = async () => {
-            try {
-                const reshape = document.getElementsByClassName('reshape');
-                for (let i = 0; i < reshape.length; i++) {
-                    reshape[i].addEventListener('click', function (e) {
-                        e.preventDefault();
-                        const chkLogin = document.getElementById('chkLogin').value;
-                        if (chkLogin === 'false') {
-                            alert('กรุณา Login ก่อนครับ');
-                            return;
-                        }
-                        const tb = this.getAttribute('tb');
-                        window.location.href = `./reshape/index.html?tb=${tb}`;
-                    });
-                }
-
-                const dashboard = document.getElementsByClassName('dashboard');
-                for (let i = 0; i < dashboard.length; i++) {
-                    dashboard[i].addEventListener('click', function (e) {
-                        e.preventDefault();
-                        // const chkLogin = document.getElementById('chkLogin').value;
-                        // if (chkLogin === 'false') {
-                        //     alert('กรุณา Login ก่อนครับ');
-                        //     return;
-                        // }
-                        const tb = this.getAttribute('tb');
-                        window.location.href = `./reclassdash/index.html?tb=${tb}`;
-                    });
-                }
-
-                const reshape_download = document.getElementsByClassName('reshape_download');
-                for (let i = 0; i < reshape_download.length; i++) {
-                    reshape_download[i].addEventListener('click', function (e) {
-                        e.preventDefault();
-                        const tb = this.getAttribute('tb');
-                        fetch(`/rub/api/download/reshape/${tb}`)
-                            .then(res => {
-                                if (!res.ok) throw new Error(res.statusText);
-                                return res.blob();
-                            })
-                            .then(blob => {
-                                const url = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `${tb}.geojson`;
-                                document.body.appendChild(a);
-                                a.click();
-                                a.remove();
-                                URL.revokeObjectURL(url);
-                            })
-                            .catch(err => console.error('Download failed:', err));
-                    });
-                }
-            } catch (error) {
-                console.error('Error initializing app:', error);
-
-            }
-        };
-
-        document.addEventListener('DOMContentLoaded', async () => {
-            try {
-                const res = await fetch('/rub/auth/me');
-                const { user } = await res.json();
-
-                document.getElementById('chkLogin').value = user ? 'true' : 'false';
-
-                if (user) {
-                    document.getElementById('google-login-link').style.display = 'none';
-                    document.getElementById('profile-section').style.display = 'flex';
-                    document.getElementById('profile-image').src = user.photo;
-                    document.getElementById('display-name').textContent = user.displayName;
-
-                    document.getElementById('logout-link').addEventListener('click', async (e) => {
-                        e.preventDefault();
-                        try {
-                            await fetch('/rub/auth/logout');
-                            window.location.reload();
-                        } catch (err) {
-                            console.error('Logout failed:', err);
-                        }
-                    });
-                }
-                await initApp();
-            } catch (err) {
-                console.error('Failed to fetch user:', err);
-            }
-        });
-    </script>
+    <script src="./app.js"></script>
 </body>
 
 </html>

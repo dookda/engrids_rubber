@@ -16,3 +16,17 @@ Content-Type: application/json
   "line": {"type": "LineString", "coordinates": [[98.94995215272888,18.802934088357546],[98.94995954337315,18.802703212750473]]}, 
   "srid": 32647
 }
+
+###
+GET http://localhost:3400/rub/api/users
+
+
+###
+POST http://localhost:3400/rub/api/layerlist
+Content-Type: application/json
+
+{
+  "tb_name":     "nan",
+  "tb_fullname": "tb_rub_nan",
+  "remark":      "something"
+}

@@ -128,7 +128,9 @@ CREATE TABLE IF NOT EXISTS public.tb_nan_rub_reclass
     xls_sqm integer,
     shp_sqm numeric,
     shparea_sqm numeric,
-    geom geometry
+    geom geometry,
+    editor text,
+    ts timestamp default now()
 )
 
 -- reclass table
@@ -140,5 +142,15 @@ CREATE TABLE IF NOT EXISTS public.tb_nan_rub_reclass
     xls_app_no text,
     shparea_sqm numeric,
     geom geometry(MultiPolygon,4326),
-	classtype text
+	classtype text,
+    editor text,
+    ts timestamp default now()
 );
+
+
+create table layerlist(
+	id serial not null,
+	tb_name text,
+	tb_fullname text,
+	remark text
+)

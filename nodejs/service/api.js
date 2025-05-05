@@ -412,6 +412,91 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
     }
 });
 
+
+app.get('/api/download/reshape/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb;
+
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+        const { rows } = await pool.query(`
+        SELECT json_build_object(
+          'type',     'FeatureCollection',
+          'features', json_agg(features.feature)
+        ) AS geojson
+        FROM (
+          SELECT json_build_object(
+            'type',       'Feature',
+            'geometry',   ST_AsGeoJSON(geom)::json,
+            'properties', to_jsonb(props) - 'geom'
+          ) AS feature
+          FROM (
+            SELECT *
+            FROM tb_rub_${tb}
+            WHERE geom IS NOT NULL
+          ) AS props
+        ) AS features;
+      `);
+
+        const geojson = rows[0].geojson;
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader(
+            'Content-Disposition',
+            'attachment; filename="data.geojson"'
+        );
+        res.send(JSON.stringify(geojson));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/users', async (req, res) => {
+    try {
+        const sql = `SELECT * FROM users`;
+        const result = await pool.query(sql);
+        // console.log(result.rows);
+        if (result.rows.length > 0) {
+            res.status(200).json(result.rows)
+        }
+    } catch (error) {
+        res.status(500).json({ error: err.message });
+    }
+})
+
+app.get('/api/layerlist', async (req, res) => {
+    try {
+        const sql = `SELECT * FROM layerlist`;
+        const result = await pool.query(sql);
+        // console.log(result.rows);
+        if (result.rows.length > 0) {
+            res.status(200).json(result.rows)
+        }
+    } catch (error) {
+        res.status(500).json({ error: err.message });
+    }
+})
+
+app.post('/api/layerlist', async (req, res) => {
+    try {
+        const { tb_name, tb_fullname, remark } = req.body;
+        console.log(req.body);
+
+        const sql = `
+        INSERT INTO layerlist (tb_name, tb_fullname, remark)
+        VALUES ($1, $2, $3)
+        RETURNING *`;
+        const result = await pool.query(sql, [tb_name, tb_fullname, remark]);
+
+        return res.status(200).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/area', async (req, res) => {
     const geojson = req.body;
     const geometry = geojson.geometry || geojson;
@@ -490,46 +575,6 @@ app.post('/api/split', async (req, res) => {
     }
 });
 
-app.get('/api/download/reshape/:tb', async (req, res) => {
-    try {
-        const tb = req.params.tb;
-        // console.log('tb:', tb);
-
-        if (!tb) {
-            return res.status(400).json({ error: 'Table name is required' });
-        }
-        const { rows } = await pool.query(`
-        SELECT json_build_object(
-          'type',     'FeatureCollection',
-          'features', json_agg(features.feature)
-        ) AS geojson
-        FROM (
-          SELECT json_build_object(
-            'type',       'Feature',
-            'geometry',   ST_AsGeoJSON(geom)::json,
-            'properties', to_jsonb(props) - 'geom'
-          ) AS feature
-          FROM (
-            SELECT *
-            FROM tb_rub_${tb}
-            WHERE geom IS NOT NULL
-          ) AS props
-        ) AS features;
-      `);
-
-        const geojson = rows[0].geojson;
-
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader(
-            'Content-Disposition',
-            'attachment; filename="data.geojson"'
-        );
-        res.send(JSON.stringify(geojson));
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message });
-    }
-});
 
 
 // export module
