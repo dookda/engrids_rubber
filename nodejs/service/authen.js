@@ -97,7 +97,8 @@ app.get('/auth/me', (req, res) => {
 // Logout
 app.get('/auth/logout', (req, res) => {
     req.logout(() => {
-        res.redirect('/rub/index.html');
+        console.log('User logged out');
+        res.json({ success: true });
     });
 });
 

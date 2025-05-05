@@ -78,11 +78,11 @@
                 for (let i = 0; i < dashboard.length; i++) {
                     dashboard[i].addEventListener('click', function (e) {
                         e.preventDefault();
-                        const chkLogin = document.getElementById('chkLogin').value;
-                        if (chkLogin === 'false') {
-                            alert('กรุณา Login ก่อนครับ');
-                            return;
-                        }
+                        // const chkLogin = document.getElementById('chkLogin').value;
+                        // if (chkLogin === 'false') {
+                        //     alert('กรุณา Login ก่อนครับ');
+                        //     return;
+                        // }
                         const tb = this.getAttribute('tb');
                         window.location.href = `./reclassdash/index.html?tb=${tb}`;
                     });

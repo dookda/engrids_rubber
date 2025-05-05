@@ -348,7 +348,7 @@ document.getElementById('dashboard').addEventListener('click', (e) => {
     window.location.href = './../reclassdash/index.html?tb=' + tb;
 });
 
-document.addEventListener('DOMContentLoaded', async () => {
+const initApp = async () => {
     try {
         const urlParams = new URLSearchParams(window.location.search);
         const tb = urlParams.get('tb');
@@ -363,31 +363,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
         console.error('Error loading data:', error);
     }
-});
+};
 
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const res = await fetch('/rub/auth/me');
         const { user } = await res.json();
-        // console.log(user);
 
         if (user) {
-            // Show profile section
             document.getElementById('google-login-link').style.display = 'none';
             document.getElementById('profile-section').style.display = 'flex';
             document.getElementById('profile-image').src = user.photo;
             document.getElementById('display-name').textContent = user.displayName;
 
-            // Logout handler
+            await initApp();
+
             document.getElementById('logout-link').addEventListener('click', async (e) => {
                 e.preventDefault();
                 try {
-                    await fetch('/rub/auth/logout');
-                    window.location.reload();
+                    const result = await fetch('/rub/auth/logout');
+                    const { success } = await result.json();
+                    if (success) {
+                        window.location.href = '/rub/index.html';
+                    } else {
+                        alert('Logout failed');
+                    }
                 } catch (err) {
                     console.error('Logout failed:', err);
                 }
             });
+        } else {
+            window.location.href = '/rub/index.html';
         }
     } catch (err) {
         console.error('Failed to fetch user:', err);
