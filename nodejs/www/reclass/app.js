@@ -213,6 +213,8 @@ legend.addTo(map);
 document.getElementById('classtype').addEventListener('change', (e) => {
     const selectedValue = e.target.value;
     const tb = document.getElementById('tb').value;
+    const displayName = document.getElementById('displayName').value;
+
     fetch('/rub/api/update_landuse/' + tb, {
         method: 'PUT',
         headers: {
@@ -220,7 +222,8 @@ document.getElementById('classtype').addEventListener('change', (e) => {
         },
         body: JSON.stringify({
             sub_id: sub_id.value,
-            classtype: selectedValue
+            classtype: selectedValue,
+            displayName: displayName,
         })
     }).then(response => response.json())
         .then(async (data) => {
@@ -261,12 +264,14 @@ document.getElementById('split').addEventListener('click', () => {
     const id = document.getElementById('id').value;
     const polygon = selectedPolygon.toGeoJSON();
     const line = selectedLine.toGeoJSON();
+    const displayName = document.getElementById('displayName').value;
 
     const srid = 32647;
     const data = {
         polygon_fc: polygon,
         line_fc: line,
         srid: srid,
+        displayName: displayName,
     }
 
     const tb = document.getElementById('tb').value;
@@ -327,6 +332,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('profile-section').style.display = 'flex';
             document.getElementById('profile-image').src = user.photo;
             document.getElementById('display-name').textContent = user.displayName;
+            document.getElementById('displayName').value = user.displayName;
 
             await initApp();
 

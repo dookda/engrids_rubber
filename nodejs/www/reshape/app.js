@@ -287,16 +287,17 @@ document.getElementById('save').addEventListener('click', async () => {
 
     const id = document.getElementById('id').value
     const refinal = document.getElementById('refinal').value;
+    const displayName = document.getElementById('displayName').value;
 
     const features = [];
     features.push(selectedLayer.toGeoJSON());
 
     try {
         const tb = document.getElementById('tb').value;
-        const response = await fetch('/rub/api/updatefeatures/' + tb, {
+        const response = await fetch(`/rub/api/updatefeatures/${tb}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id, refinal, features })
+            body: JSON.stringify({ id, refinal, features, displayName })
         });
         const result = await response.json();
         alert(`อัพเดท features ${result.updated} เรียบร้อย`);
@@ -375,6 +376,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('profile-section').style.display = 'flex';
             document.getElementById('profile-image').src = user.photo;
             document.getElementById('display-name').textContent = user.displayName;
+            document.getElementById('displayName').value = user.displayName;
 
             await initApp();
 

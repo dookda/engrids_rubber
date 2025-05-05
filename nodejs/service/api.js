@@ -128,7 +128,7 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { id, refinal, features } = req.body;
+        const { id, refinal, features, displayName } = req.body;
 
         const client = await pool.connect();
         if (!features || !Array.isArray(features)) {
@@ -147,12 +147,14 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
                         shparea_sqm = ST_Area(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
                         ),
-                        refinal = $3
+                        refinal = $3,
+                        editor = $4
                     WHERE id = $2
                 `, [
                     JSON.stringify(feature.geometry),
                     id,
-                    refinal
+                    refinal,
+                    displayName
                 ])
             );
 
@@ -284,7 +286,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { polygon_fc, line_fc, srid } = req.body;
+        const { polygon_fc, line_fc, srid, displayName } = req.body;
         const polygon = polygon_fc.geometry;
         const line = line_fc.geometry;
         const properties = polygon_fc.properties;
@@ -329,14 +331,15 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
                 FROM split
             ),
             inserted AS (
-                INSERT INTO tb_rub_reclass_${tb} (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm)
+                INSERT INTO tb_rub_reclass_${tb} (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm, editor)
                 SELECT 
                     $4, 
                     ST_Transform(geom_projected, 4326), 
                     $5 || '-' || row_number() OVER (),
                     $6,
                     $7, 
-                    ST_Area(geom_projected)
+                    ST_Area(geom_projected),
+                    $8
                 FROM parts, inputs
                 WHERE ST_GeometryType(geom_projected) = 'ST_Polygon'
                 RETURNING *
@@ -356,7 +359,8 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
             properties.xls_app_no,
             sub_id,
             id,
-            properties.classtype
+            properties.classtype,
+            displayName
         ]);
 
         if (result.rowCount === 0) {
@@ -381,18 +385,19 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { sub_id, classtype } = req.body;
+        const { sub_id, classtype, displayName } = req.body;
         if (!sub_id || !classtype) {
             return res.status(400).json({ error: 'ID and classtype are required' });
         }
 
         const sql = `
             UPDATE tb_rub_reclass_${tb}
-            SET classtype = $1
-            WHERE sub_id = $2
-            RETURNING *;
-        `;
-        const values = [classtype, sub_id];
+            SET classtype = $1, 
+                editor = $2
+            WHERE sub_id = $3
+            RETURNING *`;
+
+        const values = [classtype, displayName, sub_id];
         const result = await pool.query(sql, values);
 
         if (result.rowCount === 0) {
