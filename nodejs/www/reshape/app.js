@@ -107,7 +107,7 @@ function showFeaturePanel(feature, layer) {
     const refinal = document.getElementById('refinal');
 
     id.value = feature.properties.id;
-    xls_app_no.value = feature.properties.xls_app_no;
+    xls_app_no.value = feature.properties.app_no;
     xls_sqm.value = feature.properties.xls_sqm;
     refinal.value = feature.properties.refinal;
 
@@ -156,7 +156,7 @@ const loadGeoData = async () => {
             id: item.id,
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
-            xls_app_no: item.xls_app_no,
+            app_no: item.app_no,
             xls_sqm: item.xls_sqm,
             shparea_sqm: item.shparea_sqm,
             classified: item.classified,
@@ -179,7 +179,7 @@ const loadGeoData = async () => {
                     }
                 },
                 { data: 'id', title: 'ID' },
-                { data: 'xls_app_no', title: 'Application No' },
+                { data: 'app_no', title: 'Application No' },
                 { data: 'xls_sqm', title: 'เนื้อที่เป้าหมาย (m²)' },
                 {
                     data: 'shparea_sqm',
@@ -229,7 +229,7 @@ const loadGeoData = async () => {
                     properties: {
                         id: row.id,
                         refinal: row.refinal,
-                        xls_app_no: row.xls_app_no,
+                        app_no: row.app_no,
                         xls_sqm: row.xls_sqm,
                         shparea_sqm: row.shparea_sqm
                     }

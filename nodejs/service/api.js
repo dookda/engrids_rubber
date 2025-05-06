@@ -26,14 +26,12 @@ app.get('/api/getfeatures/:tb', async (req, res) => {
         }
         const sql = `SELECT id,
                         refinal,
-                        shp_app_no,
-                        xls_app_no,
+                        app_no,
                         xls_sqm,
-                        shp_sqm,
                         shparea_sqm,
                         classified,
                         ST_ASGeoJSON(geom) AS geom
-                    FROM tb_rub_${tb}
+                    FROM ${tb}
                     WHERE geom IS NOT NULL`;
         const result = await pool.query(sql);
         res.status(200).json({ success: true, data: result.rows });
@@ -58,10 +56,10 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
         const sql = `SELECT id, 
                         sub_id, 
                         classtype, 
-                        xls_app_no, 
+                        app_no, 
                         shpsplit_sqm, 
                         ST_ASGeoJSON(geom) AS geom
-                    FROM tb_rub_reclass_${tb}
+                    FROM reclass_${tb}
                     WHERE geom IS NOT NULL AND id = $1`;
         const values = [fid];
         const result = await pool.query(sql, values);
@@ -96,7 +94,7 @@ app.put('/api/updateselectedfeatures/:tb', async (req, res) => {
 
             const queries = features.map(feature =>
                 client.query(`
-                    UPDATE tb_rub_reclass_${tb}
+                    UPDATE reclass_${tb}
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
                         shparea_sqm = ST_Area(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
@@ -142,7 +140,7 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
             await client.query('BEGIN');
             const queries = features.map(feature =>
                 client.query(`
-                    UPDATE tb_rub_${tb}
+                    UPDATE ${tb}
                     SET geom = ST_SetSRID(ST_GeomFromGeoJSON($1), 4326),
                         shparea_sqm = ST_Area(
                             ST_SetSRID(ST_GeomFromGeoJSON($1), 4326):: geography
@@ -183,11 +181,11 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.sub_id,
                     b.refinal,
                     a.classtype, 
-                    a.xls_app_no,
+                    a.app_no,
                     b.shparea_sqm,
                     a.shpsplit_sqm,
-                    ST_ASGeoJSON(a.geom) AS geom FROM tb_rub_reclass_${tb} a
-                LEFT JOIN tb_rub_${tb} b
+                    ST_ASGeoJSON(a.geom) AS geom FROM reclass_${tb} a
+                LEFT JOIN ${tb} b
                 ON a.id = b.id
                 WHERE a.geom IS NOT NULL`;
         const result = await pool.query(sql);
@@ -207,14 +205,14 @@ app.get('/api/countsfeatures/:tb', async (req, res) => {
         const query = `
         WITH a AS (
             SELECT COUNT(*) AS reshp
-            FROM tb_rub_${tb}
+            FROM ${tb}
             WHERE ABS(xls_sqm - shparea_sqm) <= 100
         ),
         c AS (
             SELECT COUNT(DISTINCT id) AS reclass
-            FROM tb_rub_reclass_${tb}
+            FROM reclass_${tb}
         )
-        SELECT (SELECT COUNT(*) FROM tb_rub_${tb}) AS total,
+        SELECT (SELECT COUNT(*) FROM ${tb}) AS total,
                 c.reclass,
                 a.reshp
         FROM a
@@ -242,15 +240,15 @@ app.post('/api/create_reclass_layer/:tb', async (req, res) => {
         const sub_id = id.toString();
         const sql = `
             WITH delete_existing AS (
-                DELETE FROM tb_rub_reclass_${tb}
+                DELETE FROM reclass_${tb}
                 WHERE id = $1
                 RETURNING id  
             )
-            INSERT INTO tb_rub_reclass_${tb} (id, sub_id, xls_app_no, shpsplit_sqm, geom)
-            SELECT id, $2, xls_app_no, shparea_sqm, geom
-            FROM tb_rub_${tb}
+            INSERT INTO reclass_${tb} (id, sub_id, app_no, shpsplit_sqm, geom)
+            SELECT id, $2, app_no, shparea_sqm, geom
+            FROM ${tb}
             WHERE id = $1
-            RETURNING id, xls_app_no, ST_AsGeoJSON(geom) AS geom;
+            RETURNING id, app_no, ST_AsGeoJSON(geom) AS geom;
         `;
         const values = [id, sub_id];
         const result = await pool.query(sql, values);
@@ -261,7 +259,7 @@ app.post('/api/create_reclass_layer/:tb', async (req, res) => {
 
         // uudate reclass column
         const updateSql = `
-            UPDATE tb_rub_${tb}
+            UPDATE ${tb}
             SET classified = TRUE
             WHERE id = $1
             RETURNING *;
@@ -293,8 +291,8 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
         const id = polygon_fc.properties.id;
         const sub_id = polygon_fc.properties.sub_id;
 
-        if (!properties?.xls_app_no) {
-            return res.status(400).json({ error: 'xls_app_no is required in properties' });
+        if (!properties?.app_no) {
+            return res.status(400).json({ error: 'app_no is required in properties' });
         }
 
         if (!polygon?.type || !['Polygon', 'MultiPolygon'].includes(polygon.type) || !polygon.coordinates) {
@@ -306,7 +304,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
 
         const result = await pool.query(`
             WITH delete_existing AS (
-                DELETE FROM tb_rub_reclass_${tb} 
+                DELETE FROM reclass_${tb} 
                 WHERE sub_id LIKE $5 || '%'
                 RETURNING sub_id
             ),
@@ -331,7 +329,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
                 FROM split
             ),
             inserted AS (
-                INSERT INTO tb_rub_reclass_${tb} (xls_app_no, geom, sub_id, id, classtype, shpsplit_sqm, editor)
+                INSERT INTO reclass_${tb} (app_no, geom, sub_id, id, classtype, shpsplit_sqm, editor)
                 SELECT 
                     $4, 
                     ST_Transform(geom_projected, 4326), 
@@ -348,7 +346,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
                 id, 
                 sub_id, 
                 classtype, 
-                xls_app_no, 
+                app_no, 
                 shpsplit_sqm, 
                 ST_ASGeoJSON(geom) AS geom
             FROM inserted
@@ -356,7 +354,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
             JSON.stringify(polygon),
             JSON.stringify(line),
             srid || 32647,
-            properties.xls_app_no,
+            properties.app_no,
             sub_id,
             id,
             properties.classtype,
@@ -391,7 +389,7 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
         }
 
         const sql = `
-            UPDATE tb_rub_reclass_${tb}
+            UPDATE reclass_${tb}
             SET classtype = $1, 
                 editor = $2
             WHERE sub_id = $3
@@ -433,7 +431,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
           ) AS feature
           FROM (
             SELECT *
-            FROM tb_rub_${tb}
+            FROM ${tb}
             WHERE geom IS NOT NULL
           ) AS props
         ) AS features;
@@ -481,14 +479,14 @@ app.get('/api/layerlist', async (req, res) => {
 
 app.post('/api/layerlist', async (req, res) => {
     try {
-        const { tb_name, tb_fullname, remark } = req.body;
+        const { tb_name, remark } = req.body;
         console.log(req.body);
 
         const sql = `
-        INSERT INTO layerlist (tb_name, tb_fullname, remark)
-        VALUES ($1, $2, $3)
+        INSERT INTO layerlist (tb_name, remark)
+        VALUES ($1, $2)
         RETURNING *`;
-        const result = await pool.query(sql, [tb_name, tb_fullname, remark]);
+        const result = await pool.query(sql, [tb_name, remark]);
 
         return res.status(200).json({ success: true, data: result.rows[0] });
     } catch (error) {

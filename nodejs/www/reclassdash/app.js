@@ -51,7 +51,7 @@ function showFeaturePanel(feature, layer) {
     const shpsplit_sqm = document.getElementById('shpsplit_sqm');
 
     id.value = feature.properties.id;
-    xls_app_no.value = feature.properties.xls_app_no;
+    xls_app_no.value = feature.properties.app_no;
     shpsplit_sqm.value = Number(feature.properties.shparea_sqm).toFixed(0);
 }
 
@@ -91,7 +91,7 @@ const loadGeoData = async () => {
             id: item.id,
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
-            xls_app_no: item.xls_app_no,
+            app_no: item.app_no,
             shparea_sqm: item.shparea_sqm,
             shpsplit_sqm: item.shpsplit_sqm,
             classtype: item.classtype
@@ -113,7 +113,7 @@ const loadGeoData = async () => {
                                 </a>`
                     }
                 },
-                { data: 'xls_app_no', title: 'Application No' },
+                { data: 'app_no', title: 'Application No' },
                 { data: 'id', title: 'id' },
                 { data: 'shparea_sqm', title: 'เนื้อที่รวมของแปลงนี้ (m²)' },
                 { data: 'shpsplit_sqm', title: 'เนื้อที่ส่วนนี้ (m²)' },
@@ -143,7 +143,7 @@ const loadGeoData = async () => {
                     properties: {
                         id: row.id,
                         refinal: row.refinal,
-                        xls_app_no: row.xls_app_no,
+                        app_no: row.app_no,
                         xls_sqm: row.xls_sqm,
                         shparea_sqm: row.shparea_sqm,
                         classtype: row.classtype

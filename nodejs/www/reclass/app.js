@@ -74,7 +74,7 @@ const classtype = document.getElementById('classtype');
 
 function showFeaturePanel(feature, layer) {
     sub_id.value = feature.properties.sub_id;
-    xls_app_no.value = feature.properties.xls_app_no;
+    xls_app_no.value = feature.properties.app_no;
     shpsplit_sqm.value = Number(feature.properties.shpsplit_sqm).toFixed(0);
     classtype.value = feature.properties.classtype;
 }
@@ -150,7 +150,7 @@ const loadGeoData = async (id) => {
                 properties: {
                     id: item.id,
                     sub_id: item.sub_id,
-                    xls_app_no: item.xls_app_no,
+                    app_no: item.app_no,
                     shpsplit_sqm: item.shpsplit_sqm,
                     classtype: item.classtype
                 }

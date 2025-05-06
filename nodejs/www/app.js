@@ -38,11 +38,11 @@ const initApp = async () => {
         layerList.innerHTML = ''; // clear existing
 
         await result.forEach(item => {
-            const { tb_name, tb_fullname, remark } = item;
+            const { tb_name, remark } = item;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = `
                 <div class="alert alert-dismissible alert-info">
-                    <strong>ชื่อ layer: ${tb_fullname}</strong><br>
+                    <strong>ชื่อ layer: ${tb_name}</strong><br>
                     <button class="btn btn-secondary reshape" data-tb="${tb_name}">
                         ปรับรูปแปลง
                     </button>
@@ -128,13 +128,12 @@ document.getElementById("addData").addEventListener("click", () => {
 document.getElementById('btnAdd').addEventListener("click", async () => {
     try {
         const tb_name = document.getElementById("tb_name").value;
-        const tb_fullname = document.getElementById("tb_fullname").value;
         const remark = document.getElementById("tb_remark");
 
         const response = await fetch(`/rub/api/layerlist`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tb_name, tb_fullname, remark })
+            body: JSON.stringify({ tb_name, remark })
         });
 
         const result = await response.json();
@@ -142,7 +141,6 @@ document.getElementById('btnAdd').addEventListener("click", async () => {
 
         if (result.success) {
             document.getElementById("tb_name").value = "";
-            document.getElementById("tb_fullname").value = "";
             document.getElementById("tb_remark").value = "";
             alert(`อัพเดท features ${result.updated} เรียบร้อย`);
             await initApp();
