@@ -50,10 +50,10 @@ const initApp = async () => {
                         Dashboard
                     </button>
                     <button class="btn btn-success reshape_download" data-tb="${tb_name}">
-                        ดาวน์โหลด แปลงยาง
+                        Download แปลงยาง
                     </button>
                     <button class="btn btn-success classify_download" data-tb="${tb_name}">
-                        reclassify
+                        Download reclassify
                     </button>
                 </div>
         `;
