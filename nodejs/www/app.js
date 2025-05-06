@@ -137,7 +137,14 @@ document.getElementById('btnAdd').addEventListener("click", async () => {
         });
 
         const result = await response.json();
-        console.log(result);
+        // console.log(result);
+
+        const response_reclass = await fetch(`/rub/api/create_reclass_layer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tb: tb_name })
+        });
+        const result_reclass = await response_reclass.json();
 
         if (result.success) {
             document.getElementById("tb_name").value = "";

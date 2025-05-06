@@ -326,7 +326,7 @@ document.getElementById('classify').addEventListener('click', () => {
         return;
     }
     const tb = document.getElementById('tb').value;
-    fetch(`/rub/api/create_reclass_layer/${tb}`, {
+    fetch(`/rub/api/create_reclass_feature/${tb}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })

@@ -226,7 +226,7 @@ app.get('/api/countsfeatures/:tb', async (req, res) => {
     }
 });
 
-app.post('/api/create_reclass_layer/:tb', async (req, res) => {
+app.post('/api/create_reclass_feature/:tb', async (req, res) => {
     try {
         const tb = req.params.tb;
         if (!tb) {
@@ -277,6 +277,41 @@ app.post('/api/create_reclass_layer/:tb', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.post('/api/create_reclass_layer', (req, res) => {
+    try {
+        const { tb } = req.body;
+        console.log(tb);
+
+        if (!tb) {
+            return res.status(400).json({ error: 'table name are required' });
+        }
+
+        const sql = `CREATE TABLE reclass_${tb}
+            (
+                fid serial not null,
+                id integer,
+                sub_id text COLLATE pg_catalog."default",
+                app_no text COLLATE pg_catalog."default",
+                shpsplit_sqm numeric,
+                geom geometry(MultiPolygon,4326),
+                classtype text COLLATE pg_catalog."default",
+                editor text COLLATE pg_catalog."default",
+                ts timestamp without time zone DEFAULT now()
+            )`;
+
+        pool.query(sql).then(result => {
+            res.status(200).json({ success: true });
+        }).catch(err => {
+            console.error(err);
+            res.status(500).json({ error: err.message });
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
+
+    }
+})
 
 app.post('/api/splitfeature/:tb', async (req, res) => {
     try {
@@ -480,7 +515,6 @@ app.get('/api/layerlist', async (req, res) => {
 app.post('/api/layerlist', async (req, res) => {
     try {
         const { tb_name, remark } = req.body;
-        console.log(req.body);
 
         const sql = `
         INSERT INTO layerlist (tb_name, remark)
