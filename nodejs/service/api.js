@@ -25,6 +25,10 @@ app.get('/api/getfeatures/:tb', async (req, res) => {
             return res.status(400).json({ error: 'Table name is required' });
         }
         const sql = `SELECT id,
+                        farm_name,
+                        f_name,
+                        l_name,
+                        age,
                         refinal,
                         app_no,
                         xls_sqm,

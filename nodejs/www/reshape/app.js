@@ -155,6 +155,10 @@ const loadGeoData = async () => {
         const tableData = data.map(item => ({
             id: item.id,
             refinal: item.refinal,
+            farm_name: item.farm_name,
+            f_name: item.f_name,
+            l_name: item.l_name,
+            age: item.age,
             geom: JSON.parse(item.geom),
             app_no: item.app_no,
             xls_sqm: item.xls_sqm,
@@ -179,6 +183,10 @@ const loadGeoData = async () => {
                     }
                 },
                 { data: 'id', title: 'ID' },
+                { data: 'farm_name', title: 'farm_name' },
+                { data: 'f_name', title: 'f_name' },
+                { data: 'l_name', title: 'l_name' },
+                { data: 'age', title: 'age' },
                 { data: 'app_no', title: 'Application No' },
                 { data: 'xls_sqm', title: 'เนื้อที่เป้าหมาย (m²)' },
                 {
