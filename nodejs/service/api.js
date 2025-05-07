@@ -278,7 +278,7 @@ app.post('/api/create_reclass_feature/:tb', async (req, res) => {
     }
 });
 
-app.post('/api/create_reclass_layer', (req, res) => {
+app.post('/api/create_reclass_layer', async (req, res) => {
     try {
         const { tb } = req.body;
         console.log(tb);
@@ -287,8 +287,7 @@ app.post('/api/create_reclass_layer', (req, res) => {
             return res.status(400).json({ error: 'table name are required' });
         }
 
-        const sql = `CREATE TABLE reclass_${tb}
-            (
+        const sql = `CREATE TABLE reclass_${tb} (
                 fid serial not null,
                 id integer,
                 sub_id text COLLATE pg_catalog."default",
@@ -299,13 +298,67 @@ app.post('/api/create_reclass_layer', (req, res) => {
                 editor text COLLATE pg_catalog."default",
                 ts timestamp without time zone DEFAULT now()
             )`;
+        await pool.query(sql);
 
-        pool.query(sql).then(result => {
-            res.status(200).json({ success: true });
-        }).catch(err => {
-            console.error(err);
-            res.status(500).json({ error: err.message });
-        });
+        // join reclass table to source table
+        const sql2 = `CREATE VIEW v_reclass_${tb} AS SELECT
+                    a.id,
+                    a.farm_name,
+                    a.farm_idc,
+                    a.app_no,
+                    a.land_seq,
+                    a.land_right,
+                    a.land_name,
+                    a.land_moo,
+                    a.land_vill,
+                    a.tambon,
+                    a.amphur,
+                    a.province,
+                    a.grow_year,
+                    a.rip_type,
+                    a.rubber_age,
+                    a.grow_area,
+                    a.xls_app_no,
+                    a.regis_no,
+                    a.no_plot,
+                    a.id_farmer_    AS farmer_id,
+                    a.titl_nam      AS title_name,
+                    a.f_name        AS first_name,
+                    a.l_name        AS last_name,
+                    a.address,
+                    a.sub_dis       AS sub_district,
+                    a.district,
+                    a.province_1    AS province_alt,
+                    a.status,
+                    a.title_no,
+                    a.title_type,
+                    a.rai,
+                    a.age,
+                    a.x,
+                    a.y,
+                    a.xls_sqm,
+                    a.chk,
+                    a.diff_chk,
+                    a.remark        AS a_remark,
+                    a.refinal       AS a_refinal,
+                    a.editor        AS a_editor,
+                    a.ts            AS a_ts,
+                    a.classified,
+                    a.shparea_sqm,
+                    r.fid           AS reclass_fid,
+                    r.id            AS reclass_parent_id,
+                    r.sub_id        AS reclass_sub_id,
+                    r.app_no        AS reclass_app_no,
+                    r.shpsplit_sqm,
+                    r.classtype,
+                    r.editor        AS reclass_editor,
+                    r.ts            AS r_ts,
+                    r.geom
+                FROM ${tb} AS a
+                JOIN reclass_${tb} AS r
+                ON a.id = r.id;`;
+        await pool.query(sql2);
+        res.status(200).json({ success: true });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: error.message });
@@ -535,8 +588,13 @@ app.delete('/api/layerlist/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const sql = `DELETE FROM layerlist WHERE tb_name = $1 RETURNING *`;
-        const result = await pool.query(sql, [tb]);
+
+        // drop view
+        const sql0 = `DROP VIEW IF EXISTS v_reclass_${tb}`;
+        await pool.query(sql0);
+
+        const sql1 = `DELETE FROM layerlist WHERE tb_name = $1 RETURNING *`;
+        const result = await pool.query(sql1, [tb]);
 
         // delete reclass table
         const sql2 = `DROP TABLE IF EXISTS reclass_${tb}`;
