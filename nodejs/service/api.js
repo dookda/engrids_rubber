@@ -529,6 +529,34 @@ app.post('/api/layerlist', async (req, res) => {
     }
 });
 
+app.delete('/api/layerlist/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+        const sql = `DELETE FROM layerlist WHERE tb_name = $1 RETURNING *`;
+        const result = await pool.query(sql, [tb]);
+
+        // delete reclass table
+        const sql2 = `DROP TABLE IF EXISTS reclass_${tb}`;
+        await pool.query(sql2);
+
+        // delete source table
+        // const sql3 = `DROP TABLE IF EXISTS ${tb}`;
+        // await pool.query(sql3);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Table not found' });
+        }
+
+        return res.status(200).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 app.post('/api/area', async (req, res) => {
     const geojson = req.body;
     const geometry = geojson.geometry || geojson;

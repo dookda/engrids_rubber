@@ -43,18 +43,28 @@ const initApp = async () => {
             wrapper.innerHTML = `
                 <div class="alert alert-dismissible alert-info">
                     <strong>ชื่อ layer: ${tb_name}</strong><br>
-                    <button class="btn btn-secondary reshape" data-tb="${tb_name}">
-                        ปรับรูปแปลง
-                    </button>
-                    <button class="btn btn-secondary dashboard" data-tb="${tb_name}">
-                        Dashboard
-                    </button>
-                    <button class="btn btn-success reshape_download" data-tb="${tb_name}">
-                        Download แปลงยาง
-                    </button>
-                    <button class="btn btn-success classify_download" data-tb="${tb_name}">
-                        Download reclassify
-                    </button>
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <button class="btn btn-secondary reshape" data-tb="${tb_name}">
+                                ปรับรูปแปลง
+                            </button>
+                            <button class="btn btn-secondary dashboard" data-tb="${tb_name}">
+                                Dashboard
+                            </button>
+                            <button class="btn btn-success reshape_download" data-tb="${tb_name}">
+                                Download แปลงยาง
+                            </button>
+                            <button class="btn btn-success classify_download" data-tb="${tb_name}">
+                                Download reclassify
+                            </button>
+                        </div>
+                        <div>
+                            <button class="btn btn-danger deleteBtn" data-tb="${tb_name}">
+                                <i class="bi bi-trash3-fill"></i>
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
         `;
             layerList.appendChild(wrapper);
@@ -106,6 +116,37 @@ const initApp = async () => {
                     .catch(err => console.error('Download failed:', err));
             });
         }
+
+        const deleteBtn = document.getElementsByClassName('deleteBtn');
+        for (let i = 0; i < deleteBtn.length; i++) {
+            deleteBtn[i].addEventListener('click', function (e) {
+                e.preventDefault();
+                const chkLogin = document.getElementById('chkLogin').value;
+                if (chkLogin === 'false') {
+                    alert('กรุณา Login ก่อนครับ');
+                    return;
+                }
+                const tb = this.getAttribute('data-tb');
+
+                fetch(`/rub/api/layerlist/${tb}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                    .then(res => {
+                        if (!res.ok) throw new Error(res.statusText);
+                        return res.json();
+                    })
+                    .then(result => {
+                        if (result.success) {
+                            alert(`ลบ ${tb} เรียบร้อย`);
+                            initApp();
+                        } else {
+                            alert(`เกิดข้อผิดพลาด`);
+                        }
+                    })
+                    .catch(err => console.error('Delete failed:', err));
+            });
+        }
     } catch (error) {
         console.error('Error initializing app:', error);
     }
@@ -137,13 +178,13 @@ document.getElementById('btnAdd').addEventListener("click", async () => {
         });
 
         const result = await response.json();
-        // console.log(result);
 
         const response_reclass = await fetch(`/rub/api/create_reclass_layer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tb: tb_name })
         });
+
         const result_reclass = await response_reclass.json();
 
         if (result.success) {
