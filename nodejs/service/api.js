@@ -77,6 +77,45 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
     }
 });
 
+app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
+    try {
+        let { tb, id } = req.params;
+
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const featureId = parseInt(id, 10);
+        if (isNaN(featureId)) {
+            return res.status(400).json({ error: 'Feature ID must be a number' });
+        }
+
+        const sql = `
+        UPDATE ${tb} AS t
+        SET geom = r.geom
+        FROM reclass_${tb} AS r
+        WHERE t.id = $1
+          AND r.id = $1
+        RETURNING t.*;
+      `;
+        const { rows, rowCount } = await pool.query(sql, [featureId]);
+
+        if (rowCount === 0) {
+            return res.status(404).json({ error: 'Feature not found' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: rows[0]
+        });
+
+    } catch (err) {
+        console.error('Error in /api/restorefeatures:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+
 app.put('/api/updateselectedfeatures/:tb', async (req, res) => {
     try {
         const tb = req.params.tb;

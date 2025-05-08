@@ -89,6 +89,7 @@
                             <!-- <button class="btn btn-info" id="toggleArea">Hide Area</button> -->
                             <button class="btn btn-info" id="save">Save</button>
                             <button class="btn btn-success" id="classify">Classify แปลงที่นี้</button>
+                            <button class="btn btn-success" id="restore">restore</button>
                         </div>
                     </div>
                 </div>
@@ -100,6 +101,28 @@
                     <div class="card-body">
                         <table id="featureTable" class="display nowrap" style="width: 100%;"></table>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- create modal -->
+    <div class="modal fade" id="restoreModal" tabindex="-1" aria-labelledby="restoreModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="restoreModalLabel">Restore Feature</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="restoreName" class="form-label">ID ของ feature ที่ต้องการ restore</label>
+                        <input type="number" class="form-control" id="restoreId" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="btnRestore">Restore please</button>
                 </div>
             </div>
         </div>

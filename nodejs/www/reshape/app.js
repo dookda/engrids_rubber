@@ -327,6 +327,57 @@ document.getElementById('save').addEventListener('click', async () => {
     }
 });
 
+document.getElementById("restore").addEventListener("click", () => {
+    try {
+        const modal = document.getElementById("restoreModal");
+        if (modal) {
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        } else {
+            console.error(`Modal with ID ${modalId} not found.`);
+        }
+    } catch (error) {
+        console.error('Failed to fetch user:', err);
+    }
+})
+
+document.getElementById('btnRestore').addEventListener("click", async () => {
+    try {
+        const tb = document.getElementById('tb').value;
+        const id = document.getElementById('restoreId').value;
+        const response = await fetch(`/rub/api/restorefeatures/${tb}/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const result = await response.json();
+        alert(`อัพเดท features ${result.updated} เรียบร้อย`);
+
+        if (result.success) {
+            featureGroup.eachLayer(layer => {
+                layer.pm.disable();
+                layer.areaLabel?.remove();
+            });
+
+            featureGroup.clearLayers();
+            loadGeoData();
+            document.getElementById('restoreId').value = "";
+            const modal = document.getElementById("restoreModal");
+            if (modal) {
+                const bsModal = bootstrap.Modal.getInstance(modal);
+                bsModal.hide();
+            } else {
+                console.error(`Modal with ID ${modalId} not found.`);
+            }
+        } else {
+            alert('Failed to update features');
+        }
+    } catch (error) {
+        console.error('Error restoring data:', error);
+        alert('Failed to restore data');
+    }
+});
+
 document.getElementById('classify').addEventListener('click', () => {
     const id = document.getElementById('id').value;
     if (!id) {
