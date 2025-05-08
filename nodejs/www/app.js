@@ -131,7 +131,7 @@ const initApp = async () => {
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${tb}.geojson`;
+                        a.download = `v_reclass_${tb}.geojson`;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
