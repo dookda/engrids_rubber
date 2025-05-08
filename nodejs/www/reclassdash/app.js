@@ -229,27 +229,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         const data = await response.json();
 
         const chartData = [
-            { name: 'จำนวนทั้งหมด (แปลง)', y: parseInt(data.total), color: '#7cb5ec' },
-            { name: 'ปรับแก้เนื้อที่แล้ว (แปลง)', y: parseInt(data.reshp), color: '#434348' },
-            { name: 'จำแนก landuse แล้ว (แปลง)', y: parseInt(data.reclass), color: '#90ed7d' }
+            { name: 'จำนวนทั้งหมด', y: parseInt(data.total), color: '#7cb5ec' },
+            { name: 'ปรับแก้เนื้อที่แล้ว', y: parseInt(data.reshp), color: '#434348' },
+            { name: 'classified แล้ว', y: parseInt(data.reclass), color: '#90ed7d' }
         ];
 
         Highcharts.chart('container', {
-            chart: { type: 'bar', height: 240, style: { fontFamily: 'Noto Sans Thai' } },
+            chart: { type: 'bar', height: 150, style: { fontFamily: 'Noto Sans Thai' } },
             title: { text: null },
-            xAxis: { type: 'category', title: { text: 'ประเภท', style: { fontFamily: 'Noto Sans Thai' } } },
-            yAxis: { min: 0, title: { text: 'จำนวนแปลง', style: { fontFamily: 'Noto Sans Thai' } } },
+            xAxis: { type: 'category', },
+            yAxis: { min: 0, title: { text: 'จำนวน (แปลง)', style: { fontFamily: 'Noto Sans Thai' } } },
             series: [{
                 name: 'Counts',
                 data: chartData,
                 dataLabels: { enabled: true, format: '{y}' }
             }],
-            tooltip: { pointFormat: '<b>{point.y}</b> records' },
+            tooltip: { pointFormat: '<b>{point.y}</b> แปลง' },
+            credits: { enabled: false },
             legend: { enabled: false }
         });
+
+        const raiFetch = await fetch('/rub/api/countsrai/reclass_' + tb);
+        const raiData = await raiFetch.json();
+        const categories = raiData.map(r => {
+            if (r.classtype == 'rubber') { return 'แปลงยาง'; }
+            if (r.classtype == 'non-rubber') { return 'ไม่ใช่ยางพารา'; }
+            if (r.classtype == 'other') { return 'ไม่แน่ใจ'; }
+            return 'ไม่ระบุ';
+        });
+        const dataRai = raiData.map(r => parseFloat(r.area_rai));
+        Highcharts.chart('count-rai', {
+            chart: { type: 'bar', height: 150, style: { fontFamily: 'Noto Sans Thai' } },
+            title: { text: null },
+            xAxis: { categories: categories, },
+            yAxis: { min: 0, title: { text: 'เนื้อที่ (ไร่)' } },
+            tooltip: { pointFormat: '<b>{point.y:.0f} ไร่</b>' },
+            series: [{
+                name: 'Area',
+                data: dataRai,
+                dataLabels: { enabled: true, format: '{y}' }
+            }],
+            credits: { enabled: false },
+            legend: { enabled: false }
+        });
+
     } catch (err) {
         console.error('Error fetching data:', err);
     }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+
 });
 
 document.addEventListener('DOMContentLoaded', async () => {

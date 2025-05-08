@@ -269,6 +269,26 @@ app.get('/api/countsfeatures/:tb', async (req, res) => {
     }
 });
 
+app.get('/api/countsrai/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb;
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+        const sql = `SELECT
+                        classtype,
+                        ROUND(SUM(shpsplit_sqm) / 1600.0, 0) AS area_rai
+                    FROM ${tb}
+                    GROUP BY classtype
+                    ORDER BY classtype;`;
+        const { rows } = await pool.query(sql);
+        res.json(rows);
+    } catch (err) {
+        console.error(err.stack);
+        res.status(500).json({ error: 'Database query failed' });
+    }
+});
+
 app.post('/api/create_reclass_feature/:tb', async (req, res) => {
     try {
         const tb = req.params.tb;
