@@ -59,9 +59,9 @@ const initApp = async () => {
                             </button>
                         </div>
                         <div>
-                            <button class="btn btn-danger deleteBtn" data-tb="${tb_name}">
+                            <!--button class="btn btn-danger deleteBtn" data-tb="${tb_name}">
                                 <i class="bi bi-trash3-fill"></i>
-                            </button>
+                            </button-->
                         </div>
                     </div>
 
