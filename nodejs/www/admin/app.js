@@ -37,12 +37,12 @@ const initApp = async () => {
         const layerList = document.getElementById('layerList');
         layerList.innerHTML = ''; // clear existing
 
-        await result.forEach(item => {
+        await result.forEach((item, index) => {
             const { tb_name, remark } = item;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = `
                 <div class="alert alert-dismissible alert-info">
-                    <strong>ชื่อ layer: ${tb_name}</strong><br>
+                    <strong>${index + 1}. ชื่อ layer: ${tb_name}</strong><br>
                     <div class="d-flex justify-content-between">
                         <div>
                             <button class="btn btn-secondary reshape" data-tb="${tb_name}">
@@ -214,7 +214,7 @@ document.getElementById('btnAdd').addEventListener("click", async () => {
         if (result.success) {
             document.getElementById("tb_name").value = "";
             document.getElementById("tb_remark").value = "";
-            alert(`อัพเดท features ${result.updated} เรียบร้อย`);
+            alert(`อัพเดท  ${tb_name} เรียบร้อย`);
             await initApp();
         } else {
             alert(`เกิดข้อผิดพลาด`);

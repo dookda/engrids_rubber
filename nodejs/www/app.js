@@ -37,12 +37,12 @@ const initApp = async () => {
         const layerList = document.getElementById('layerList');
         layerList.innerHTML = ''; // clear existing
 
-        await result.forEach(item => {
+        await result.forEach((item, index) => {
             const { tb_name, remark } = item;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = `
                 <div class="alert alert-dismissible alert-info">
-                    <strong>ชื่อ layer: ${tb_name}</strong><br>
+                    <strong>${index + 1}. ชื่อ layer: ${tb_name}</strong><br>
                     <div class="d-flex justify-content-between">
                         <div>
                             <button class="btn btn-secondary reshape" data-tb="${tb_name}">
@@ -176,19 +176,19 @@ const initApp = async () => {
     }
 };
 
-document.getElementById("addData").addEventListener("click", () => {
-    try {
-        const modal = document.getElementById("addModal");
-        if (modal) {
-            const bsModal = new bootstrap.Modal(modal);
-            bsModal.show();
-        } else {
-            console.error(`Modal with ID ${modalId} not found.`);
-        }
-    } catch (error) {
-        console.error('Failed to fetch user:', err);
-    }
-})
+// document.getElementById("addData").addEventListener("click", () => {
+//     try {
+//         const modal = document.getElementById("addModal");
+//         if (modal) {
+//             const bsModal = new bootstrap.Modal(modal);
+//             bsModal.show();
+//         } else {
+//             console.error(`Modal with ID ${modalId} not found.`);
+//         }
+//     } catch (error) {
+//         console.error('Failed to fetch user:', err);
+//     }
+// })
 
 document.getElementById('btnAdd').addEventListener("click", async () => {
     try {

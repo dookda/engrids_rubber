@@ -343,6 +343,9 @@ app.post('/api/create_reclass_layer', async (req, res) => {
             )`;
         await pool.query(sql);
 
+        console.log(sql);
+
+
         // join reclass table to source table
         const sql2 = `CREATE VIEW v_reclass_${tb} AS SELECT
                     a.id,
@@ -361,7 +364,6 @@ app.post('/api/create_reclass_layer', async (req, res) => {
                     a.rip_type,
                     a.rubber_age,
                     a.grow_area,
-                    a.xls_app_no,
                     a.regis_no,
                     a.no_plot,
                     a.id_farmer_    AS farmer_id,
@@ -401,6 +403,9 @@ app.post('/api/create_reclass_layer', async (req, res) => {
                 JOIN reclass_${tb} AS r
                 ON a.id = r.id;`;
         await pool.query(sql2);
+
+        console.log(sql2);
+
         res.status(200).json({ success: true });
     } catch (error) {
         console.error(error);
