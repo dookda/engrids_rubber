@@ -117,6 +117,30 @@ const initApp = async () => {
             });
         }
 
+        const classify_download = document.getElementsByClassName('classify_download');
+        for (let i = 0; i < classify_download.length; i++) {
+            classify_download[i].addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                fetch(`/rub/api/download/reshape/v_reclass_${tb}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error(res.statusText);
+                        return res.blob();
+                    })
+                    .then(blob => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${tb}.geojson`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                    })
+                    .catch(err => console.error('Download failed:', err));
+            });
+        }
+
         const deleteBtn = document.getElementsByClassName('deleteBtn');
         for (let i = 0; i < deleteBtn.length; i++) {
             deleteBtn[i].addEventListener('click', function (e) {
