@@ -115,8 +115,20 @@ const loadGeoData = async () => {
                 },
                 { data: 'app_no', title: 'Application No' },
                 { data: 'id', title: 'id' },
-                { data: 'shparea_sqm', title: 'เนื้อที่รวมของแปลงนี้ (m²)' },
-                { data: 'shpsplit_sqm', title: 'เนื้อที่ส่วนนี้ (m²)' },
+                {
+                    data: 'shparea_sqm',
+                    title: 'เนื้อที่รวมของแปลงนี้ (m²)',
+                    render: (data) => {
+                        return Number(data).toFixed(0);
+                    }
+                },
+                {
+                    data: 'shpsplit_sqm',
+                    title: 'เนื้อที่ส่วนนี้ (m²)',
+                    render: (data) => {
+                        return Number(data).toFixed(0);
+                    }
+                },
                 {
                     data: 'classtype',
                     title: 'ประเภท',
