@@ -28,6 +28,37 @@ const initUser = async () => {
     }
 };
 
+const showChart = async (tb, div) => {
+    try {
+        const response = await fetch('/rub/api/countsfeatures/' + tb);
+        const data = await response.json();
+
+        const chartData = [
+            { name: 'จำนวนทั้งหมด', y: parseInt(data.total), color: '#7cb5ec' },
+            { name: 'ปรับแก้เนื้อที่แล้ว', y: parseInt(data.reshp), color: '#434348' },
+            { name: 'classified แล้ว', y: parseInt(data.reclass), color: '#90ed7d' }
+        ];
+
+        Highcharts.chart('chart_' + div, {
+            chart: { type: 'bar', height: 150, style: { fontFamily: 'Noto Sans Thai' } },
+            title: { text: null },
+            xAxis: { type: 'category', },
+            yAxis: { min: 0, title: { text: 'จำนวน (แปลง)', style: { fontFamily: 'Noto Sans Thai' } } },
+            series: [{
+                name: 'Counts',
+                data: chartData,
+                dataLabels: { enabled: true, format: '{y}' }
+            }],
+            tooltip: { pointFormat: '<b>{point.y}</b> แปลง' },
+            credits: { enabled: false },
+            legend: { enabled: false }
+        });
+    } catch (error) {
+        console.error('Error initializing app:', error);
+
+    }
+}
+
 const initApp = async () => {
     try {
 
@@ -37,7 +68,7 @@ const initApp = async () => {
         const layerList = document.getElementById('layerList');
         layerList.innerHTML = ''; // clear existing
 
-        await result.forEach((item, index) => {
+        await result.forEach(async (item, index) => {
             const { tb_name, remark } = item;
             const wrapper = document.createElement('div');
             wrapper.innerHTML = `
@@ -64,10 +95,11 @@ const initApp = async () => {
                             </button>
                         </div>
                     </div>
+                    <div class="mt-2 border" id="chart_${tb_name}" ></div>
 
-                </div>
-        `;
+                </div> `;
             layerList.appendChild(wrapper);
+            await showChart(tb_name, tb_name);
         });
 
         const reshape = document.getElementsByClassName('reshape');
