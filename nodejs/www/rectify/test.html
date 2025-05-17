@@ -40,4 +40,102 @@
     </script>
 </body>
 
+<script>
+    function searchByParcelNo_Popup() {
+        showLoading();
+
+        $("[id]").each(function () {
+            $('[id="infotext"]:gt(0)').remove();
+        });
+
+        if (document.getElementById("cbprovince_popup").value != "00") {
+            if (document.getElementById("txtparcelno_popup").value != "") {
+                $.getJSON("../../Service/ProvinceService/configapi.json", function (
+                    result
+                ) {
+                    $.ajax({
+                        dataType: "json",
+                        url:
+                            result.getservicesearch +
+                            `${document.getElementById("cbprovince_popup").value}/${document.getElementById("cbamphur_popup").value
+                            }/${document.getElementById("txtparcelno_popup").value}`,
+                        headers: {
+                            Authorization:
+                                "Bearer " +
+                                JSON.parse(sessionStorage.getItem("userinfo")).access_token,
+                        },
+
+                        success: function (data) {
+                            if (data.result != null && data.result[0] != null) {
+                                var lat = parseFloat(data.result[0].parcellat);
+                                var lon = parseFloat(data.result[0].parcellon);
+
+                                if (
+                                    navigator.userAgent.match(/Android/i) ||
+                                    navigator.userAgent.match(/webOS/i) ||
+                                    navigator.userAgent.match(/iPhone/i) ||
+                                    navigator.userAgent.match(/iPad/i) ||
+                                    navigator.userAgent.match(/iPod/i) ||
+                                    navigator.userAgent.match(/BlackBerry/i) ||
+                                    navigator.userAgent.match(/Windows Phone/i)
+                                ) {
+                                    showInfomobile(lat, lon, data, result.URL_PARCEL_WMS);
+                                    $("#modal_search").modal("hide");
+                                } else {
+                                    showInfo(lat, lon, data, result.URL_PARCEL_WMS);
+                                    $("#modal_search").modal("hide");
+                                }
+
+                                // stopLoading();
+                            } else {
+                                Swal.fire({
+                                    timer: 1500,
+                                    title: i18next.t("SweetAlert.title.01"),
+                                    text: "",
+                                    icon: "warning",
+                                    showCancelButton: false,
+                                    confirmButtonColor: "#3085d6",
+                                    confirmButtonText: i18next.t("SweetAlert.confirmButtonText.01"),
+                                }).then((result) => {
+                                    if (result.isConfirmed) {
+                                    }
+                                });
+                                clearInfo();
+                                clearLayer();
+                            }
+                        },
+                    });
+                });
+            } else {
+                Swal.fire({
+                    timer: 1500,
+                    title: i18next.t("SweetAlert.title.03"),
+                    text: "",
+                    icon: "warning",
+                    showCancelButton: false,
+                    confirmButtonColor: "#3085d6",
+                    confirmButtonText: i18next.t("SweetAlert.confirmButtonText.01"),
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                    }
+                });
+            }
+        } else {
+            Swal.fire({
+                timer: 1500,
+                title: i18next.t("SweetAlert.title.02"),
+                text: "",
+                icon: "warning",
+                showCancelButton: false,
+                confirmButtonColor: "#3085d6",
+                confirmButtonText: i18next.t("SweetAlert.confirmButtonText.01"),
+            }).then((result) => {
+                if (result.isConfirmed) {
+                }
+            });
+        }
+    }
+
+</script>
+
 </html>

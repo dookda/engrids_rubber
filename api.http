@@ -44,5 +44,44 @@ GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?transparent=true&format=
 ###
 GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms/reflect?layers=LANDSMAPS:V_PARCEL48&format=rss&viewparams=utmmap:563821624
 
+### get gml
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?format=rss&viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetMap&styles=&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29345703124999%2C14.694213867187504%2C103.29895019531247%2C14.699707031249995&width=256&height=256&srs=EPSG%3A4326
+
+### get json
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29372122%2C14.69413140%2C103.29372123%2C14.69413141&width=256&height=256&srs=EPSG%3A4326&query_layers=LANDSMAPS%3AV_PARCEL48&info_format=application%2Fjson&x=103&y=85
+
+
+
+
 ###
-GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?transparent=true&format=rss&viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetMap&styles=&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29345703124999%2C14.694213867187504%2C103.29895019531247%2C14.699707031249995&width=256&height=256&srs=EPSG%3A4326
+GET https://landsmaps.dol.go.th/Service/ProvinceService/configapi.json
+
+### get pro ldd
+GET https://landsmaps.dol.go.th/apiService/Master/GetProvince HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEiLCJyZWdpc3Rlcl90eXBlX3NlcSI6IjgiLCJ1c2VyX2dyb3VwX2RhdGFfbGlzdCI6IjEsMSwwLDAsMCwwLDAsMSIsInBlcnNvbmFsX2lkIjoiIiwianRpIjoiMmE0Y2FmYzgtODNmYS00MDE5LWJjMmMtZjY5MTMyMDZiMGJjIiwiaWF0IjoiMDUvMTcvMjAyNSAwMzoyMjozMSIsIm5iZiI6MTc0NzQ1MjE1MSwiZXhwIjoxNzQ3NTM4NTUxLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdDozMDAwMS8iLCJhdWQiOiJMYW5kc01hcHMifQ.EnAaeOh852ikxznXpZRRnQu1TV2C72Ng34mbKTYD4HD-P1ebpiWV4KCMW1EJvswsJ-QDNVO30cqDSNP86MFLIQ
+Accept: application/json
+
+### get amp ldd
+GET https://landsmaps.dol.go.th/apiService/Master/GetAmphoe/41 HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEiLCJyZWdpc3Rlcl90eXBlX3NlcSI6IjgiLCJ1c2VyX2dyb3VwX2RhdGFfbGlzdCI6IjEsMSwwLDAsMCwwLDAsMSIsInBlcnNvbmFsX2lkIjoiIiwianRpIjoiMmE0Y2FmYzgtODNmYS00MDE5LWJjMmMtZjY5MTMyMDZiMGJjIiwiaWF0IjoiMDUvMTcvMjAyNSAwMzoyMjozMSIsIm5iZiI6MTc0NzQ1MjE1MSwiZXhwIjoxNzQ3NTM4NTUxLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdDozMDAwMS8iLCJhdWQiOiJMYW5kc01hcHMifQ.EnAaeOh852ikxznXpZRRnQu1TV2C72Ng34mbKTYD4HD-P1ebpiWV4KCMW1EJvswsJ-QDNVO30cqDSNP86MFLIQ
+Accept: application/json
+
+### 
+GET https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByParcelNo/32/05/30980 HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEiLCJyZWdpc3Rlcl90eXBlX3NlcSI6IjgiLCJ1c2VyX2dyb3VwX2RhdGFfbGlzdCI6IjEsMSwwLDAsMCwwLDAsMSIsInBlcnNvbmFsX2lkIjoiIiwianRpIjoiMmE0Y2FmYzgtODNmYS00MDE5LWJjMmMtZjY5MTMyMDZiMGJjIiwiaWF0IjoiMDUvMTcvMjAyNSAwMzoyMjozMSIsIm5iZiI6MTc0NzQ1MjE1MSwiZXhwIjoxNzQ3NTM4NTUxLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdDozMDAwMS8iLCJhdWQiOiJMYW5kc01hcHMifQ.EnAaeOh852ikxznXpZRRnQu1TV2C72Ng34mbKTYD4HD-P1ebpiWV4KCMW1EJvswsJ-QDNVO30cqDSNP86MFLIQ
+Accept: application/json
+
+
+
+
+
+
+
+###
+GET https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByLatLon/14.69413141/103.29372123
+Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEiLCJyZWdpc3Rlcl90eXBlX3NlcSI6IjgiLCJ1c2VyX2dyb3VwX2RhdGFfbGlzdCI6IjEsMSwwLDAsMCwwLDAsMSIsInBlcnNvbmFsX2lkIjoiIiwianRpIjoiMmE0Y2FmYzgtODNmYS00MDE5LWJjMmMtZjY5MTMyMDZiMGJjIiwiaWF0IjoiMDUvMTcvMjAyNSAwMzoyMjozMSIsIm5iZiI6MTc0NzQ1MjE1MSwiZXhwIjoxNzQ3NTM4NTUxLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdDozMDAwMS8iLCJhdWQiOiJMYW5kc01hcHMifQ.EnAaeOh852ikxznXpZRRnQu1TV2C72Ng34mbKTYD4HD-P1ebpiWV4KCMW1EJvswsJ-QDNVO30cqDSNP86MFLIQ
+Accept: application/json
+
+
+### get json
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29372122%2C14.69413140%2C103.29372123%2C14.69413141&width=256&height=256&srs=EPSG%3A4326&query_layers=LANDSMAPS%3AV_PARCEL48&info_format=application%2Fjson&x=103&y=85
