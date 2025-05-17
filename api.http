@@ -30,3 +30,19 @@ Content-Type: application/json
   "tb_fullname": "tb_rub_nan",
   "remark":      "something"
 }
+
+###
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL48&query_layers=LANDSMAPS:V_PARCEL48&bbox=103.29620361328124,14.691467285156245,103.29757690429686,14.69284057617188&width=256&height=256&srs=EPSG:4326&x=128&y=128&info_format=application/vnd.ogc.gml
+
+
+###
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=LANDSMAPS:V_PARCEL48&outputFormat=GML3&srsName=EPSG:4326&bbox=103.29620361328124,14.691467285156245,103.29757690429686,14.69284057617188,EPSG:4326
+
+###
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?transparent=true&format=image%2Fpng&viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetMap&styles=&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29208374023436%2C14.694900512695314%2C103.2927703857422%2C14.695587158203125&width=256&height=256&srs=EPSG%3A4326&info_format=application/vnd.ogc.gml
+
+###
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms/reflect?layers=LANDSMAPS:V_PARCEL48&format=rss&viewparams=utmmap:563821624
+
+###
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?transparent=true&format=rss&viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetMap&styles=&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29345703124999%2C14.694213867187504%2C103.29895019531247%2C14.699707031249995&width=256&height=256&srs=EPSG%3A4326
