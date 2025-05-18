@@ -425,6 +425,124 @@ const initApp = async () => {
     }
 };
 
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/rub/api/ldd_getprovince');
+
+        const provinces = await response.json();
+
+        console.log(provinces.result);
+
+        const provinceSelect = document.getElementById('provinceSelect');
+
+        // Clear loading message
+        provinceSelect.innerHTML = '<option selected disabled>Select a province</option>';
+
+        provinces.result.forEach(province => {
+            const option = document.createElement('option');
+            option.value = province.pvcode;
+            option.textContent = province.pvnamethai;
+            provinceSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading provinces:', error);
+        provinceSelect.innerHTML = '<option selected disabled>Error loading provinces</option>';
+    }
+});
+
+// Handle province selection change
+document.getElementById('provinceSelect').addEventListener('change', async function () {
+    const provinceId = this.value;
+    const amphoeSelect = document.getElementById('amphoeSelect');
+
+    if (!provinceId) {
+        amphoeSelect.disabled = true;
+        return;
+    }
+
+    try {
+        amphoeSelect.disabled = true;
+        amphoeSelect.innerHTML = '<option selected disabled>Loading amphoes...</option>';
+
+        const response = await fetch(`/rub/api/ldd_getamphur/${provinceId}`);
+        const amphoes = await response.json();
+        amphoeSelect.innerHTML = '';
+        amphoeSelect.disabled = false;
+
+        amphoes.result.forEach(amphoe => {
+            const option = document.createElement('option');
+            option.value = amphoe.amcode; // Adjust based on actual API response structure
+            option.textContent = amphoe.amnamethai;
+            amphoeSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading amphoes:', error);
+        amphoeSelect.innerHTML = '<option selected disabled>Error loading amphoes</option>';
+    }
+});
+
+document.getElementById('searchButton').addEventListener('click', async function () {
+    const provinceId = document.getElementById('provinceSelect').value;
+    const amphoeId = document.getElementById('amphoeSelect').value;
+    const pacelNumber = document.getElementById('pacelNumber').value
+
+    console.log(provinceId, amphoeId, pacelNumber);
+    if (!provinceId || !amphoeId) {
+        return;
+    }
+    try {
+        const response = await fetch(`/rub/api/ldd_getpacelbypacelnumber/${provinceId}/${amphoeId}/${pacelNumber}`);
+        const pacel = await response.json();
+
+        console.log(pacel);
+
+
+        // zoom to the selected pacel by lat/lng
+        const lat = pacel.result[0].parcellat;
+        const lng = pacel.result[0].parcellon;
+        const utm1 = pacel.result[0].utm1;
+        const utm2 = pacel.result[0].utm2;
+        const utm3 = pacel.result[0].utm3;
+        map.setView([lat, lng], 16);
+        const marker = L.marker([lat, lng]).addTo(map);
+        marker.bindPopup(`เลขที่แปลง: ${pacel.result[0].pacelnumber}`);
+        marker.openPopup();
+
+        //get  https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29372122%2C14.69413140%2C103.29372123%2C14.69413141&width=256&height=256&srs=EPSG%3A4326&query_layers=LANDSMAPS%3AV_PARCEL48&info_format=application%2Fjson&x=103&y=85
+
+        const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:${utm1}${utm2}${utm3}&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL48&bbox=${lng},${lat},${Number(lng) + 0.000001},${Number(lat) + 0.000001}&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL48&info_format=application/json&x=103&y=85`;
+        console.log(url);
+
+        const response_feat = await fetch(url);
+        const parcelGeoJSON = await response_feat.json();
+        console.log(parcelGeoJSON);
+
+        var parcelLayer = L.geoJSON(parcelGeoJSON, {
+            style: function (feature) {
+                return {
+                    color: '#ff7800',
+                    weight: 2,
+                    fillOpacity: 0.1
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                // bind a popup showing the parcel_seq
+                layer.bindPopup('Parcel seq: ' + feature.properties.parcel_seq);
+            }
+        }).addTo(map);
+
+        // 5) Zoom the map to fit the polygon bounds
+        map.fitBounds(parcelLayer.getBounds());
+
+    }
+    catch (error) {
+        console.error('Error loading tambons:', error);
+        const tambonSelect = document.getElementById('tambonSelect');
+        tambonSelect.innerHTML = '<option selected disabled>Error loading tambons</option>';
+    }
+
+});
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const res = await fetch('/rub/auth/me');

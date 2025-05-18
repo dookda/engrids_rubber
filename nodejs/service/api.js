@@ -761,6 +761,95 @@ app.post('/api/split', async (req, res) => {
     }
 });
 
+app.get('/api/ldd_getprovince', async (req, res) => {
+    try {
+        const response_token = await fetch('https://landsmaps.dol.go.th/apiService/JWT/GetJWTAccessToken');
+        const token = await response_token.json();
+        const API_TOKEN = token.result[0].access_token;
+
+        const url = 'https://landsmaps.dol.go.th/apiService/Master/GetProvince';
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${API_TOKEN}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+
+app.get('/api/ldd_getamphur/:province', async (req, res) => {
+    try {
+        const province = req.params.province;
+        if (!province) {
+            return res.status(400).json({ error: 'Province is required' });
+        }
+        const response_token = await fetch('https://landsmaps.dol.go.th/apiService/JWT/GetJWTAccessToken');
+        const token = await response_token.json();
+        const API_TOKEN = token.result[0].access_token;
+
+        const url = `https://landsmaps.dol.go.th/apiService/Master/GetAmphoe/${province}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${API_TOKEN}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+
+app.get('/api/ldd_getpacelbypacelnumber/:province/:amphur/:parcelnumber', async (req, res) => {
+    try {
+        const province = req.params.province;
+        const amphur = req.params.amphur;
+        const parcelnumber = req.params.parcelnumber;
+        if (!province || !amphur || !parcelnumber) {
+            return res.status(400).json({ error: 'Province, amphur and parcelnumber are required' });
+        }
+        const response_token = await fetch('https://landsmaps.dol.go.th/apiService/JWT/GetJWTAccessToken');
+        const token = await response_token.json();
+        const API_TOKEN = token.result[0].access_token;
+        const url = `https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByParcelNo/${province}/${amphur}/${parcelnumber}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${API_TOKEN}`,
+                'Accept': 'application/json'
+            }
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+
+    }
+})
+
+
+
 
 
 // export module

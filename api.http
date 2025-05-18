@@ -50,7 +50,8 @@ GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?format=rss&viewparams=ut
 ### get json
 GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29372122%2C14.69413140%2C103.29372123%2C14.69413141&width=256&height=256&srs=EPSG%3A4326&query_layers=LANDSMAPS%3AV_PARCEL48&info_format=application%2Fjson&x=103&y=85
 
-
+### get json
+GET https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:563821624&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL48&bbox=103.29372123,14.69413141,103.293721230.01,14.694131410.01&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL48&info_format=application/json&x=103&y=85
 
 
 ###
