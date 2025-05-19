@@ -37,8 +37,18 @@ const baseLayers = {
     "Stadia Light": light
 };
 
+const ldd = L.tileLayer.wms('https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?', {
+    layers: 'V_PARCEL48',
+    format: 'image/png',
+    transparent: true,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 22,
+    viewparams: 'utmmap:563821624'
+});
+
 const overlayMaps = {
-    "แปลงยาง": featureGroup.addTo(map)
+    "แปลงยาง": featureGroup.addTo(map),
+    "แปลงที่ดิน": ldd
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
