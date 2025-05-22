@@ -30,6 +30,12 @@ const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/
     maxZoom: 22
 });
 
+const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms?", {
+    layers: 'rubber:rubber4326',
+    format: 'image/png',
+    transparent: true
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
@@ -38,9 +44,9 @@ const baseLayers = {
     "Stadia Light": light
 };
 
-
 const overlayMaps = {
-    "แปลงยาง": featureGroup.addTo(map)
+    "แปลงยาง": featureGroup.addTo(map),
+    "NDVI": ndvi.addTo(map)
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
