@@ -72,11 +72,8 @@ GET https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByParcelNo/32/05/3
 Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6IjEiLCJyZWdpc3Rlcl90eXBlX3NlcSI6IjgiLCJ1c2VyX2dyb3VwX2RhdGFfbGlzdCI6IjEsMSwwLDAsMCwwLDAsMSIsInBlcnNvbmFsX2lkIjoiIiwianRpIjoiMmE0Y2FmYzgtODNmYS00MDE5LWJjMmMtZjY5MTMyMDZiMGJjIiwiaWF0IjoiMDUvMTcvMjAyNSAwMzoyMjozMSIsIm5iZiI6MTc0NzQ1MjE1MSwiZXhwIjoxNzQ3NTM4NTUxLCJpc3MiOiJodHRwczovL2xvY2FsaG9zdDozMDAwMS8iLCJhdWQiOiJMYW5kc01hcHMifQ.EnAaeOh852ikxznXpZRRnQu1TV2C72Ng34mbKTYD4HD-P1ebpiWV4KCMW1EJvswsJ-QDNVO30cqDSNP86MFLIQ
 Accept: application/json
 
-
-
-
-
-
+###
+GET http://localhost:3400/rub/api/ldd_getpacelbypacelnumber/32/05/30980
 
 ###
 GET https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByLatLon/14.69413141/103.29372123

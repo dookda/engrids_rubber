@@ -491,6 +491,49 @@ document.getElementById('provinceSelect').addEventListener('change', async funct
     }
 });
 
+async function loadParcelData(provinceId, amphoeId, pacelNumber) {
+    try {
+        const response = await fetch(`/rub/api/ldd_getpacelbypacelnumber/${provinceId}/${amphoeId}/${pacelNumber}`);
+        const parcelGeoJSON = await response.json();
+
+        console.log(parcelGeoJSON);
+        if (!parcelGeoJSON || !parcelGeoJSON.features || parcelGeoJSON.features.length === 0) {
+            alert('No parcel data found for the given criteria.');
+            return;
+        }
+        // Clear existing layers
+        featureGroup.clearLayers();
+
+        // Create the GeoJSON layer
+        var parcelLayer = L.geoJSON(parcelGeoJSON, {
+            style: function (feature) {
+                return {
+                    color: '#ff7800',
+                    weight: 2,
+                    fillOpacity: 0.1
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                if (feature.properties && feature.properties.parcel_seq) {
+                    layer.bindPopup('Parcel seq: ' + feature.properties.parcel_seq);
+                }
+            }
+        }).addTo(map);
+
+        // Zoom to the parcel bounds
+        if (parcelLayer.getBounds().isValid()) {
+            map.fitBounds(parcelLayer.getBounds());
+        } else {
+            console.warn('Invalid bounds for parcel layer');
+        }
+
+        return parcelLayer;
+
+    } catch (error) {
+        console.error('Error loading parcel data:', error);
+    }
+}
+
 document.getElementById('searchButton').addEventListener('click', async function () {
     const provinceId = document.getElementById('provinceSelect').value;
     const amphoeId = document.getElementById('amphoeSelect').value;
@@ -501,49 +544,7 @@ document.getElementById('searchButton').addEventListener('click', async function
         return;
     }
     try {
-        const response = await fetch(`/rub/api/ldd_getpacelbypacelnumber/${provinceId}/${amphoeId}/${pacelNumber}`);
-        const pacel = await response.json();
-
-        console.log(pacel);
-
-
-        // zoom to the selected pacel by lat/lng
-        const lat = pacel.result[0].parcellat;
-        const lng = pacel.result[0].parcellon;
-        const utm1 = pacel.result[0].utm1;
-        const utm2 = pacel.result[0].utm2;
-        const utm3 = pacel.result[0].utm3;
-        map.setView([lat, lng], 16);
-        const marker = L.marker([lat, lng]).addTo(map);
-        marker.bindPopup(`เลขที่แปลง: ${pacel.result[0].pacelnumber}`);
-        marker.openPopup();
-
-        //get  https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap%3A563821624&=&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS%3AV_PARCEL48&bbox=103.29372122%2C14.69413140%2C103.29372123%2C14.69413141&width=256&height=256&srs=EPSG%3A4326&query_layers=LANDSMAPS%3AV_PARCEL48&info_format=application%2Fjson&x=103&y=85
-
-        const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:${utm1}${utm2}${utm3}&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL48&bbox=${lng},${lat},${Number(lng) + 0.000001},${Number(lat) + 0.000001}&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL48&info_format=application/json&x=103&y=85`;
-        console.log(url);
-
-        const response_feat = await fetch(url);
-        const parcelGeoJSON = await response_feat.json();
-        console.log(parcelGeoJSON);
-
-        var parcelLayer = L.geoJSON(parcelGeoJSON, {
-            style: function (feature) {
-                return {
-                    color: '#ff7800',
-                    weight: 2,
-                    fillOpacity: 0.1
-                };
-            },
-            onEachFeature: function (feature, layer) {
-                // bind a popup showing the parcel_seq
-                layer.bindPopup('Parcel seq: ' + feature.properties.parcel_seq);
-            }
-        }).addTo(map);
-
-        // 5) Zoom the map to fit the polygon bounds
-        map.fitBounds(parcelLayer.getBounds());
-
+        await loadParcelData(provinceId, amphoeId, pacelNumber);
     }
     catch (error) {
         console.error('Error loading tambons:', error);
