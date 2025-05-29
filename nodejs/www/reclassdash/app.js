@@ -30,7 +30,7 @@ const light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/
     maxZoom: 22
 });
 
-const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms?", {
+const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/gwc/service/wms?", {
     layers: 'rubber:rubber4326',
     format: 'image/png',
     transparent: true,
