@@ -20,6 +20,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # geoserver:
+  #   image: docker.osgeo.org/geoserver:2.27.x
+  #   platform: linux/amd64
+  #   container_name: rub_geoserver
+  #   restart: always
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - GEOSERVER_ADMIN_PASSWORD=rubgeoserver
+  #   depends_on:
+  #     - postgis
+  #   volumes:
+  #     - ./geoserver_data:/opt/geoserver_data
+  #   networks:
+  #     - rub-network
+
   nodejs:
     image: node:latest
     container_name: rub_nodejs
@@ -33,8 +49,7 @@ services:
       - DB_PASSWORD=rub1234
       - DB_NAME=rub
     depends_on:
-      postgis:
-        condition: service_healthy
+      - postgis
     volumes:
       - ./nodejs:/usr/src/app
     ports:

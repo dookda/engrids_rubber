@@ -37,6 +37,13 @@ const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms
     maxZoom: 24
 });
 
+const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms?", {
+    layers: 'rubber:rubber_pacel',
+    format: 'image/png',
+    transparent: true,
+    maxZoom: 24
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
@@ -47,7 +54,8 @@ const baseLayers = {
 
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
-    "NDVI": ndvi.addTo(map)
+    "NDVI": ndvi.addTo(map),
+    "แปลงยาง(เดิม)": rubber_parcel.addTo(map)
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
