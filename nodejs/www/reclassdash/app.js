@@ -54,8 +54,8 @@ const baseLayers = {
 
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
-    "NDVI": ndvi.addTo(map),
-    "แปลงยาง(เดิม)": rubber_parcel.addTo(map)
+    "NDVI": ndvi,
+    "แปลงยาง(เดิม)": rubber_parcel
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
