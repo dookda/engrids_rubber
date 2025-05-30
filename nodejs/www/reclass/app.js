@@ -97,11 +97,15 @@ function showFeaturePanel(feature, layer) {
 }
 
 const getFeatureStyle = (feature) => {
+    console.log('getFeatureStyle', feature);
+
     const color = feature.properties.classtype === 'rubber'
         ? '#006d2c'
         : feature.properties.classtype === 'non-rubber'
             ? '#d7191c'
-            : '#ff00ff';
+            : feature.properties.classtype === 'other'
+                ? '#fdae61'
+                : '#ff00ff';
     return {
         fillColor: color,
         weight: 2,
@@ -229,6 +233,7 @@ legend.addTo(map);
 
 document.getElementById('classtype').addEventListener('change', (e) => {
     const selectedValue = e.target.value;
+    const id = document.getElementById('id').value
     const tb = document.getElementById('tb').value;
     const displayName = document.getElementById('displayName').value;
 
@@ -238,6 +243,7 @@ document.getElementById('classtype').addEventListener('change', (e) => {
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+            id: id,
             sub_id: sub_id.value,
             classtype: selectedValue,
             displayName: displayName,

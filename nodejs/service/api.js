@@ -323,7 +323,7 @@ app.post('/api/create_reclass_feature/:tb', async (req, res) => {
         // uudate reclass column
         const updateSql = `
             UPDATE ${tb}
-            SET classified = TRUE
+            SET classified = FALSE
             WHERE id = $1
             RETURNING *;
         `;
@@ -364,7 +364,6 @@ app.post('/api/create_reclass_layer', async (req, res) => {
         await pool.query(sql);
 
         console.log(sql);
-
 
         // join reclass table to source table
         const sql2 = `CREATE VIEW v_reclass_${tb} AS SELECT
@@ -447,6 +446,8 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
         const id = polygon_fc.properties.id;
         const sub_id = polygon_fc.properties.sub_id;
 
+        console.log(`Splitting feature in table ${tb} with ID ${id} and sub_id ${sub_id}`);
+
         if (!properties?.app_no) {
             return res.status(400).json({ error: 'app_no is required in properties' });
         }
@@ -461,7 +462,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
         const result = await pool.query(`
             WITH delete_existing AS (
                 DELETE FROM reclass_${tb} 
-                WHERE sub_id LIKE $5 || '%'
+                WHERE sub_id = $5
                 RETURNING sub_id
             ),
             inputs AS (
@@ -539,12 +540,12 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { sub_id, classtype, displayName } = req.body;
+        const { id, sub_id, classtype, displayName } = req.body;
         if (!sub_id || !classtype) {
             return res.status(400).json({ error: 'ID and classtype are required' });
         }
 
-        const sql = `
+        const updateReclass = `
             UPDATE reclass_${tb}
             SET classtype = $1, 
                 editor = $2
@@ -552,7 +553,16 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
             RETURNING *`;
 
         const values = [classtype, displayName, sub_id];
-        const result = await pool.query(sql, values);
+        const result = await pool.query(updateReclass, values);
+
+        const updateReshape = `
+            UPDATE ${tb}
+            SET classified = TRUE
+            WHERE id = $1
+            RETURNING *;
+        `;
+        const updateReshapeValues = [id];
+        const updateResult = await pool.query(updateReshape, updateReshapeValues);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Feature not found' });
