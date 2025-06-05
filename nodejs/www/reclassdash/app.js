@@ -34,14 +34,16 @@ const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/gwc/servic
     layers: 'rubber:rubber4326',
     format: 'image/png',
     transparent: true,
-    maxZoom: 24
+    maxZoom: 24,
+    zIndex: 5
 });
 
 const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms?", {
     layers: 'rubber:rubber_pacel',
     format: 'image/png',
     transparent: true,
-    maxZoom: 24
+    maxZoom: 24,
+    zIndex: 6
 });
 
 const baseLayers = {
@@ -52,13 +54,38 @@ const baseLayers = {
     "Stadia Light": light
 };
 
+const ndviTile = L.featureGroup();
+const trueColorTile = L.featureGroup();
+
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
+    "แปลงยาง(เดิม)": rubber_parcel,
     "NDVI": ndvi,
-    "แปลงยาง(เดิม)": rubber_parcel
+    "NDVI gee": ndviTile,
+    "S2 gee": trueColorTile
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
+
+fetch('/rub/api/gee')
+    .then(res => res.json())
+    .then((data) => {
+        const truecolor = L.tileLayer(data.truecolor.urlFormat, {
+            attribution: 'Google Earth Engine',
+            maxZoom: 24,
+            zIndex: 3
+        });
+
+        const ndvi = L.tileLayer(data.ndvi.urlFormat, {
+            attribution: 'Google Earth Engine',
+            maxZoom: 24,
+            zIndex: 4
+        });
+
+        // Add layers to map
+        truecolor.addTo(trueColorTile);
+        ndvi.addTo(ndviTile);
+    });
 
 function showFeaturePanel(feature, layer) {
     const id = document.getElementById('id');
