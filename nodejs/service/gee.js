@@ -56,7 +56,7 @@ async function getEEdata() {
         const ndwiMinMax = getMinMax(ndwi, 'NDWI');
         const ndbiMinMax = getMinMax(ndbi, 'NDBI');
 
-        const visNDVI = { min: -0.3, max: 0.7, palette: ['d7191c', 'ffffbf', '1a9641'] };
+        const visNDVI = { min: -0.2, max: 0.6, palette: ['d7191c', 'ffffbf', '1a9641'] };
         const visNDWI = { min: ndwiMinMax.NDVI_min, max: ndwiMinMax.NDVI_max, palette: ['purple', 'white', 'cyan'] };
         const visNDBI = { min: ndbiMinMax.NDVI_min, max: ndbiMinMax.NDVI_max, palette: ['brown', 'white', 'blue'] };
 
