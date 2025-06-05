@@ -21,7 +21,7 @@ async function getEEdata() {
         // console.log('✅ Geometry bounds:', );
 
         const images = ee.ImageCollection("COPERNICUS/S2_HARMONIZED")
-            .filterDate('2023-12-01', '2024-05-31')
+            .filterDate('2023-12-01', '2024-04-30')
             .filterBounds(geometry)
             .median()
             .multiply(0.0001) // Scale factor for Sentinel-2

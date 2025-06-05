@@ -35,7 +35,7 @@ const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/gwc/servic
     format: 'image/png',
     transparent: true,
     maxZoom: 24,
-    zIndex: 5
+    zIndex: 6
 });
 
 const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/rubber/wms?", {
@@ -43,7 +43,7 @@ const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/r
     format: 'image/png',
     transparent: true,
     maxZoom: 24,
-    zIndex: 6
+    zIndex: 7
 });
 
 const baseLayers = {
@@ -55,6 +55,7 @@ const baseLayers = {
 };
 
 const ndviTile = L.featureGroup();
+const ndwiTile = L.featureGroup();
 const trueColorTile = L.featureGroup();
 
 const overlayMaps = {
@@ -62,6 +63,7 @@ const overlayMaps = {
     "แปลงยาง(เดิม)": rubber_parcel,
     "NDVI": ndvi,
     "NDVI gee": ndviTile,
+    "NDWI gee": ndwiTile,
     "S2 gee": trueColorTile
 };
 
@@ -70,21 +72,30 @@ L.control.layers(baseLayers, overlayMaps).addTo(map);
 fetch('/rub/api/gee')
     .then(res => res.json())
     .then((data) => {
+        console.log(data);
+
         const truecolor = L.tileLayer(data.truecolor.urlFormat, {
             attribution: 'Google Earth Engine',
             maxZoom: 24,
             zIndex: 3
         });
 
-        const ndvi = L.tileLayer(data.ndvi.urlFormat, {
+        const ndwi = L.tileLayer(data.ndwi.urlFormat, {
             attribution: 'Google Earth Engine',
             maxZoom: 24,
             zIndex: 4
         });
 
+        const ndvi = L.tileLayer(data.ndvi.urlFormat, {
+            attribution: 'Google Earth Engine',
+            maxZoom: 24,
+            zIndex: 5
+        });
+
         // Add layers to map
         truecolor.addTo(trueColorTile);
         ndvi.addTo(ndviTile);
+        ndwi.addTo(ndwiTile);
     });
 
 function showFeaturePanel(feature, layer) {
