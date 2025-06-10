@@ -46,6 +46,16 @@ const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/r
     zIndex: 6
 });
 
+const ldd_wms = L.tileLayer.wms("https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?", {
+    layers: 'LANDSMAPS:V_PARCEL48,LANDSMAPS:V_PARCEL47',
+    // viewparams: 'utmmap:563821624',
+    viewparams: 'utmmap:482941458',
+    format: 'image/png',
+    transparent: true,
+    maxZoom: 24,
+    zIndex: 6
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
@@ -62,7 +72,8 @@ const overlayMaps = {
     "แปลงยาง(เดิม)": rubber_parcel,
     "NDVI": ndvi,
     "NDVI gee": ndviTile,
-    "S2 gee": trueColorTile
+    "S2 gee": trueColorTile,
+    "test": ldd_wms.addTo(map)
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
@@ -87,6 +98,11 @@ fetch('/rub/api/gee')
         ndvi.addTo(ndviTile);
     });
 
+
+map.on('click', (e) => {
+    console.log(e.latlng);
+
+})
 // Configure Geoman controls
 map.pm.addControls({
     position: 'topleft',
@@ -177,7 +193,7 @@ const getFeatureStyle = (feature) => {
 const onEachFeature = (feature, layer) => {
     layer.bindPopup(`${feature.properties.id}`);
 
-    layer.on('click', () => {
+    layer.on('click', (e) => {
         // map.fitBounds(layer.getBounds());
         showFeaturePanel(feature, layer);
         featureGroup.eachLayer(l => l.pm.disable());
