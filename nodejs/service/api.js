@@ -782,7 +782,7 @@ app.get('/api/ldd_getprovince', async (req, res) => {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${API_TOKEN}`,
-                'Accept': 'application/json'
+                'Accept': 'application/json',
             }
         });
 
@@ -858,8 +858,7 @@ app.get('/api/ldd_getpacelbypacelnumber/:province/:amphur/:parcelnumber', async 
             {
                 headers: {
                     'Authorization': `Bearer ${API_TOKEN}`,
-                    'Accept': 'application/json',
-                    'User-Agent': 'YourService/1.0'
+                    'Accept': 'application/json'
                 }
             }
         );
@@ -875,18 +874,19 @@ app.get('/api/ldd_getpacelbypacelnumber/:province/:amphur/:parcelnumber', async 
             service: 'WMS',
             version: '1.1.1',
             request: 'GetFeatureInfo',
-            layers: 'LANDSMAPS:V_PARCEL48',
+            layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
             bbox: `${parcelInfo.parcellon},${parcelInfo.parcellat},${(Number(parcelInfo.parcellon) + 0.000001).toFixed(6)},${(Number(parcelInfo.parcellat) + 0.000001).toFixed(6)}`,
             width: '256',
             height: '256',
             srs: 'EPSG:4326',
-            query_layers: 'LANDSMAPS:V_PARCEL48',
+            query_layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
             info_format: 'application/json',
-            x: '103',
-            y: '85'
+            x: '128',
+            y: '128'
         });
-
-        const geoResponse = await fetch(`https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`);
+        const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`;
+        console.log(url)
+        const geoResponse = await fetch(url);
         if (!geoResponse.ok) throw new Error(`Geo API failed with status ${geoResponse.status}`);
 
         const geoData = await geoResponse.json();
@@ -945,6 +945,71 @@ app.get('/api/ldd_getpacelbypacelnumber2/:province/:amphur/:parcelnumber', async
         const lng = ressonse_json.result[0].parcellon;
 
         const urlGeo = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:${utm1}${utm2}${utm3}&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL48&bbox=${lng},${lat},${Number(lng) + 0.000001},${Number(lat) + 0.000001}&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL48&info_format=application/json&x=103&y=85`;
+
+        const response_feat = await fetch(urlGeo);
+
+        if (!response_feat.ok) {
+            throw new Error(`HTTP error! status: ${response_feat.status}`);
+        }
+        const data_feat = await response_feat.json();
+        data_feat.features[0].properties = ressonse_json.result[0];
+
+        res.status(200).json(data_feat);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
+
+
+app.get('/api/ldd_getpacelbylatlng/:lat/:lng', async (req, res) => {
+    try {
+        const ulat = req.params.lat;
+        const ulng = req.params.lng;
+
+        console.log(`Latitude: ${ulat}, Longitude: ${ulng}`);
+
+        if (!ulat || !ulng) {
+            return res.status(400).json({ error: 'Latitude and Longitude are required' });
+        }
+
+        const response_token = await fetch('https://landsmaps.dol.go.th/apiService/JWT/GetJWTAccessToken');
+        const token = await response_token.json();
+        const API_TOKEN = token.result[0].access_token;
+
+        // console.log(`API Token: ${API_TOKEN}`);
+
+        const url = `https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByLatLon/${ulat}/${ulng}`;
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${API_TOKEN}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        // console.log(`Request URL: ${url}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const ressonse_json = await response.json();
+        console.log(ressonse_json);
+
+        const utm1 = ressonse_json.result[0].utm1;
+        const utm2 = ressonse_json.result[0].utm2;
+        const utm3 = ressonse_json.result[0].utm3;
+        const lat = ressonse_json.result[0].parcellat;
+        const lng = ressonse_json.result[0].parcellon;
+        const zone = ressonse_json.result[0].zone;
+
+        console.log(`UTM1: ${utm1}, UTM2: ${utm2}, UTM3: ${utm3}, Latitude: ${lat}, Longitude: ${lng}, Zone: ${zone}`);
+
+
+        const urlGeo = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:${utm1}${utm2}${utm3}&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL${zone}&bbox=${lng},${lat},${Number(lng) + 0.000001},${Number(lat) + 0.000001}&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL${zone}&info_format=application/json&x=103&y=85`;
+
+        console.log(urlGeo);
+
 
         const response_feat = await fetch(urlGeo);
 

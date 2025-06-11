@@ -1,7 +1,7 @@
 // Initialize map and feature group
 const map = L.map('map').setView([18.819620993471577, 100.8784385963758], 13);
 const featureGroup = L.featureGroup();
-
+const lddFeatureGroup = L.featureGroup();
 // Configure base layer
 const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
     maxZoom: 22,
@@ -46,6 +46,16 @@ const rubber_parcel = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/r
     zIndex: 6
 });
 
+// const ldd_wms = L.tileLayer.wms("https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?", {
+//     layers: 'LANDSMAPS:V_PARCEL48,LANDSMAPS:V_PARCEL47',
+//     // viewparams: 'utmmap:563821624',
+//     viewparams: 'utmmap:482941458',
+//     format: 'image/png',
+//     transparent: true,
+//     maxZoom: 24,
+//     zIndex: 6
+// });
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
@@ -62,7 +72,8 @@ const overlayMaps = {
     "แปลงยาง(เดิม)": rubber_parcel,
     "NDVI": ndvi,
     "NDVI gee": ndviTile,
-    "S2 gee": trueColorTile
+    "S2 gee": trueColorTile,
+    "test": lddFeatureGroup.addTo(map)
 };
 
 L.control.layers(baseLayers, overlayMaps).addTo(map);
@@ -87,6 +98,11 @@ fetch('/rub/api/gee')
         ndvi.addTo(ndviTile);
     });
 
+
+map.on('click', (e) => {
+    console.log(e.latlng);
+
+})
 // Configure Geoman controls
 map.pm.addControls({
     position: 'topleft',
@@ -177,7 +193,7 @@ const getFeatureStyle = (feature) => {
 const onEachFeature = (feature, layer) => {
     layer.bindPopup(`${feature.properties.id}`);
 
-    layer.on('click', () => {
+    layer.on('click', (e) => {
         // map.fitBounds(layer.getBounds());
         showFeaturePanel(feature, layer);
         featureGroup.eachLayer(l => l.pm.disable());
@@ -505,3 +521,135 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+document.getElementById('dashboard').addEventListener('click', (e) => {
+    e.preventDefault();
+    const tb = document.getElementById('tb').value;
+    window.location.href = './../reclassdash/index.html?tb=' + tb;
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/rub/api/ldd_getprovince');
+        const provinces = await response.json();
+        const provinceSelect = document.getElementById('provinceSelect');
+
+        provinceSelect.innerHTML = '<option selected disabled>Select a province</option>';
+
+        provinces.result.forEach(province => {
+            const option = document.createElement('option');
+            option.value = province.pvcode;
+            option.textContent = province.pvnamethai;
+            provinceSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading provinces:', error);
+        provinceSelect.innerHTML = '<option selected disabled>Error loading provinces</option>';
+    }
+});
+
+// Handle province selection change
+document.getElementById('provinceSelect').addEventListener('change', async function () {
+    const provinceId = this.value;
+    const amphoeSelect = document.getElementById('amphoeSelect');
+
+    if (!provinceId) {
+        amphoeSelect.disabled = true;
+        return;
+    }
+
+    try {
+        amphoeSelect.disabled = true;
+        amphoeSelect.innerHTML = '<option selected disabled>Loading amphoes...</option>';
+
+        const response = await fetch(`/rub/api/ldd_getamphur/${provinceId}`);
+        const amphoes = await response.json();
+        amphoeSelect.innerHTML = '';
+        amphoeSelect.disabled = false;
+
+        amphoes.result.forEach(amphoe => {
+            const option = document.createElement('option');
+            option.value = amphoe.amcode; // Adjust based on actual API response structure
+            option.textContent = amphoe.amnamethai;
+            amphoeSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading amphoes:', error);
+        amphoeSelect.innerHTML = '<option selected disabled>Error loading amphoes</option>';
+    }
+});
+
+async function loadParcelData(provinceId, amphoeId, pacelNumber) {
+    try {
+        const response = await fetch(`/rub/api/ldd_getpacelbypacelnumber/${provinceId}/${amphoeId}/${pacelNumber}`);
+        const parcelGeoJSON = await response.json();
+
+        console.log(parcelGeoJSON);
+        if (!parcelGeoJSON || !parcelGeoJSON.features || parcelGeoJSON.features.length === 0) {
+            alert('No parcel data found for the given criteria.');
+            return;
+        }
+        // Clear existing layers
+        lddFeatureGroup.clearLayers();
+
+        // Create the GeoJSON layer
+        var parcelLayer = L.geoJSON(parcelGeoJSON, {
+            style: function (feature) {
+                return {
+                    color: '#ff7800',
+                    weight: 2,
+                    fillOpacity: 0.1
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                if (feature.properties && feature.properties.parcel_seq) {
+                    layer.bindPopup('Parcel seq: ' + feature.properties.parcel_seq);
+                }
+            }
+        });
+
+        lddFeatureGroup.addLayer(parcelLayer);
+
+        if (parcelLayer.getBounds().isValid()) {
+            map.fitBounds(parcelLayer.getBounds());
+        } else {
+            console.warn('Invalid bounds for parcel layer');
+        }
+
+        return parcelLayer;
+
+    } catch (error) {
+        console.error('Error loading parcel data:', error);
+    }
+}
+
+document.getElementById('searchButton').addEventListener('click', async function () {
+    const provinceId = document.getElementById('provinceSelect').value;
+    const amphoeId = document.getElementById('amphoeSelect').value;
+    const pacelNumber = document.getElementById('pacelNumber').value
+
+    if (!provinceId || !amphoeId) {
+        return;
+    }
+    try {
+        await loadParcelData(provinceId, amphoeId, pacelNumber);
+    }
+    catch (error) {
+        console.error('Error loading tambons:', error);
+        const tambonSelect = document.getElementById('tambonSelect');
+        tambonSelect.innerHTML = '<option selected disabled>Error loading tambons</option>';
+    }
+});
+
+document.getElementById('clearButton').addEventListener('click', function () {
+    const provinceSelect = document.getElementById('provinceSelect');
+    const amphoeSelect = document.getElementById('amphoeSelect');
+    const pacelNumber = document.getElementById('pacelNumber');
+
+    provinceSelect.value = '';
+    amphoeSelect.value = '';
+    pacelNumber.value = '';
+
+    // Clear the map
+    lddFeatureGroup.clearLayers();
+    // document.getElementById()
+});
