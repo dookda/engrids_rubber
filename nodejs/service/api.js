@@ -782,7 +782,7 @@ app.get('/api/ldd_getprovince', async (req, res) => {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${API_TOKEN}`,
-                'Accept': 'application/json'
+                'Accept': 'application/json',
             }
         });
 
@@ -858,8 +858,7 @@ app.get('/api/ldd_getpacelbypacelnumber/:province/:amphur/:parcelnumber', async 
             {
                 headers: {
                     'Authorization': `Bearer ${API_TOKEN}`,
-                    'Accept': 'application/json',
-                    'User-Agent': 'YourService/1.0'
+                    'Accept': 'application/json'
                 }
             }
         );
@@ -875,18 +874,19 @@ app.get('/api/ldd_getpacelbypacelnumber/:province/:amphur/:parcelnumber', async 
             service: 'WMS',
             version: '1.1.1',
             request: 'GetFeatureInfo',
-            layers: 'LANDSMAPS:V_PARCEL48',
+            layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
             bbox: `${parcelInfo.parcellon},${parcelInfo.parcellat},${(Number(parcelInfo.parcellon) + 0.000001).toFixed(6)},${(Number(parcelInfo.parcellat) + 0.000001).toFixed(6)}`,
             width: '256',
             height: '256',
             srs: 'EPSG:4326',
-            query_layers: 'LANDSMAPS:V_PARCEL48',
+            query_layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
             info_format: 'application/json',
-            x: '103',
-            y: '85'
+            x: '128',
+            y: '128'
         });
-
-        const geoResponse = await fetch(`https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`);
+        const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`;
+        console.log(url)
+        const geoResponse = await fetch(url);
         if (!geoResponse.ok) throw new Error(`Geo API failed with status ${geoResponse.status}`);
 
         const geoData = await geoResponse.json();
