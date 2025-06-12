@@ -84,6 +84,9 @@ const provinces = [
 var amphur = sessionStorage.getItem('amphur');
 const data = amphur ? JSON.parse(amphur).result : null;
 
+var userinfo = sessionStorage.getItem('userinfo');
+const API_TOKEN = userinfo ? JSON.parse(userinfo).access_token : null;
+
 // 3. Create UI elements
 const container = document.createElement('div');
 container.style.padding = '15px';
@@ -171,7 +174,83 @@ async function getPacelByPacelNumber(province, amphur, parcelnumber) {
 
     const parcelJson = await parcelRes.json();
     const parcelInfo = parcelJson?.result?.[0];
+    if (!parcelInfo) {
+        console.log('ไม่พบข้อมูลแปลงที่ดิน');
+        return;
+    }
+    console.log('ข้อมูลแปลงที่ดิน:', parcelInfo);
+
+    const geoParams = new URLSearchParams({
+        viewparams: `utmmap:${parcelInfo.utm1}${parcelInfo.utm2}${parcelInfo.utm3}`,
+        service: 'WMS',
+        version: '1.1.1',
+        request: 'GetFeatureInfo',
+        layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
+        bbox: `${parcelInfo.parcellon},${parcelInfo.parcellat},${(Number(parcelInfo.parcellon) + 0.000001).toFixed(6)},${(Number(parcelInfo.parcellat) + 0.000001).toFixed(6)}`,
+        width: '256',
+        height: '256',
+        srs: 'EPSG:4326',
+        query_layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
+        info_format: 'application/json',
+        x: '128',
+        y: '128'
+    });
+    const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`;
+    console.log(url)
 }
 
+// add input for parcel number
+const parcelLabel = document.createElement('label');
+parcelLabel.textContent = 'เลขที่แปลงที่ดิน: ';
+parcelLabel.htmlFor = 'parcelInput';
+const parcelInput = document.createElement('input');
+parcelInput.id = 'parcelInput';
+parcelInput.type = 'text';
+parcelInput.placeholder = 'กรุณากรอกเลขที่แปลงที่ดิน';
+parcelInput.style.margin = '0 10px 10px 10px';
+container.appendChild(parcelLabel);
+container.appendChild(parcelInput);
 
+// add button 
+const searchButton = document.createElement('button');
+searchButton.textContent = '🔍 ค้นหาแปลงที่ดิน';
+searchButton.id = 'searchButton';
+searchButton.style.margin = '0 0 10px 10px';
+container.appendChild(searchButton);
 
+searchButton.addEventListener('click', async () => {
+    const selectedPv = pvSelect.value;
+    const selectedAm = amSelect.value;
+    const parcelNumber = parcelInput.value.trim();
+    if (!selectedPv || selectedPv === '00') {
+        console.log('กรุณาเลือกจังหวัด');
+        return;
+    }
+    if (!selectedAm) {
+        console.log('กรุณาเลือกอำเภอ');
+        return;
+    }
+    if (!parcelNumber) {
+        console.log('กรุณากรอกเลขที่แปลงที่ดิน');
+        return;
+    }
+
+    if (selectedPv && selectedAm) {
+        const amphoe = data.find(d => d.pvcode === selectedPv && d.amcode === selectedAm);
+        if (amphoe) {
+            console.log(`Selected Province: ${provinces.find(p => p.code === selectedPv).name}`);
+            console.log(`Selected Amphoe: ${amphoe.amnamethai}`);
+            // Call the API with the selected province and amphoe
+            try {
+                await getPacelByPacelNumber(selectedPv, selectedAm, parcelNumber); // Replace '123456' with actual parcel number
+                console.log('API call successful');
+            } catch (error) {
+                console.error('Error fetching parcel data:', error);
+            }
+        } else {
+            console.log('ไม่พบข้อมูลอำเภอที่เลือก');
+        }
+    } else {
+        console.log('กรุณาเลือกจังหวัดและอำเภอ');
+    }
+});
