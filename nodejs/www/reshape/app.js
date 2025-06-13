@@ -529,16 +529,94 @@ document.getElementById('dashboard').addEventListener('click', (e) => {
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        const response = await fetch('/rub/api/ldd_getprovince');
-        const provinces = await response.json();
+        const provinces = [
+            { "code": "00", "name": "กรุณาเลือกจังหวัด" },
+            { "code": "81", "name": "กระบี่" },
+            { "code": "10", "name": "กรุงเทพมหานคร" },
+            { "code": "71", "name": "กาญจนบุรี" },
+            { "code": "46", "name": "กาฬสินธุ์" },
+            { "code": "62", "name": "กำแพงเพชร" },
+            { "code": "40", "name": "ขอนแก่น" },
+            { "code": "22", "name": "จันทบุรี" },
+            { "code": "24", "name": "ฉะเชิงเทรา" },
+            { "code": "20", "name": "ชลบุรี" },
+            { "code": "18", "name": "ชัยนาท" },
+            { "code": "36", "name": "ชัยภูมิ" },
+            { "code": "86", "name": "ชุมพร" },
+            { "code": "57", "name": "เชียงราย" },
+            { "code": "50", "name": "เชียงใหม่" },
+            { "code": "92", "name": "ตรัง" },
+            { "code": "23", "name": "ตราด" },
+            { "code": "63", "name": "ตาก" },
+            { "code": "26", "name": "นครนายก" },
+            { "code": "73", "name": "นครปฐม" },
+            { "code": "48", "name": "นครพนม" },
+            { "code": "30", "name": "นครราชสีมา" },
+            { "code": "80", "name": "นครศรีธรรมราช" },
+            { "code": "60", "name": "นครสวรรค์" },
+            { "code": "12", "name": "นนทบุรี" },
+            { "code": "96", "name": "นราธิวาส" },
+            { "code": "55", "name": "น่าน" },
+            { "code": "38", "name": "บึงกาฬ" },
+            { "code": "31", "name": "บุรีรัมย์" },
+            { "code": "13", "name": "ปทุมธานี" },
+            { "code": "77", "name": "ประจวบคีรีขันธ์" },
+            { "code": "25", "name": "ปราจีนบุรี" },
+            { "code": "94", "name": "ปัตตานี" },
+            { "code": "14", "name": "พระนครศรีอยุธยา" },
+            { "code": "56", "name": "พะเยา" },
+            { "code": "82", "name": "พังงา" },
+            { "code": "93", "name": "พัทลุง" },
+            { "code": "66", "name": "พิจิตร" },
+            { "code": "65", "name": "พิษณุโลก" },
+            { "code": "76", "name": "เพชรบุรี" },
+            { "code": "67", "name": "เพชรบูรณ์" },
+            { "code": "54", "name": "แพร่" },
+            { "code": "83", "name": "ภูเก็ต" },
+            { "code": "44", "name": "มหาสารคาม" },
+            { "code": "49", "name": "มุกดาหาร" },
+            { "code": "58", "name": "แม่ฮ่องสอน" },
+            { "code": "35", "name": "ยโสธร" },
+            { "code": "95", "name": "ยะลา" },
+            { "code": "45", "name": "ร้อยเอ็ด" },
+            { "code": "85", "name": "ระนอง" },
+            { "code": "21", "name": "ระยอง" },
+            { "code": "70", "name": "ราชบุรี" },
+            { "code": "16", "name": "ลพบุรี" },
+            { "code": "52", "name": "ลำปาง" },
+            { "code": "51", "name": "ลำพูน" },
+            { "code": "42", "name": "เลย" },
+            { "code": "33", "name": "ศรีสะเกษ" },
+            { "code": "47", "name": "สกลนคร" },
+            { "code": "90", "name": "สงขลา" },
+            { "code": "91", "name": "สตูล" },
+            { "code": "11", "name": "สมุทรปราการ" },
+            { "code": "75", "name": "สมุทรสงคราม" },
+            { "code": "74", "name": "สมุทรสาคร" },
+            { "code": "27", "name": "สระแก้ว" },
+            { "code": "19", "name": "สระบุรี" },
+            { "code": "17", "name": "สิงห์บุรี" },
+            { "code": "64", "name": "สุโขทัย" },
+            { "code": "72", "name": "สุพรรณบุรี" },
+            { "code": "84", "name": "สุราษฎร์ธานี" },
+            { "code": "32", "name": "สุรินทร์" },
+            { "code": "43", "name": "หนองคาย" },
+            { "code": "39", "name": "หนองบัวลำภู" },
+            { "code": "15", "name": "อ่างทอง" },
+            { "code": "37", "name": "อำนาจเจริญ" },
+            { "code": "41", "name": "อุดรธานี" },
+            { "code": "53", "name": "อุตรดิตถ์" },
+            { "code": "61", "name": "อุทัยธานี" },
+            { "code": "34", "name": "อุบลราชธานี" }
+        ];
         const provinceSelect = document.getElementById('provinceSelect');
 
         provinceSelect.innerHTML = '<option selected disabled>Select a province</option>';
 
-        provinces.result.forEach(province => {
+        provinces.forEach(province => {
             const option = document.createElement('option');
-            option.value = province.pvcode;
-            option.textContent = province.pvnamethai;
+            option.value = province.code;
+            option.textContent = province.name;
             provinceSelect.appendChild(option);
         });
     } catch (error) {
@@ -561,12 +639,12 @@ document.getElementById('provinceSelect').addEventListener('change', async funct
         amphoeSelect.disabled = true;
         amphoeSelect.innerHTML = '<option selected disabled>Loading amphoes...</option>';
 
-        const response = await fetch(`/rub/api/ldd_getamphur/${provinceId}`);
-        const amphoes = await response.json();
+        // const response = await fetch(`/rub/api/ldd_getamphur/${provinceId}`);
+        // const amphoes = await response.json();
         amphoeSelect.innerHTML = '';
         amphoeSelect.disabled = false;
 
-        amphoes.result.forEach(amphoe => {
+        amphoes.filter(amphoe => amphoe.pvcode === provinceId).forEach(amphoe => {
             const option = document.createElement('option');
             option.value = amphoe.amcode; // Adjust based on actual API response structure
             option.textContent = amphoe.amnamethai;
@@ -578,12 +656,37 @@ document.getElementById('provinceSelect').addEventListener('change', async funct
     }
 });
 
-async function loadParcelData(provinceId, amphoeId, pacelNumber) {
+async function openLdd() {
     try {
-        const response = await fetch(`/rub/api/ldd_getpacelbypacelnumber/${provinceId}/${amphoeId}/${pacelNumber}`);
-        const parcelGeoJSON = await response.json();
+        const provinceId = document.getElementById('provinceSelect').value;
+        const amphoeId = document.getElementById('amphoeSelect').value;
+        const pacelNumber = document.getElementById('pacelNumber').value;
+        if (!provinceId || !amphoeId || !pacelNumber) {
+            alert('Please select province, amphoe and enter parcel number');
+            return;
+        }
+        const url = `https://landsmaps.dol.go.th/?province=${provinceId}&amphur=${amphoeId}&parcelnumber=${pacelNumber}`;
+        window.open(url, '_blank');
+    } catch (error) {
+        console.error('Error opening LDD:', error);
+    }
+}
 
-        console.log(parcelGeoJSON);
+async function loadParcelData() {
+    try {
+        const urlText = document.getElementById('urlText').value;
+        console.log('Loading parcel data from URL:', urlText);
+
+        // const response = await fetch(`/rub/api/ldd_loadwms`, {
+        //     method: 'POST',
+        //     headers: { 'Content-Type': 'application/json' },
+        //     body: JSON.stringify({ urlText })
+        // });
+        // const parcelGeoJSON = await response.json();
+
+        const parcelGeoJSON = JSON.parse(urlText);
+        // console.log(parcelGeoJSON);
+
         if (!parcelGeoJSON || !parcelGeoJSON.features || parcelGeoJSON.features.length === 0) {
             alert('No parcel data found for the given criteria.');
             return;
@@ -631,7 +734,7 @@ document.getElementById('searchButton').addEventListener('click', async function
         return;
     }
     try {
-        await loadParcelData(provinceId, amphoeId, pacelNumber);
+        await openLdd(provinceId, amphoeId, pacelNumber);
     }
     catch (error) {
         console.error('Error loading tambons:', error);
@@ -652,4 +755,17 @@ document.getElementById('clearButton').addEventListener('click', function () {
     // Clear the map
     lddFeatureGroup.clearLayers();
     // document.getElementById()
+});
+
+document.getElementById('loadParcelButton').addEventListener('click', async function () {
+    try {
+        await loadParcelData();
+    } catch (error) {
+        console.error('Error loading parcel data:', error);
+    }
+});
+
+document.getElementById('clearParcelButton').addEventListener('click', function () {
+    lddFeatureGroup.clearLayers();
+    document.getElementById('urlText').value = '';
 });

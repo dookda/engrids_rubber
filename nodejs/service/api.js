@@ -962,69 +962,27 @@ app.post('/api/split', async (req, res) => {
 // })
 
 
-// app.get('/api/ldd_getpacelbylatlng/:lat/:lng', async (req, res) => {
-//     try {
-//         const ulat = req.params.lat;
-//         const ulng = req.params.lng;
+app.post('/api/ldd_loadwms', async (req, res) => {
+    try {
+        const { urlText } = req.body;
+        console.log(urlText);
 
-//         console.log(`Latitude: ${ulat}, Longitude: ${ulng}`);
+        const response_feat = await fetch(urlText);
 
-//         if (!ulat || !ulng) {
-//             return res.status(400).json({ error: 'Latitude and Longitude are required' });
-//         }
+        if (!response_feat.ok) {
+            throw new Error(`HTTP error! status: ${response_feat.status}`);
+        }
+        const data_feat = await response_feat.json();
 
-//         const response_token = await fetch('https://landsmaps.dol.go.th/apiService/JWT/GetJWTAccessToken');
-//         const token = await response_token.json();
-//         const API_TOKEN = token.result[0].access_token;
+        console.log(data_feat);
 
-//         // console.log(`API Token: ${API_TOKEN}`);
+        data_feat.features[0].properties = ressonse_json.result[0];
 
-//         const url = `https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByLatLon/${ulat}/${ulng}`;
-//         const response = await fetch(url, {
-//             method: 'GET',
-//             headers: {
-//                 'Authorization': `Bearer ${API_TOKEN}`,
-//                 'Accept': 'application/json'
-//             }
-//         });
-
-//         // console.log(`Request URL: ${url}`);
-
-//         if (!response.ok) {
-//             throw new Error(`HTTP error! status: ${response.status}`);
-//         }
-
-//         const ressonse_json = await response.json();
-//         console.log(ressonse_json);
-
-//         const utm1 = ressonse_json.result[0].utm1;
-//         const utm2 = ressonse_json.result[0].utm2;
-//         const utm3 = ressonse_json.result[0].utm3;
-//         const lat = ressonse_json.result[0].parcellat;
-//         const lng = ressonse_json.result[0].parcellon;
-//         const zone = ressonse_json.result[0].zone;
-
-//         console.log(`UTM1: ${utm1}, UTM2: ${utm2}, UTM3: ${utm3}, Latitude: ${lat}, Longitude: ${lng}, Zone: ${zone}`);
-
-
-//         const urlGeo = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?viewparams=utmmap:${utm1}${utm2}${utm3}&service=WMS&version=1.1.1&request=GetFeatureInfo&layers=LANDSMAPS:V_PARCEL${zone}&bbox=${lng},${lat},${Number(lng) + 0.000001},${Number(lat) + 0.000001}&width=256&height=256&srs=EPSG:4326&query_layers=LANDSMAPS:V_PARCEL${zone}&info_format=application/json&x=103&y=85`;
-
-//         console.log(urlGeo);
-
-
-//         const response_feat = await fetch(urlGeo);
-
-//         if (!response_feat.ok) {
-//             throw new Error(`HTTP error! status: ${response_feat.status}`);
-//         }
-//         const data_feat = await response_feat.json();
-//         data_feat.features[0].properties = ressonse_json.result[0];
-
-//         res.status(200).json(data_feat);
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// })
+        res.status(200).json(data_feat);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+})
 
 
 // export module

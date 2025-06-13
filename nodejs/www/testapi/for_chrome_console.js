@@ -80,6 +80,15 @@ const provinces = [
     { "code": "34", "name": "อุบลราชธานี" }
 ];
 
+// get page URL
+const pageUrl = window.location.href;
+// Check if the URL contains 'landsmaps.dol.go.th'
+if (!pageUrl.includes('landsmaps.dol.go.th')) {
+    console.error('This script should only be run on landsmaps.dol.go.th');
+    alert('กรุณาเปิดใช้งานสคริปต์นี้บนเว็บไซต์ landsmaps.dol.go.th เท่านั้น');
+    throw new Error('Invalid URL: This script is intended for landsmaps.dol.go.th only');
+}
+
 // 2. Sample amphoe data
 var amphur = sessionStorage.getItem('amphur');
 const data = amphur ? JSON.parse(amphur).result : null;
@@ -98,7 +107,7 @@ container.style.fontFamily = 'Arial, sans-serif';
 
 // 3. Add heading
 const heading = document.createElement('h3');
-heading.textContent = '📍 Select Province and Amphoe';
+heading.textContent = '📍 เอาจริงละนะ';
 heading.style.margin = '0 0 10px 0';
 container.appendChild(heading);
 
@@ -159,7 +168,28 @@ pvSelect.addEventListener('change', () => {
 //     }
 // });
 
+// add <p> element to display instructions
+const instructions = document.createElement('p');
+const divTxt = document.createElement('div');
+divTxt.id = 'copyDiv';
+divTxt.style.cursor = 'pointer';
+divTxt.style.padding = '10px';
+divTxt.style.background = '#f9f9f9';
+divTxt.style.border = '1px solid #ddd';
+
+// Add it to the body
+document.body.appendChild(div);
+
+// Define the copy function
+function copyTextFromDiv() {
+    const text = document.getElementById("copyDiv").innerText;
+    navigator.clipboard.writeText(text)
+        .then(() => alert("Copied to clipboard!"))
+        .catch(err => alert("Failed to copy"));
+}
+
 async function getPacelByPacelNumber(province, amphur, parcelnumber) {
+    divTxt.innerText = "";
     const parcelRes = await fetch(
         `https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByParcelNo/${province}/${amphur}/${parcelnumber}`,
         {
@@ -197,6 +227,9 @@ async function getPacelByPacelNumber(province, amphur, parcelnumber) {
     });
     const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`;
     console.log(url)
+
+    divTxt.innerText = url;
+    divTxt.onclick = copyTextFromDiv;
 }
 
 // add input for parcel number
@@ -254,3 +287,4 @@ searchButton.addEventListener('click', async () => {
         console.log('กรุณาเลือกจังหวัดและอำเภอ');
     }
 });
+

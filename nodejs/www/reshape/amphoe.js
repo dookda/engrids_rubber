@@ -1,5 +1,16 @@
-
-var bound = [
+const amphoes = [
+    {
+        "pvcode": "00",
+        "amcode": "00",
+        "amnamethai": "กรุณาเลือกอำเภอ",
+        "amnameeng": "Select District"
+    },
+    {
+        "pvcode": "10",
+        "amcode": "00",
+        "amnamethai": "กรุณาเลือกอำเภอ",
+        "amnameeng": "Select District"
+    },
     {
         "pvcode": "10",
         "amcode": "01",
@@ -6487,121 +6498,3 @@ var bound = [
         "amnameeng": "Cho-airong"
     }
 ]
-
-const getPacelByPacelNumber = async (province, amphur, parcelnumber) => {
-    const parcelRes = await fetch(
-        `https://landsmaps.dol.go.th/apiService/LandsMaps/GetParcelByParcelNo/${province}/${amphur}/${parcelnumber}`,
-        {
-            headers: {
-                'Authorization': `Bearer ${API_TOKEN}`,
-                'Accept': 'application/json'
-            }
-        }
-    );
-
-    if (!parcelRes.ok) throw new Error(`Parcel API failed with status ${parcelRes.status}`);
-
-    const parcelJson = await parcelRes.json();
-    const parcelInfo = parcelJson?.result?.[0];
-    if (!parcelInfo) throw new Error('No parcel data found');
-
-    const geoParams = new URLSearchParams({
-        viewparams: `utmmap:${parcelInfo.utm1}${parcelInfo.utm2}${parcelInfo.utm3}`,
-        service: 'WMS',
-        version: '1.1.1',
-        request: 'GetFeatureInfo',
-        layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
-        bbox: `${parcelInfo.parcellon},${parcelInfo.parcellat},${(Number(parcelInfo.parcellon) + 0.000001).toFixed(6)},${(Number(parcelInfo.parcellat) + 0.000001).toFixed(6)}`,
-        width: '256',
-        height: '256',
-        srs: 'EPSG:4326',
-        query_layers: 'LANDSMAPS:V_PARCEL47,LANDSMAPS:V_PARCEL48',
-        info_format: 'application/json',
-        x: '128',
-        y: '128'
-    });
-    const url = `https://landsmaps.dol.go.th/geoserver/LANDSMAPS/wms?${geoParams}`;
-    console.log(url)
-    const geoResponse = await fetch(url);
-    if (!geoResponse.ok) throw new Error(`Geo API failed with status ${geoResponse.status}`);
-
-    const geoData = await geoResponse.json();
-    if (!geoData?.features?.[0]) throw new Error('No geo features found');
-
-    geoData.features[0].properties = {
-        ...parcelInfo,
-        ...geoData.features[0].properties
-    };
-}
-
-// Add Bootstrap CSS
-var link = document.createElement('link');
-link.rel = 'stylesheet';
-link.href = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css';
-document.head.appendChild(link);
-
-// Add Bootstrap JS
-var script = document.createElement('script');
-script.src = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js';
-document.body.appendChild(script);
-
-var userinfo = sessionStorage.getItem('userinfo');
-const API_TOKEN = userinfo ? JSON.parse(userinfo).access_token : null;
-
-var amphur = sessionStorage.getItem('amphur');
-const boundArr = amphur ? JSON.parse(amphur).result : null;
-console.log(boundArr);
-
-document.body.insertAdjacentHTML('beforeend', `
-<div class="modal fade" id="myModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Enter Your Name</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        <form>
-          <div class="mb-3">
-            <label for="provinceSelect" class="form-label">Select Province</label>
-            <select class="form-select" id="provinceSelect">
-              <option value="" selected disabled>Select Province</option>
-              ${provinces.map(p => `<option value="${p.pvcode}">${p.pvnameeng}</option>`).join('')}
-            </select>
-
-            <label for="amphurSelect" class="form-label mt-3">Select District</label>
-            <select class="form-select" id="amphurSelect">
-              <option value="" selected disabled>Select District</option>
-              ${amphurs.map(a => `<option value="${a.amcode}" data-pvcode="${a.pvcode}">${a.amnameeng}</option>`).join('')}
-            </select>
-          </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" onclick="alert('Hello, ' + document.getElementById('nameInput').value)">Submit</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-`);
-
-document.getElementById('provinceSelect').addEventListener('change', function () {
-    const selectedProvince = this.value;
-    const amphurSelect = document.getElementById('amphurSelect');
-
-    // Clear previous options
-    amphurSelect.innerHTML = '<option value="" selected disabled>Select District</option>';
-
-    // Filter and add new options
-    const filteredAmphurs = amphurs.filter(a => a.pvcode === selectedProvince);
-    filteredAmphurs.forEach(amphur => {
-        const option = document.createElement('option');
-        option.value = amphur.amcode;
-        option.textContent = amphur.amnameeng;
-        amphurSelect.appendChild(option);
-    });
-});
-
-var modal = new bootstrap.Modal(document.getElementById('myModal'));
-modal.show();
