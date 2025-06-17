@@ -1,4 +1,5 @@
 document.getElementById("run-code").addEventListener("click", async () => {
+    Swal.close();
     let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     chrome.scripting.executeScript({
@@ -112,10 +113,12 @@ document.getElementById("run-code").addEventListener("click", async () => {
                         return response.json();
                     })
                     .then(data => {
-                        console.log('GeoServer data:', data);
+                        // console.log('GeoServer data:', data);
                         // write to file
-                        divTxt.innerText = JSON.stringify(data);
-                        divTxt.onclick = copyTextFromDiv;
+                        // divTxt.innerText = JSON.stringify(data);
+                        // divTxt.onclick = copyTextFromDiv;
+
+                        Swal.fire({ title: JSON.stringify(data) });
                     })
                     .catch(error => {
                         console.error('Error fetching GeoServer data:', error);
