@@ -962,27 +962,27 @@ app.post('/api/split', async (req, res) => {
 // })
 
 
-app.post('/api/ldd_loadwms', async (req, res) => {
-    try {
-        const { urlText } = req.body;
-        console.log(urlText);
+// app.post('/api/ldd_loadwms', async (req, res) => {
+//     try {
+//         const { urlText } = req.body;
+//         console.log(urlText);
 
-        const response_feat = await fetch(urlText);
+//         const response_feat = await fetch(urlText);
 
-        if (!response_feat.ok) {
-            throw new Error(`HTTP error! status: ${response_feat.status}`);
-        }
-        const data_feat = await response_feat.json();
+//         if (!response_feat.ok) {
+//             throw new Error(`HTTP error! status: ${response_feat.status}`);
+//         }
+//         const data_feat = await response_feat.json();
 
-        console.log(data_feat);
+//         console.log(data_feat);
 
-        data_feat.features[0].properties = ressonse_json.result[0];
+//         data_feat.features[0].properties = ressonse_json.result[0];
 
-        res.status(200).json(data_feat);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-})
+//         res.status(200).json(data_feat);
+//     } catch (error) {
+//         res.status(500).json({ error: error.message });
+//     }
+// })
 
 
 // export module
