@@ -29,7 +29,7 @@ passport.serializeUser((user, done) => {
 passport.deserializeUser(async (id, done) => {
     try {
         const { rows } = await pool.query(
-            'SELECT id, google_id, display_name, email FROM users WHERE id = $1',
+            'SELECT id, google_id, display_name, email, photo FROM users WHERE id = $1',
             [id]
         );
         done(null, rows[0] || null);
@@ -38,11 +38,15 @@ passport.deserializeUser(async (id, done) => {
     }
 });
 
+console.log(process.env);
+
+
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // callbackURL: '/rub/auth/callback',
-    callbackURL: 'https://engrids.soc.cmu.ac.th/rub/auth/callback'
+
+    callbackURL: '/rub/auth/callback',
+    // callbackURL: 'https://engrids.soc.cmu.ac.th/rub/auth/callback'
 },
     async (accessToken, refreshToken, profile, done) => {
         const googleId = profile.id;
@@ -59,6 +63,10 @@ passport.use(new GoogleStrategy({
             let userId;
             if (rows.length) {
                 userId = rows[0].id;
+                await pool.query(
+                    'UPDATE users SET display_name = $1, email = $2, photo = $3 WHERE id = $4',
+                    [displayName, email, photo, userId]
+                );
             } else {
                 ({ rows } = await pool.query(
                     `INSERT INTO users (google_id, display_name, email, photo)

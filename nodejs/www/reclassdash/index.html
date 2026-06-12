@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Leaflet Geoman with Turf Area - Click to Edit</title>
+    <title>Reclassdash - Dashboard</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,13 +19,13 @@
 </head>
 
 <body>
-    <div class="container">
+    <div class="container-fluid px-3 py-2">
         <div class="row">
-            <div class="col-sm-8 mt-3">
+            <div class="col-sm-8 mt-2 d-flex flex-column">
                 <div class="card" id="map"></div>
             </div>
-            <div class="col-sm-4 mt-3">
-                <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="col-sm-4 mt-2">
+                <div class="d-flex justify-content-between align-items-center mb-2">
                     <div>
                     </div>
                     <div id="user-panel" class="d-flex align-items-center">
@@ -47,47 +47,239 @@
                         </a>
                     </div>
                 </div>
-                <div class="card mb-3">
-                    <div class="card-body ">
-                        <a class="btn btn-secondary" href="./../index.html">
-                            <i class="bi bi-house-heart-fill"></i>Home
-                        </a>
-                        <button class="btn btn-secondary" id="reshape">ปรับรูปแปลง</button>
-                        <button class="btn btn-secondary" id="v3">V3</button>
+                <div id="assignmentInfo" class="mb-2"></div>
+
+                <div class="card mb-2">
+
+                    <div class="card-body nav-buttons">
+                        <div class="section-title"><i class="bi bi-compass"></i> เมนู</div>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a class="btn btn-secondary" href="./../index.html">
+                                <i class="bi bi-house-heart-fill"></i> Home
+                            </a>
+                            <button class="btn btn-secondary" id="reshape">ปรับรูปแปลง</button>
+                        </div>
                     </div>
                 </div>
-                <div class="card">
-                    <div class="card-body">
-                        <div id="featurePanel">
-                            <div>
-                                <strong>ID:</strong>
-                                <input class="form-control form-control-sm" id="id" disabled>
+                <div class="card mb-2 shadow-sm" id="taskProgressCard" style="display:none;">
+                    <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center cursor-pointer py-3"
+                        data-bs-toggle="collapse" data-bs-target="#taskProgressCollapse" aria-expanded="true">
+                        <div class="section-title mb-0"><i class="bi bi-bar-chart-steps"></i> ความคืบหน้างาน</div>
+                        <i class="bi bi-chevron-down toggle-icon"></i>
+                    </div>
+                    <div class="collapse show" id="taskProgressCollapse">
+                        <div class="card-body pt-0">
+                            <div id="taskProgressList" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-2 shadow-sm">
+                    <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center cursor-pointer py-3"
+                        data-bs-toggle="collapse" data-bs-target="#featurePanelCollapse" aria-expanded="true">
+                        <div class="section-title mb-0"><i class="bi bi-layers"></i> ข้อมูลแปลง</div>
+                        <i class="bi bi-chevron-down toggle-icon"></i>
+                    </div>
+                    <div class="collapse show" id="featurePanelCollapse">
+                        <div class="card-body pt-0">
+                            <div id="featurePanel">
+                                <!-- Plot Navigation & Search Bar -->
+                                <div class="plot-nav-bar mb-3">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="input-group input-group-sm flex-grow-1">
+                                            <input type="text" class="form-control border-end-0" id="search-plot-id"
+                                                placeholder="🔎 พิมพ์ ID หรือ เลขทะเบียน...">
+                                            <button class="btn btn-primary" id="btn-panel-search" title="ค้นหา"><i
+                                                    class="bi bi-search"></i></button>
+                                        </div>
+                                        <div class="d-flex align-items-center gap-1">
+                                            <button class="btn btn-outline-secondary btn-sm" id="btn-plot-prev"
+                                                title="แปลงก่อนหน้า">
+                                                <i class="bi bi-chevron-left"></i>
+                                            </button>
+                                            <div id="plot-nav-count" class="badge bg-light text-dark border px-2 py-1"
+                                                style="font-size: 0.75rem; min-width: 65px; font-family: 'Inter', sans-serif;">
+                                                0 / 0</div>
+                                            <button class="btn btn-outline-secondary btn-sm" id="btn-plot-next"
+                                                title="แปลงถัดไป">
+                                                <i class="bi bi-chevron-right"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="d-flex justify-content-between align-items-center mb-3 bg-white p-2 rounded-3 border">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="bg-primary text-white p-2 rounded-3"
+                                            style="width: 45px; height: 45px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem;"
+                                            id="display-id-num">3</div>
+                                        <div>
+                                            <div class="text-muted"
+                                                style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                                                เลขแปลง</div>
+                                            <div id="display-id" class="fw-bold" style="font-size: 0.9rem;">ID: -</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="text-muted"
+                                            style="font-size: 0.7rem; font-weight: 700; text-transform: uppercase;">
+                                            เลขทะเบียนเกษตรกร</div>
+                                        <div id="display-farmer-id" class="fw-bold text-primary"
+                                            style="font-size: 1rem;"><i class="bi bi-person-vcard"></i> -</div>
+                                    </div>
+                                </div>
+
+                                <input type="hidden" id="id">
                                 <input type="hidden" id="tb">
-                            </div>
-                            <div>
-                                <strong>App No:</strong>
-                                <input class="form-control form-control-sm" id="xls_app_no">
-                            </div>
-                            <!-- <div>
-                                <strong>ประเภทการใช้ประโยชน์:</strong>
-                                <input class="form-control" id="classtype">
-                            </div> -->
-                            <div>
-                                <strong>เนื้อที่ (m²):</strong>
-                                <input class="form-control form-control-sm" id="shpsplit_sqm">
+                                <input type="hidden" id="panel-sub-id">
+
+                                <!-- Comparison Area Cards -->
+                                <div class="row g-2 mb-3">
+                                    <div class="col-6">
+                                        <div class="area-comparison-card land" style="padding-bottom: 5px;">
+                                            <div class="card-label"><i class="bi bi-geo-alt-fill"></i> ข้อมูลระดับโฉนด
+                                            </div>
+                                            <div class="d-flex justify-content-between align-items-end mt-1">
+                                                <span class="x-small fw-bold text-muted">เนื้อที่เป้าหมายโฉนด:</span>
+                                                <div class="current-val m-0"><span id="target-land-sqm"
+                                                        style="font-size: 1rem;">0</span> <small>m²</small></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between align-items-end mt-1">
+                                                <span class="x-small fw-bold text-muted">เนื้อที่ขณะนี้:</span>
+                                                <div class="current-val m-0 text-primary"><span id="curr-land-sqm"
+                                                        style="font-size: 1rem;">0</span> <small>m²</small></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="area-comparison-card rubber" style="padding-bottom: 5px;">
+                                            <div class="card-label" id="rubber-card-label"><i
+                                                    class="bi bi-tree-fill"></i> ข้อมูลที่คลาส</div>
+                                            <div class="d-flex justify-content-between align-items-end mt-1"
+                                                id="rubber-target-row" style="display: none !important;">
+                                                <span class="x-small fw-bold text-muted"
+                                                    id="rubber-card-target-label">เนื้อที่เป้าหมายยางพารา:</span>
+                                                <div class="current-val m-0"><span id="target-rubber-sqm"
+                                                        style="font-size: 1rem;">0</span> <small>m²</small></div>
+                                            </div>
+                                            <div class="d-flex justify-content-between align-items-end mt-1"
+                                                id="rubber-current-row" style="display: none !important;">
+                                                <span class="x-small fw-bold text-muted">เนื้อที่ขณะนี้:</span>
+                                                <div class="current-val m-0 text-success"><span id="curr-area-sqm"
+                                                        style="font-size: 1rem;">0</span> <small>m²</small></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Additional classification info -->
+                                <div class="mb-3">
+                                    <label class="small fw-bold text-success"><i class="bi bi-tag-fill"></i>
+                                        ประเภทปัจจุบัน</label>
+                                    <div id="display-classtype" class="mt-1">
+                                        <span class="badge bg-light text-dark border w-100 py-2">-</span>
+                                    </div>
+                                </div>
+
+                                <!-- Review Section -->
+                                <div class="review-section-container">
+                                    <!-- Box สำหรับผู้ตรวจสอบ -->
+                                    <div class="review-box checker-box mb-3">
+                                        <div class="section-title-sm mb-2"><i class="bi bi-shield-check"></i>
+                                            สำหรับเจ้าหน้าที่ (Checker)</div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="xs-label">ตรวจสอบโฉนด</label>
+                                                <select class="form-select form-select-sm" id="panel-check-area">
+                                                    <option value="">-- เลือก --</option>
+                                                    <option value="ผ่าน">✅ ผ่าน</option>
+                                                    <option value="ไม่ผ่าน">❌ ไม่ผ่าน</option>
+                                                </select>
+                                            </div>
+                                            <div class="col-6">
+                                                <label class="xs-label">การจำแนกประเภท</label>
+                                                <select class="form-select form-select-sm" id="panel-check-shape">
+                                                    <option value="">-- เลือก --</option>
+                                                    <option value="ผ่าน">✅ ผ่าน</option>
+                                                    <option value="ไม่ผ่าน">❌ ไม่ผ่าน</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="xs-label">หมายเหตุผู้เช็ค</label>
+                                            <textarea class="form-control form-control-sm" id="panel-remark" rows="2"
+                                                placeholder="ความเห็นผู้ตรวจสอบ..."></textarea>
+                                        </div>
+                                        <div class="reviewer-footer mt-2 pt-2 border-top mb-2" id="panel-reviewer-info"
+                                            style="display:none;">
+                                            <div class="x-small text-muted">
+                                                <div><i class="bi bi-person-fill"></i> ผู้ตรวจ: <span
+                                                        id="panel-reviewer-name">-</span></div>
+                                                <div><i class="bi bi-clock"></i> <span id="panel-review-time">-</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-success btn-sm flex-grow-1"
+                                                id="panel-btn-save-checker">
+                                                <i class="bi bi-floppy-fill me-1"></i> บันทึกผลการตรวจ
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Box สำหรับผู้ใช้งาน -->
+                                    <div class="review-box user-box">
+                                        <div class="section-title-sm mb-2" style="color: #1976d2;"><i
+                                                class="bi bi-chat-dots-fill"></i> สำหรับผู้ใช้งาน (User)</div>
+                                        <div class="mb-2">
+                                            <label class="xs-label">หมายเหตุ/คำอธิบายจากผู้ใช้</label>
+                                            <textarea class="form-control form-control-sm" id="panel-user-remark"
+                                                rows="2" placeholder="คำอธิบาย หรือแจ้งการแก้ไข..."></textarea>
+                                        </div>
+                                        <div class="reviewer-footer mt-2 pt-2 border-top mb-2" id="panel-user-info"
+                                            style="display:none;">
+                                            <div class="x-small text-muted">
+                                                <div><i class="bi bi-person-circle"></i> ผู้ใช้: <span
+                                                        id="panel-user-name">-</span></div>
+                                                <div><i class="bi bi-clock-history"></i> <span
+                                                        id="panel-user-time">-</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-outline-primary btn-sm flex-grow-1"
+                                                id="panel-btn-save-user">
+                                                <i class="bi bi-send-fill me-1"></i> บันทึกหมายเหตุผู้ใช้
+                                            </button>
+                                            <button class="btn btn-outline-danger btn-sm" id="panel-btn-clear-user"
+                                                title="ล้างหมายเหตุ">
+                                                <i class="bi bi-trash3-fill"></i> ลบ
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <!-- <strong> <span class="mt-2" id="message"></span></strong> -->
                     </div>
                 </div>
-                <div class="row">
-                    <div class="col-sm-12 mt-3">
-                        <div class="card" id="container"></div>
+                <div class="card mb-2 shadow-sm">
+                    <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center cursor-pointer py-3"
+                        data-bs-toggle="collapse" data-bs-target="#chartsCollapse" aria-expanded="false">
+                        <div class="section-title mb-0"><i class="bi bi-pie-chart-fill"></i> รายงานสถิติ</div>
+                        <i class="bi bi-chevron-down toggle-icon"></i>
                     </div>
-                </div>
-                <div class="row">
-                    <div class="col-sm-12 mt-3">
-                        <div class="card" id="count-rai"></div>
+                    <div class="collapse" id="chartsCollapse">
+                        <div class="card-body pt-0">
+                            <div class="row">
+                                <div class="col-sm-12 mt-2">
+                                    <div class="card border-0 bg-transparent" id="container"></div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-12 mt-2">
+                                    <div class="card border-0 bg-transparent" id="count-rai"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -96,6 +288,7 @@
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
+                        <div class="section-title"><i class="bi bi-table"></i> ตารางข้อมูลแปลงยาง</div>
                         <table id="featureTable" class="display nowrap" style="width: 100%;"></table>
                     </div>
                 </div>
@@ -104,6 +297,22 @@
     </div>
 
 
+    <!-- Note Popup Modal -->
+    <div class="modal fade" id="notePopupModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-md">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h6 class="modal-title" id="notePopupTitle">หมายเหตุ</h6>
+                    <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="notePopupBody" style="font-size: 0.9rem; word-break: break-word; overflow-wrap: break-word;"></div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
@@ -111,9 +320,8 @@
         crossorigin="anonymous"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.min.js"></script> -->
-    <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-    <script src="https://code.highcharts.com/highcharts.js"></script>
-    <script src="./app.js"> </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
+    <script src="./app.js?v=2"></script>
 </body>
 
 </html>

@@ -12,6 +12,7 @@ services:
       - 5400:5432
     volumes:
       - ./postgis:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
     networks:
       - rub-network
     healthcheck:
@@ -20,34 +21,21 @@ services:
       timeout: 5s
       retries: 10
 
-  # geoserver:
-  #   image: docker.osgeo.org/geoserver:2.27.x
-  #   platform: linux/amd64
-  #   container_name: rub_geoserver
-  #   restart: always
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     - GEOSERVER_ADMIN_PASSWORD=rubgeoserver
-  #   depends_on:
-  #     - postgis
-  #   volumes:
-  #     - ./geoserver_data:/opt/geoserver_data
-  #   networks:
-  #     - rub-network
-
   nodejs:
-    image: node:latest
+    build: ./nodejs
     container_name: rub_nodejs
     restart: always
     working_dir: /usr/src/app
     environment:
       - NODE_ENV=development
+      - PORT=3000
       - DB_HOST=postgis
       - DB_PORT=5432
       - DB_USER=postgres
       - DB_PASSWORD=rub1234
-      - DB_NAME=rub
+      - DB_NAME=rub2
+    env_file:
+      - .env
     depends_on:
       - postgis
     volumes:
@@ -56,25 +44,34 @@ services:
       - "3400:3000"
     networks:
       - rub-network
-    command: sh -c "npm i && npm i -g nodemon && nodemon"
+    command: sh -c "npm i -g nodemon && nodemon server.js"
 
-#   react:
-#     image: node:latest
-#     container_name: rub_react
-#     restart: always
-#     working_dir: /usr/src/app
-#     environment:
-#       - NODE_ENV=development
-#       - REACT_APP_API_URL=http://nodejs:3000 
-#     depends_on:
-#       - nodejs
-#     volumes:
-#       - ./react:/usr/src/app
-#     ports:
-#       - "3000:5173" 
-#     networks:
-#       - rub-network
-#     command: sh -c "npm i && npm run dev" 
+  backup:
+    build: ./backup
+    container_name: rub_backup
+    restart: always
+    environment:
+      - POSTGRES_HOST=postgis
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=rub1234
+      - POSTGRES_DB=rub2
+      - BACKUP_INTERVAL_HOURS=24
+      - BACKUP_KEEP_DAYS=7
+      - BACKUP_DIR=/backups
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - ./backups:/backups
+    ports:
+      - "8100:8100"
+    networks:
+      - rub-network
+
 networks:
   rub-network:
     driver: bridge
+
+volumes:
+  pgdata:
