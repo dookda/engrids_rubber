@@ -5,7 +5,10 @@
    3) "มอบหมายงาน"  → assign ID ranges to team members
 ================================================================ */
 
-/* ── Initialise logged-in users list ── */
+const ROLE_LABELS = { admin: 'Admin', worker: 'Worker' };
+const ROLE_COLORS = { admin: 'danger', worker: 'success' };
+
+/* ── Initialise logged-in users list with role management ── */
 const initUser = async () => {
     try {
         const response = await fetch(`/rub/api/users`);
@@ -15,9 +18,15 @@ const initUser = async () => {
         usersDiv.innerHTML = '';
 
         result.forEach(item => {
+            const panel = document.createElement('div');
+            panel.className = 'alert alert-success d-flex align-items-center justify-content-between mb-2 py-2';
+
+            const leftDiv = document.createElement('div');
+            leftDiv.className = 'd-flex align-items-center gap-2';
+
             const img = document.createElement('img');
-            img.className = 'rounded-circle me-2';
-            img.style = 'width: 32px; height: 32px; object-fit: cover';
+            img.className = 'rounded-circle';
+            img.style = 'width: 32px; height: 32px; object-fit: cover; flex-shrink: 0;';
             img.referrerPolicy = "no-referrer";
             img.src = item.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.display_name)}&background=E9F5EC&color=2e7d32&rounded=true`;
             img.onerror = function() {
@@ -25,14 +34,42 @@ const initUser = async () => {
                 this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.display_name)}&background=E9F5EC&color=2e7d32&rounded=true`;
             };
 
-            const panel = document.createElement('div');
-            panel.className = 'alert alert-dismissible alert-success';
+            const infoDiv = document.createElement('div');
+            infoDiv.innerHTML = `
+                <div class="fw-bold" style="font-size:0.85rem;">${item.display_name}</div>
+                <div class="text-muted" style="font-size:0.72rem;">${item.email || ''}</div>
+            `;
 
-            const username = document.createElement('span');
-            username.innerHTML = `&nbsp;&nbsp;<strong>${item.display_name}</strong>`;
+            leftDiv.appendChild(img);
+            leftDiv.appendChild(infoDiv);
 
-            panel.appendChild(img);
-            panel.appendChild(username);
+            const roleSelect = document.createElement('select');
+            roleSelect.className = `form-select form-select-sm role-select`;
+            roleSelect.style = 'width: auto; font-size: 0.75rem;';
+            roleSelect.dataset.userId = item.id;
+            ['worker', 'admin'].forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r;
+                opt.textContent = ROLE_LABELS[r];
+                if (item.role === r) opt.selected = true;
+                roleSelect.appendChild(opt);
+            });
+            roleSelect.addEventListener('change', async function() {
+                const newRole = this.value;
+                try {
+                    const res = await fetch(`/rub/api/users/${item.id}/role`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role: newRole })
+                    });
+                    const data = await res.json();
+                    if (!data.success) { alert('เปลี่ยน role ไม่สำเร็จ'); this.value = item.role; }
+                    else item.role = newRole;
+                } catch (e) { alert('เกิดข้อผิดพลาด'); this.value = item.role; }
+            });
+
+            panel.appendChild(leftDiv);
+            panel.appendChild(roleSelect);
             usersDiv.appendChild(panel);
         });
     } catch (error) {
@@ -141,6 +178,12 @@ const initApp = async () => {
                                 </li>
                             </ul>
                         </div>
+                        <button class="btn btn-payment layer-btn payBtn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้าง">
+                            <i class="bi bi-calculator-fill me-1"></i>คำนวณค่าจ้าง
+                        </button>
+                        <button class="btn btn-checker-pay layer-btn checkerPayBtn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้างคนตรวจ">
+                            <i class="bi bi-shield-check me-1"></i>ค่าคนตรวจ
+                        </button>
                         <button class="btn btn-danger layer-btn deleteBtn mt-1" data-tb="${tb_name}" title="ลบ layer">
                             <i class="bi bi-trash3-fill"></i>
                         </button>
@@ -271,6 +314,24 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 downloadFile(`/rub/api/download/reshape/v_reclass_${tb}?type=rubber_and_ex`, `v_reclass_rubber_ex_${tb}.geojson`);
+            });
+        });
+
+        /* ── คำนวณค่าจ้าง ── */
+        document.querySelectorAll('.payBtn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                openPaymentModal(tb);
+            });
+        });
+
+        /* ── คำนวณค่าคนตรวจ ── */
+        document.querySelectorAll('.checkerPayBtn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                openCheckerPaymentModal(tb);
             });
         });
 
@@ -669,32 +730,37 @@ async function openAssignModal(tb_name) {
     assignModal.show();
 }
 
-/* ── Render assignee picker จาก users table ── */
-function renderAssigneePicker(selectedName) {
+/* ── Render assignee picker จาก users table (ใช้ email เป็นตัวระบุ) ── */
+function renderAssigneePicker(selectedEmail) {
     const picker = document.getElementById('assigneePicker');
     picker.innerHTML = '';
 
     if (allUsers.length === 0) {
-        picker.innerHTML = '<small class="text-muted">ไม่มีผู้ใช้ในระบบ (ใช้ช่องพิมพ์ด้านล่างแทน)</small>';
+        picker.innerHTML = '<small class="text-muted">ยังไม่มีผู้ใช้ login เข้าระบบ</small>';
         return;
     }
 
     allUsers.forEach(u => {
         const chip = document.createElement('div');
         chip.className = 'assignee-chip';
-        if (selectedName === u.display_name) chip.classList.add('selected');
-        chip.dataset.name = u.display_name;
-        chip.dataset.photo = u.photo || '';
+        if (selectedEmail && u.email === selectedEmail) chip.classList.add('selected');
+        chip.dataset.email = u.email || '';
+        chip.dataset.userId = u.id;
+        const avatarSrc = u.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=E9F5EC&color=2e7d32&rounded=true`;
         chip.innerHTML = `
-            <img src="${u.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=E9F5EC&color=2e7d32&rounded=true`}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=E9F5EC&color=2e7d32&rounded=true'">
-            <span>${u.display_name}</span>
+            <img src="${avatarSrc}" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(u.display_name)}&background=E9F5EC&color=2e7d32&rounded=true'">
+            <div style="line-height:1.2; text-align:center;">
+                <div style="font-size:0.78rem; font-weight:600;">${u.display_name}</div>
+                <div style="font-size:0.65rem; color:#6a8c6a;">${u.email || ''}</div>
+            </div>
         `;
         chip.addEventListener('click', () => {
             document.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
             chip.classList.add('selected');
             document.getElementById('assign_name').value = u.display_name;
+            document.getElementById('assign_email').value = u.email || '';
+            document.getElementById('assign_user_id').value = u.id;
             document.getElementById('assign_photo').value = u.photo || '';
-            document.getElementById('assign_name_manual').value = '';
         });
         picker.appendChild(chip);
     });
@@ -704,15 +770,73 @@ function renderAssigneePicker(selectedName) {
 function resetAssignForm() {
     document.getElementById('assign_id').value = '';
     document.getElementById('assign_name').value = '';
+    document.getElementById('assign_email').value = '';
+    document.getElementById('assign_user_id').value = '';
     document.getElementById('assign_photo').value = '';
-    document.getElementById('assign_name_manual').value = '';
     document.getElementById('assign_id_from').value = '';
     document.getElementById('assign_id_to').value = '';
     document.getElementById('assign_note').value = '';
+    document.getElementById('assign_email_input').value = '';
+    document.getElementById('emailLookupResult').innerHTML = '';
     document.getElementById('assignFormTitle').innerHTML = '<i class="bi bi-plus-circle me-1"></i>เพิ่มการมอบหมายงานใหม่';
     document.getElementById('btnCancelAssignEdit').style.display = 'none';
     document.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
 }
+
+/* ── ฟังก์ชัน: เลือก assignee จาก email (ทั้ง lookup และ manual) ── */
+function selectAssigneeByEmail(email) {
+    const resultEl = document.getElementById('emailLookupResult');
+    if (!email) { resultEl.innerHTML = ''; return; }
+
+    // ค้นหาใน allUsers ก่อน
+    const found = allUsers.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+
+    if (found) {
+        // มีใน DB → เลือก chip + fill hidden fields
+        document.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
+        const chip = document.querySelector(`.assignee-chip[data-email="${found.email}"]`);
+        if (chip) chip.classList.add('selected');
+
+        document.getElementById('assign_name').value = found.display_name;
+        document.getElementById('assign_email').value = found.email;
+        document.getElementById('assign_user_id').value = found.id;
+        document.getElementById('assign_photo').value = found.photo || '';
+
+        resultEl.innerHTML = `
+            <span class="text-success">
+                <i class="bi bi-check-circle-fill me-1"></i>พบในระบบ: <strong>${found.display_name}</strong>
+            </span>`;
+    } else {
+        // ยังไม่เคย Login → ใช้อีเมลเป็นชื่อ (จะ link ตอน Login ครั้งแรก)
+        document.querySelectorAll('.assignee-chip').forEach(c => c.classList.remove('selected'));
+        const namePart = email.split('@')[0];
+        document.getElementById('assign_name').value = namePart;
+        document.getElementById('assign_email').value = email;
+        document.getElementById('assign_user_id').value = '';
+        document.getElementById('assign_photo').value = '';
+
+        resultEl.innerHTML = `
+            <span class="text-warning">
+                <i class="bi bi-exclamation-circle-fill me-1"></i>ยังไม่เคย Login — จะใช้ชื่อ <strong>${namePart}</strong> และ link อัตโนมัติเมื่อ Login ครั้งแรก
+            </span>`;
+    }
+}
+
+/* ── Event: กดปุ่ม Lookup ── */
+document.getElementById('btnLookupEmail').addEventListener('click', () => {
+    const email = document.getElementById('assign_email_input').value.trim();
+    if (!email) { document.getElementById('emailLookupResult').innerHTML = '<span class="text-danger">กรุณากรอกอีเมล</span>'; return; }
+    selectAssigneeByEmail(email);
+});
+
+/* ── Event: กด Enter ในช่อง email ── */
+document.getElementById('assign_email_input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const email = e.target.value.trim();
+        if (email) selectAssigneeByEmail(email);
+    }
+});
 
 /* ── แสดงรายการ assignments ── */
 async function renderAssignmentList(tb_name) {
@@ -848,8 +972,9 @@ async function renderAssignmentList(tb_name) {
 
                 document.getElementById('assign_id').value = d.id;
                 document.getElementById('assign_name').value = d.assignee_name;
+                document.getElementById('assign_email').value = d.assignee_email || '';
+                document.getElementById('assign_user_id').value = d.user_id || '';
                 document.getElementById('assign_photo').value = d.assignee_photo || '';
-                document.getElementById('assign_name_manual').value = '';
                 document.getElementById('assign_id_from').value = d.id_from;
                 document.getElementById('assign_id_to').value = d.id_to;
                 document.getElementById('assign_note').value = d.note || '';
@@ -857,8 +982,8 @@ async function renderAssignmentList(tb_name) {
                     '<i class="bi bi-pencil-fill me-1"></i>แก้ไขการมอบหมายงาน';
                 document.getElementById('btnCancelAssignEdit').style.display = 'inline-flex';
 
-                // Highlight chip
-                renderAssigneePicker(d.assignee_name);
+                // Highlight chip by email
+                renderAssigneePicker(d.assignee_email || null);
 
                 // Scroll to form
                 document.getElementById('assignFormCard').scrollIntoView({ behavior: 'smooth' });
@@ -897,17 +1022,22 @@ async function renderAssignmentList(tb_name) {
 document.getElementById('btnSaveAssign').addEventListener('click', async () => {
     const assignId = document.getElementById('assign_id').value;
     const tb_name = document.getElementById('assign_tb_name').value;
-    let name = document.getElementById('assign_name').value.trim();
-    const nameManual = document.getElementById('assign_name_manual').value.trim();
+    const name = document.getElementById('assign_name').value.trim();
+    const email = document.getElementById('assign_email').value.trim();
+    const userId = document.getElementById('assign_user_id').value.trim();
     const photo = document.getElementById('assign_photo').value.trim();
     const id_from = document.getElementById('assign_id_from').value;
     const id_to = document.getElementById('assign_id_to').value;
     const note = document.getElementById('assign_note').value.trim();
 
-    // ถ้าพิมพ์ชื่อเองให้ใช้
-    if (!name && nameManual) name = nameManual;
-
-    if (!name) { alert('กรุณาเลือกหรือพิมพ์ชื่อผู้รับผิดชอบ'); return; }
+    // ถ้ายังไม่ได้เลือก → ลองดึงจากช่องพิมพ์อีเมลก่อน save
+    if (!email) {
+        const typedEmail = document.getElementById('assign_email_input').value.trim();
+        if (typedEmail) { selectAssigneeByEmail(typedEmail); }
+    }
+    const finalName = document.getElementById('assign_name').value.trim();
+    const finalEmail = document.getElementById('assign_email').value.trim();
+    if (!finalName || !finalEmail) { alert('กรุณาเลือกผู้รับผิดชอบ หรือพิมพ์อีเมลแล้วกดค้นหา'); return; }
     if (!id_from || !id_to) { alert('กรุณากรอก ID เริ่มต้น และ ID สิ้นสุด'); return; }
     if (parseInt(id_from) > parseInt(id_to)) { alert('ID เริ่มต้นต้องไม่มากกว่า ID สิ้นสุด'); return; }
 
@@ -917,19 +1047,21 @@ document.getElementById('btnSaveAssign').addEventListener('click', async () => {
 
     try {
         let res;
+        const finalUserId = document.getElementById('assign_user_id').value.trim();
+        const finalPhoto = document.getElementById('assign_photo').value.trim();
+        const payload = { assignee_name: finalName, assignee_email: finalEmail, assignee_photo: finalPhoto,
+                          user_id: finalUserId || null, id_from, id_to, note };
         if (assignId) {
-            // Update
             res = await fetch(`/rub/api/task-assignments/${assignId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ assignee_name: name, assignee_photo: photo, id_from, id_to, note })
+                body: JSON.stringify(payload)
             });
         } else {
-            // Create
             res = await fetch(`/rub/api/task-assignments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tb_name, assignee_name: name, assignee_photo: photo, id_from, id_to, note })
+                body: JSON.stringify({ tb_name, ...payload })
             });
         }
         const result = await res.json();
@@ -1007,36 +1139,551 @@ async function loadAssignmentStrip(tb_name) {
 }
 
 
-/* ── Bootstrap DOMContentLoaded: auth check → init ── */
+/* ═════════════════════════════════════════════════════════════
+   MODAL 4 – ภาพรวมทีมงานทุกโปรเจค (Global Team Overview)
+═════════════════════════════════════════════════════════════ */
+
+let teamOverviewModal = null;
+let teamOverviewData = [];
+
+document.getElementById('btnTeamOverview').addEventListener('click', () => {
+    if (!teamOverviewModal) {
+        teamOverviewModal = new bootstrap.Modal(document.getElementById('teamOverviewModal'));
+    }
+    document.getElementById('teamOverviewWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+    teamOverviewModal.show();
+
+    fetch('/rub/api/worker-summary-all')
+        .then(r => r.json())
+        .then(({ data }) => {
+            teamOverviewData = data || [];
+            renderTeamOverview();
+        })
+        .catch(() => {
+            document.getElementById('teamOverviewWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+});
+
+/* ── Shared helper: render one area cell (ไร่ + ตร.ม.) ── */
+function areaCell(a, countLabel) {
+    if (!a || a.total_sqm === 0) return '<span class="text-muted small">—</span>';
+    const sqm = Math.round(a.total_sqm).toLocaleString('th-TH');
+    return `<div class="area-cnt">${countLabel}</div>
+            <div class="pay-area-badge">${fmtRai(a.total_sqm)}</div>
+            <div class="pay-area-sub">${sqm} ตร.ม.</div>`;
+}
+
+function renderTeamOverview() {
+    const rate   = parseFloat(document.getElementById('team_rate_rai').value) || 0;
+    const basis  = document.getElementById('team_basis').value;
+    const data   = teamOverviewData;
+    const wrap   = document.getElementById('teamOverviewWrap');
+
+    if (!data || data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>ยังไม่มีข้อมูลการทำงานในระบบ
+        </div>`;
+        return;
+    }
+
+    const palette = ['#4CAF50','#2196F3','#FF9800','#9C27B0','#F44336','#00BCD4','#FF5722','#795548'];
+    const basisLabel = { reshape: 'โฉนด', reclass_all: 'Reclass ทั้งหมด', reclass_rubber: 'ยางพารา Rubber' };
+
+    const cards = data.map((worker, wi) => {
+        const color  = palette[wi % palette.length];
+        const basisA = worker[basis] || {};
+        const totalPay = (basisA.area_rai_decimal || 0) * rate;
+        const avatar = worker.photo
+            ? `<img src="${worker.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+                onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(worker.editor)}&background=E9F5EC&color=2e7d32&rounded=true'">`
+            : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(worker.editor)}&background=E9F5EC&color=2e7d32&rounded=true" class="pay-avatar">`;
+
+        const projectRows = worker.projects.map(p => {
+            const pBasis = p[basis] || {};
+            const pPay = (pBasis.area_rai_decimal || 0) * rate;
+            const reshapeCnt  = `${(p.reshape.farmer_count||0)} แปลง`;
+            const reclassCnt  = `${(p.reclass_all.sub_plot_count||0)} รายการ /${(p.reclass_all.farmer_count||0)} แปลง`;
+            const rubberCnt   = `${(p.reclass_rubber.sub_plot_count||0)} รายการ /${(p.reclass_rubber.farmer_count||0)} แปลง`;
+            return `<tr class="team-project-row">
+                <td><span class="team-project-badge"><i class="bi bi-table me-1"></i>${p.tb_name}</span></td>
+                <td class="text-center ${basis==='reshape'?'area-col-selected':''}">${areaCell(p.reshape, reshapeCnt)}</td>
+                <td class="text-center ${basis==='reclass_all'?'area-col-selected':''}">${areaCell(p.reclass_all, reclassCnt)}</td>
+                <td class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">${areaCell(p.reclass_rubber, rubberCnt)}</td>
+                <td class="text-end fw-bold" style="color:${color};">${pPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            </tr>`;
+        }).join('');
+
+        const wReshapeCnt  = `${(worker.reshape.farmer_count||0)} แปลง`;
+        const wReclassCnt  = `${(worker.reclass_all.sub_plot_count||0)} รายการ`;
+        const wRubberCnt   = `${(worker.reclass_rubber.sub_plot_count||0)} รายการ`;
+
+        return `
+        <div class="team-worker-card mb-3" style="border-color:${color}44;">
+            <div class="team-worker-header" data-bs-toggle="collapse" data-bs-target="#worker_${wi}" style="cursor:pointer;">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    ${avatar}
+                    <div class="team-worker-dot" style="background:${color};"></div>
+                    <span class="team-worker-name" style="color:${color};">${worker.editor}</span>
+                    <span class="team-worker-meta">${worker.projects.length} โปรเจค</span>
+                    <span class="ms-auto d-flex align-items-center gap-3 flex-wrap">
+                        <span class="area-summary-group">
+                            <span class="area-summary-label">โฉนด</span>
+                            <span class="area-summary-val ${basis==='reshape'?'area-selected-text':''}">${fmtRai(worker.reshape.total_sqm||0)} · ${Math.round(worker.reshape.total_sqm||0).toLocaleString()}ตร.ม.</span>
+                        </span>
+                        <span class="area-summary-group">
+                            <span class="area-summary-label">Reclass</span>
+                            <span class="area-summary-val ${basis==='reclass_all'?'area-selected-text':''}">${fmtRai(worker.reclass_all.total_sqm||0)} · ${Math.round(worker.reclass_all.total_sqm||0).toLocaleString()}ตร.ม.</span>
+                        </span>
+                        <span class="area-summary-group">
+                            <span class="area-summary-label">Rubber</span>
+                            <span class="area-summary-val ${basis==='reclass_rubber'?'area-selected-text':''}">${fmtRai(worker.reclass_rubber.total_sqm||0)} · ${Math.round(worker.reclass_rubber.total_sqm||0).toLocaleString()}ตร.ม.</span>
+                        </span>
+                        <span class="team-pay-total" style="color:${color};">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</span>
+                        <i class="bi bi-chevron-down team-chevron"></i>
+                    </span>
+                </div>
+            </div>
+            <div class="collapse show" id="worker_${wi}">
+                <div class="team-project-table-wrap table-responsive">
+                    <table class="table table-sm payment-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>โปรเจค</th>
+                                <th class="text-center ${basis==='reshape'?'area-col-selected':''}">🏡 โฉนด Reshape<br><small class="fw-normal text-muted">แปลง / ไร่ / ตร.ม.</small></th>
+                                <th class="text-center ${basis==='reclass_all'?'area-col-selected':''}">📋 Reclass ทั้งหมด<br><small class="fw-normal text-muted">แปลง / ไร่ / ตร.ม.</small></th>
+                                <th class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">🌿 ยางพารา Rubber<br><small class="fw-normal text-muted">แปลง / ไร่ / ตร.ม.</small></th>
+                                <th class="text-end">ค่าจ้าง<br><small class="fw-normal text-muted">(จาก ${basisLabel[basis]})</small></th>
+                            </tr>
+                        </thead>
+                        <tbody>${projectRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Grand total per basis
+    const grandSqm = data.reduce((s,w) => s + ((w[basis]||{}).total_sqm||0), 0);
+    const grandPay = (grandSqm / 1600) * rate;
+
+    wrap.innerHTML = `
+        ${cards}
+        <div class="team-grand-total">
+            <span class="fw-bold">รวมทั้งระบบ (${basisLabel[basis]})</span>
+            <span class="pay-area-badge ms-3">${fmtRai(grandSqm)}</span>
+            <span class="pay-area-sub ms-1">${Math.round(grandSqm).toLocaleString()} ตร.ม.</span>
+            <span class="team-pay-total ms-3">${grandPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</span>
+        </div>`;
+}
+
+function fmtRai(sqm) {
+    return (parseFloat(sqm) / 1600).toFixed(2) + ' ไร่';
+}
+
+document.getElementById('btnCalcTeam').addEventListener('click', renderTeamOverview);
+
+document.getElementById('btnPrintTeam').addEventListener('click', () => {
+    const rate = document.getElementById('team_rate_rai').value;
+    const bodyHtml = document.getElementById('teamOverviewWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ภาพรวมทีมงาน – ทุกโปรเจค</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family:"Noto Sans Thai",sans-serif; padding:20px; }
+  .pay-avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;}
+  .pay-area-badge{font-size:0.85rem;font-weight:600;color:#2e7d32;}
+  .pay-area-sub{font-size:0.72rem;color:#78909c;}
+  .team-worker-card{border:1px solid #ddd;border-radius:10px;padding:12px;margin-bottom:12px;}
+  .team-worker-header{margin-bottom:8px;}
+  .team-worker-name{font-weight:700;font-size:1rem;}
+  .team-worker-meta{font-size:0.8rem;color:#78909c;}
+  .team-pay-total{font-weight:700;font-size:0.95rem;}
+  .team-project-badge{background:#f5f5f5;padding:2px 8px;border-radius:6px;font-size:0.82rem;}
+  .team-grand-total{background:#e8f5e9;border-radius:10px;padding:12px 16px;font-size:1rem;margin-top:16px;}
+  .team-worker-dot,.team-chevron{display:none;}
+  @media print{button,.btn{display:none!important;}}
+</style>
+</head>
+<body>
+<h4 style="color:#4a7c59">ภาพรวมทีมงาน – ทุกโปรเจค</h4>
+<p class="text-muted mb-3">อัตราค่าจ้าง: <strong>${rate} บาท/ไร่</strong> &nbsp;|&nbsp; วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'long',year:'numeric'})}</p>
+${bodyHtml}
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ═════════════════════════════════════════════════════════════
+   MODAL 5 – คำนวณค่าจ้างรายโปรเจค (Payment per Layer)
+═════════════════════════════════════════════════════════════ */
+
+let paymentModal = null;
+let paymentWorkerData = [];
+
+function openPaymentModal(tb_name) {
+    if (!paymentModal) {
+        paymentModal = new bootstrap.Modal(document.getElementById('paymentModal'));
+    }
+    document.getElementById('paymentModalTbBadge').textContent = tb_name;
+    document.getElementById('paymentTableWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+    paymentModal.show();
+
+    fetch(`/rub/api/worker-summary/${tb_name}`)
+        .then(r => r.json())
+        .then(({ data }) => {
+            paymentWorkerData = data || [];
+            renderPaymentTable();
+        })
+        .catch(() => {
+            document.getElementById('paymentTableWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+}
+
+function renderPaymentTable() {
+    const rate  = parseFloat(document.getElementById('pay_rate_rai').value) || 0;
+    const basis = document.getElementById('pay_basis').value;
+    const data  = paymentWorkerData;
+    const wrap  = document.getElementById('paymentTableWrap');
+
+    if (!data || data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            ยังไม่มีข้อมูลการทำงานใน table นี้
+        </div>`;
+        return;
+    }
+
+    const basisLabel = { reshape: 'โฉนด Reshape', reclass_all: 'Reclass ทั้งหมด', reclass_rubber: 'ยางพารา Rubber' };
+
+    const rows = data.map((r, i) => {
+        const basisA = r[basis] || {};
+        const pay = (basisA.area_rai_decimal || 0) * rate;
+        const avatar = r.photo
+            ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+                onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true'">`
+            : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true" class="pay-avatar">`;
+
+        const reshapeCnt  = `${(r.reshape.farmer_count||0).toLocaleString()} แปลง`;
+        const reclassCnt  = `${(r.reclass_all.sub_plot_count||0).toLocaleString()} รายการ ·${(r.reclass_all.farmer_count||0).toLocaleString()} แปลง`;
+        const rubberCnt   = `${(r.reclass_rubber.sub_plot_count||0).toLocaleString()} รายการ ·${(r.reclass_rubber.farmer_count||0).toLocaleString()} แปลง`;
+
+        return `<tr>
+            <td class="text-center align-middle">${i + 1}</td>
+            <td class="align-middle">
+                <div class="d-flex align-items-center gap-2">
+                    ${avatar}
+                    <span class="fw-bold">${r.editor}</span>
+                </div>
+            </td>
+            <td class="text-center ${basis==='reshape'?'area-col-selected':''}">${areaCell(r.reshape, reshapeCnt)}</td>
+            <td class="text-center ${basis==='reclass_all'?'area-col-selected':''}">${areaCell(r.reclass_all, reclassCnt)}</td>
+            <td class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">${areaCell(r.reclass_rubber, rubberCnt)}</td>
+            <td class="text-end fw-bold align-middle pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+        </tr>`;
+    }).join('');
+
+    // Totals
+    const sumSqm = (key) => data.reduce((s, r) => s + ((r[key]||{}).total_sqm||0), 0);
+    const rSqm = sumSqm('reshape'), rcSqm = sumSqm('reclass_all'), rubSqm = sumSqm('reclass_rubber');
+    const bSqm = sumSqm(basis);
+    const totalPay = (bSqm / 1600) * rate;
+
+    const sumCell = (sqm) => {
+        return `<div class="pay-area-badge">${fmtRai(sqm)}</div>
+                <div class="pay-area-sub">${Math.round(sqm).toLocaleString('th-TH')} ตร.ม.</div>`;
+    };
+
+    wrap.innerHTML = `
+    <div class="table-responsive">
+        <table class="table table-hover payment-table">
+            <thead>
+                <tr>
+                    <th class="text-center align-middle" style="width:40px" rowspan="1">#</th>
+                    <th class="align-middle">ชื่อผู้ทำงาน</th>
+                    <th class="text-center ${basis==='reshape'?'area-col-selected':''}">🏡 โฉนด Reshape<br><small class="fw-normal text-muted">แปลง / ไร่ / ตร.ม.</small></th>
+                    <th class="text-center ${basis==='reclass_all'?'area-col-selected':''}">📋 Reclass ทั้งหมด<br><small class="fw-normal text-muted">รายการ / แปลง / ไร่ / ตร.ม.</small></th>
+                    <th class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">🌿 ยางพารา Rubber<br><small class="fw-normal text-muted">รายการ / แปลง / ไร่ / ตร.ม.</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง<br><small class="fw-normal text-muted">(จาก ${basisLabel[basis]})</small></th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="payment-total-row">
+                    <td colspan="2" class="fw-bold align-middle">รวมทั้งหมด</td>
+                    <td class="text-center ${basis==='reshape'?'area-col-selected':''}">${sumCell(rSqm)}</td>
+                    <td class="text-center ${basis==='reclass_all'?'area-col-selected':''}">${sumCell(rcSqm)}</td>
+                    <td class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">${sumCell(rubSqm)}</td>
+                    <td class="text-end fw-bold align-middle pay-total-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+}
+
+document.getElementById('btnCalcPay').addEventListener('click', renderPaymentTable);
+
+document.getElementById('btnPrintPayment').addEventListener('click', () => {
+    const tb = document.getElementById('paymentModalTbBadge').textContent;
+    const rate = document.getElementById('pay_rate_rai').value;
+    const tableHtml = document.getElementById('paymentTableWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สรุปค่าจ้าง – ${tb}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family: "Noto Sans Thai", sans-serif; padding: 20px; }
+  .pay-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+  .pay-area-badge { font-size:0.85rem; }
+  .pay-area-sub { font-size:0.72rem; color:#78909c; }
+  .pay-amount { color:#2e7d32; }
+  .pay-total-amount { color:#1b5e20; font-size:1.1rem; }
+  .payment-total-row { background:#e8f5e9; }
+  @media print { button { display:none; } }
+</style>
+</head>
+<body>
+<h4 style="color:#4a7c59">สรุปค่าจ้างทีมงาน – ${tb}</h4>
+<p class="text-muted mb-3">อัตราค่าจ้าง: <strong>${rate} บาท/ไร่</strong> &nbsp;|&nbsp; วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
+${tableHtml}
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ═════════════════════════════════════════════════════════════
+   MODAL 6 – คำนวณค่าจ้างคนตรวจ (Checker Payment per Layer)
+═════════════════════════════════════════════════════════════ */
+
+let checkerPaymentModal = null;
+let checkerWorkerData = [];
+
+function openCheckerPaymentModal(tb_name) {
+    if (!checkerPaymentModal) {
+        checkerPaymentModal = new bootstrap.Modal(document.getElementById('checkerPaymentModal'));
+    }
+    document.getElementById('checkerPayModalTbBadge').textContent = tb_name;
+    document.getElementById('checkerPayTableWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+    checkerPaymentModal.show();
+
+    fetch(`/rub/api/checker-summary/${tb_name}`)
+        .then(r => r.json())
+        .then(({ data }) => {
+            checkerWorkerData = data || [];
+            renderCheckerPaymentTable();
+        })
+        .catch(() => {
+            document.getElementById('checkerPayTableWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+}
+
+function renderCheckerPaymentTable() {
+    const rate = parseFloat(document.getElementById('chk_rate_rai').value) || 0;
+    const unit = document.getElementById('chk_unit').value;
+    const data = checkerWorkerData;
+    const wrap = document.getElementById('checkerPayTableWrap');
+
+    if (!data || data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            ยังไม่มีข้อมูลการตรวจใน table นี้
+        </div>`;
+        return;
+    }
+
+    const unitLabels = {
+        class_rai:  'บาท/ไร่ (พื้นที่คลาส)',
+        deed_rai:   'บาท/ไร่ (พื้นที่โฉนด)',
+        rubber_rai: 'บาท/ไร่ (พื้นที่ยางพารา)',
+        plot:       'บาท/แปลง (ID)',
+        subplot:    'บาท/รายการ (sub_id)'
+    };
+
+    // highlight which area column is active
+    const isClass  = unit === 'class_rai';
+    const isDeed   = unit === 'deed_rai';
+    const isRubber = unit === 'rubber_rai';
+    const hl = 'background:#fff9e6;font-weight:700;';
+
+    const rows = data.map((r, i) => {
+        let pay = 0;
+        if (unit === 'class_rai')  pay = (r.class_rai  || 0) * rate;
+        if (unit === 'deed_rai')   pay = (r.deed_rai   || 0) * rate;
+        if (unit === 'rubber_rai') pay = (r.rubber_rai || 0) * rate;
+        if (unit === 'plot')       pay = (r.farmer_count   || 0) * rate;
+        if (unit === 'subplot')    pay = (r.sub_plot_count || 0) * rate;
+
+        const avatar = r.photo
+            ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+                onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.reviewer)}&background=e1f5fe&color=0277bd&rounded=true'">`
+            : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.reviewer)}&background=e1f5fe&color=0277bd&rounded=true" class="pay-avatar">`;
+
+        const areaBadge = (sqm) =>
+            `<div class="pay-area-badge">${fmtRai(sqm || 0)}</div>
+             <div class="pay-area-sub">${Math.round(sqm || 0).toLocaleString('th-TH')} ตร.ม.</div>`;
+
+        return `<tr>
+            <td class="text-center align-middle">${i + 1}</td>
+            <td class="align-middle">
+                <div class="d-flex align-items-center gap-2">
+                    ${avatar}
+                    <span class="fw-bold">${r.reviewer}</span>
+                </div>
+            </td>
+            <td class="text-center align-middle">${(r.sub_plot_count || 0).toLocaleString()} รายการ</td>
+            <td class="text-center align-middle">${(r.farmer_count || 0).toLocaleString()} แปลง</td>
+            <td class="text-center align-middle" style="${isDeed ? hl : ''}">${areaBadge(r.deed_sqm)}</td>
+            <td class="text-center align-middle" style="${isClass ? hl : ''}">${areaBadge(r.class_sqm)}</td>
+            <td class="text-center align-middle" style="${isRubber ? hl : ''}">${areaBadge(r.rubber_sqm)}</td>
+            <td class="text-end fw-bold align-middle pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+        </tr>`;
+    }).join('');
+
+    const totalSubplot  = data.reduce((s, r) => s + (r.sub_plot_count || 0), 0);
+    const totalPlot     = data.reduce((s, r) => s + (r.farmer_count   || 0), 0);
+    const totalDeedSqm  = data.reduce((s, r) => s + (r.deed_sqm    || 0), 0);
+    const totalClassSqm = data.reduce((s, r) => s + (r.class_sqm   || 0), 0);
+    const totalRubrSqm  = data.reduce((s, r) => s + (r.rubber_sqm  || 0), 0);
+
+    let totalPay = 0;
+    if (unit === 'class_rai')  totalPay = (totalClassSqm / 1600) * rate;
+    if (unit === 'deed_rai')   totalPay = (totalDeedSqm  / 1600) * rate;
+    if (unit === 'rubber_rai') totalPay = (totalRubrSqm  / 1600) * rate;
+    if (unit === 'plot')       totalPay = totalPlot    * rate;
+    if (unit === 'subplot')    totalPay = totalSubplot * rate;
+
+    const areaBadge = (sqm) =>
+        `<div class="pay-area-badge">${fmtRai(sqm || 0)}</div>
+         <div class="pay-area-sub">${Math.round(sqm || 0).toLocaleString('th-TH')} ตร.ม.</div>`;
+
+    wrap.innerHTML = `
+    <div class="table-responsive">
+        <table class="table table-hover payment-table">
+            <thead style="background:#e1f5fe !important;">
+                <tr>
+                    <th class="text-center align-middle" rowspan="2" style="width:36px">#</th>
+                    <th class="align-middle" rowspan="2">ชื่อผู้ตรวจ</th>
+                    <th class="text-center" rowspan="2">รายการ<br><small class="fw-normal text-muted">sub_id</small></th>
+                    <th class="text-center" rowspan="2">แปลง<br><small class="fw-normal text-muted">ID</small></th>
+                    <th class="text-center" colspan="3" style="border-bottom:2px solid #81d4fa;">พื้นที่ (ไร่ / ตร.ม.)</th>
+                    <th class="text-end align-middle" rowspan="2">ค่าตรวจ<br><small class="fw-normal text-muted">${unitLabels[unit]}</small></th>
+                </tr>
+                <tr>
+                    <th class="text-center" style="${isDeed   ? hl : ''}">📄 โฉนด</th>
+                    <th class="text-center" style="${isClass  ? hl : ''}">🗂️ คลาส</th>
+                    <th class="text-center" style="${isRubber ? hl : ''}">🌿 ยางพารา</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="payment-total-row">
+                    <td colspan="4" class="fw-bold align-middle">รวมทั้งหมด
+                        <span class="ms-2 text-muted fw-normal small">${totalSubplot.toLocaleString()} รายการ / ${totalPlot.toLocaleString()} แปลง</span>
+                    </td>
+                    <td class="text-center" style="${isDeed   ? hl : ''}">${areaBadge(totalDeedSqm)}</td>
+                    <td class="text-center" style="${isClass  ? hl : ''}">${areaBadge(totalClassSqm)}</td>
+                    <td class="text-center" style="${isRubber ? hl : ''}">${areaBadge(totalRubrSqm)}</td>
+                    <td class="text-end fw-bold align-middle pay-total-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+}
+
+document.getElementById('btnCalcChecker').addEventListener('click', renderCheckerPaymentTable);
+
+document.getElementById('btnPrintChecker').addEventListener('click', () => {
+    const tb   = document.getElementById('checkerPayModalTbBadge').textContent;
+    const rate = document.getElementById('chk_rate_rai').value;
+    const unit = document.getElementById('chk_unit').options[document.getElementById('chk_unit').selectedIndex].text;
+    const tableHtml = document.getElementById('checkerPayTableWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สรุปค่าจ้างคนตรวจ – ${tb}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family: "Noto Sans Thai", sans-serif; padding: 20px; }
+  .pay-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+  .pay-area-badge { font-size:0.85rem; font-weight:600; color:#01579b; }
+  .pay-area-sub { font-size:0.72rem; color:#78909c; }
+  .pay-amount { color:#01579b; }
+  .pay-total-amount { color:#006064; font-size:1.1rem; }
+  .payment-total-row { background:#e1f5fe !important; }
+  @media print { button { display:none; } }
+</style>
+</head>
+<body>
+<h4 style="color:#01579b">สรุปค่าจ้างคนตรวจ – ${tb}</h4>
+<p class="text-muted mb-3">อัตราค่าตรวจ: <strong>${rate} ${unit}</strong> &nbsp;|&nbsp; วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
+${tableHtml}
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ── Bootstrap DOMContentLoaded: auth check → role guard → init ── */
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         const res = await fetch('/rub/auth/me');
         const { user } = await res.json();
 
-        document.getElementById('chkLogin').value = user ? 'true' : 'false';
-
-        if (user) {
-            document.getElementById('google-login-link').style.display = 'none';
-            document.getElementById('profile-section').style.display = 'flex';
-            const profileImg = document.getElementById('profile-image');
-            profileImg.referrerPolicy = "no-referrer";
-            profileImg.src = user.photo;
-            profileImg.onerror = function() {
-                this.onerror = null;
-                this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName)}&background=E9F5EC&color=2e7d32&rounded=true`;
-            };
-            document.getElementById('display-name').textContent = user.displayName;
-
-            document.getElementById('logout-link').addEventListener('click', async (e) => {
-                e.preventDefault();
-                try {
-                    await fetch('/rub/auth/logout');
-                    window.location.reload();
-                } catch (err) {
-                    console.error('Logout failed:', err);
-                }
-            });
+        if (!user) {
+            alert('กรุณา Login ก่อนเข้าใช้งานหน้า Admin');
+            window.location.href = '/rub/index.html';
+            return;
         }
+
+        if (user.role !== 'admin') {
+            alert(`คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (Role: ${user.role || 'worker'})\nหน้านี้สำหรับ Admin เท่านั้น`);
+            window.location.href = '/rub/index.html';
+            return;
+        }
+
+        document.getElementById('chkLogin').value = 'true';
+        document.getElementById('google-login-link').style.display = 'none';
+        document.getElementById('profile-section').style.display = 'flex';
+        const profileImg = document.getElementById('profile-image');
+        profileImg.referrerPolicy = "no-referrer";
+        profileImg.src = user.photo;
+        profileImg.onerror = function() {
+            this.onerror = null;
+            this.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName)}&background=E9F5EC&color=2e7d32&rounded=true`;
+        };
+        document.getElementById('display-name').textContent = user.displayName;
+
+        document.getElementById('logout-link').addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                await fetch('/rub/auth/logout');
+                window.location.href = '/rub/index.html';
+            } catch (err) {
+                console.error('Logout failed:', err);
+            }
+        });
 
         await loadUsersCache();
         await initApp();

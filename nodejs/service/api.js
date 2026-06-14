@@ -22,6 +22,124 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
+// ── Review history helpers ──────────────────────────────────────────────────
+// ใช้ pool เสมอ (ไม่ใช้ transaction client) เพื่อไม่ให้ history หายไปถ้า rollback
+let _reviewHistoryReady = false;
+async function ensureReviewHistoryTable() {
+    if (_reviewHistoryReady) return;
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS review_history (
+            id          SERIAL PRIMARY KEY,
+            tb_name     TEXT NOT NULL,
+            parent_id   INTEGER,
+            sub_id      TEXT,
+            check_area  TEXT,
+            check_shape TEXT,
+            remark      TEXT,
+            reviewer    TEXT,
+            review_ts   TIMESTAMP WITHOUT TIME ZONE,
+            reset_reason TEXT,
+            reset_ts    TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+        )
+    `);
+    _reviewHistoryReady = true;
+}
+
+async function _saveHistoryRows(tb, rows, reason) {
+    // ตรวจสอบว่า remark column มีอยู่หรือไม่
+    let hasRemark = false;
+    try {
+        const colCheck = await pool.query(
+            `SELECT 1 FROM information_schema.columns
+             WHERE table_schema='public' AND table_name=$1 AND column_name='remark'`,
+            [`reclass_${tb}`]
+        );
+        hasRemark = colCheck.rowCount > 0;
+    } catch (_) {}
+
+    let remarkMap = {};
+    if (hasRemark && rows.length > 0) {
+        try {
+            const subIds = rows.map(r => r.sub_id).filter(Boolean);
+            if (subIds.length > 0) {
+                const placeholders = subIds.map((_, i) => `$${i + 1}`).join(',');
+                const remarkRows = await pool.query(
+                    `SELECT sub_id, remark FROM reclass_${tb} WHERE sub_id IN (${placeholders})`,
+                    subIds
+                );
+                remarkRows.rows.forEach(r => { remarkMap[r.sub_id] = r.remark; });
+            }
+        } catch (_) {}
+    }
+
+    for (const row of rows) {
+        await pool.query(
+            `INSERT INTO review_history
+             (tb_name, parent_id, sub_id, check_area, check_shape, remark, reviewer, review_ts, reset_reason)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [tb, row.id, row.sub_id, row.check_area, row.check_shape,
+             remarkMap[row.sub_id] || null, row.reviewer, row.review_ts, reason]
+        );
+    }
+}
+
+async function ensureReclassReviewColumns(tb) {
+    const cols = [
+        { name: 'check_area',     type: 'text' },
+        { name: 'check_shape',    type: 'text' },
+        { name: 'remark',         type: 'text' },
+        { name: 'reviewer',       type: 'text' },
+        { name: 'review_ts',      type: 'timestamp without time zone' },
+        { name: 'user_remark',    type: 'text' },
+        { name: 'user_remark_ts', type: 'timestamp without time zone' },
+        { name: 'user_name',      type: 'text' },
+        { name: '"Rubr_Area"',    type: 'numeric' },
+    ];
+    for (const col of cols) {
+        await pool.query(`
+            DO $$ BEGIN
+                ALTER TABLE reclass_${tb} ADD COLUMN ${col.name} ${col.type};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$;
+        `).catch(() => {});
+    }
+}
+
+async function saveReviewHistoryById(_, tb, id, reason) {
+    try {
+        await ensureReviewHistoryTable();
+        await ensureReclassReviewColumns(tb);
+        const { rows } = await pool.query(
+            `SELECT id, sub_id, check_area, check_shape, reviewer, review_ts
+             FROM reclass_${tb}
+             WHERE id = $1
+               AND (check_area IS NOT NULL OR check_shape IS NOT NULL OR reviewer IS NOT NULL)`,
+            [id]
+        );
+        if (rows.length > 0) await _saveHistoryRows(tb, rows, reason);
+    } catch (e) {
+        console.error('saveReviewHistoryById error:', e.message);
+    }
+}
+
+async function saveReviewHistoryBySubId(_, tb, sub_id, reason) {
+    try {
+        await ensureReviewHistoryTable();
+        await ensureReclassReviewColumns(tb);
+        const { rows } = await pool.query(
+            `SELECT id, sub_id, check_area, check_shape, reviewer, review_ts
+             FROM reclass_${tb}
+             WHERE sub_id = $1
+               AND (check_area IS NOT NULL OR check_shape IS NOT NULL OR reviewer IS NOT NULL)`,
+            [sub_id]
+        );
+        if (rows.length > 0) await _saveHistoryRows(tb, rows, reason);
+    } catch (e) {
+        console.error('saveReviewHistoryBySubId error:', e.message);
+    }
+}
+// ───────────────────────────────────────────────────────────────────────────
+
 // get all users
 app.get('/api/getfeatures/:tb', async (req, res) => {
     try {
@@ -84,8 +202,11 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
                         r.sub_id,
                         r.classtype,
                         r.shpsplit_sqm,
-                    r."Rubr_Area",
-                    r."Rubr_Area",
+                        r."Rubr_Area",
+                        r.check_area,
+                        r.check_shape,
+                        r.remark,
+                        r.reviewer,
                         t."Deed_Sqm",
                         t."Deed_Area",
                         t."Rubr_Sqm",
@@ -326,6 +447,8 @@ app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
                         `, [bk['Sqm_Deed'], featureId, featureId.toString()]);
                     }
 
+                    // Save review history before resetting
+                    await saveReviewHistoryById(pool, tb, featureId, 'restore');
                     // Safely reset check fields if they exist
                     await pool.query(`
                         DO $$ BEGIN
@@ -545,6 +668,7 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
                     [`reclass_${tb}`]
                 );
                 if (reclassCheck.rows[0].exists) {
+                    await saveReviewHistoryById(client, tb, parseInt(id, 10), 'reshape');
                     await client.query(`
                         DO $$ BEGIN
                             UPDATE reclass_${tb}
@@ -700,6 +824,8 @@ app.put('/api/clear_review/:tb', async (req, res) => {
             return res.status(400).json({ error: 'Table name and sub_id are required' });
         }
 
+        await saveReviewHistoryBySubId(pool, tb, sub_id, 'manual_clear');
+
         const sql = `
             UPDATE reclass_${tb}
             SET check_area = NULL,
@@ -716,6 +842,31 @@ app.put('/api/clear_review/:tb', async (req, res) => {
             return res.status(404).json({ error: 'Feature not found' });
         }
         res.status(200).json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Review history endpoint
+app.get('/api/review_history/:tb/:id', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        const id = parseInt(req.params.id, 10);
+        if (!tb || isNaN(id)) return res.status(400).json({ error: 'Invalid parameters' });
+
+        const exists = await pool.query(
+            `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'review_history')`
+        );
+        if (!exists.rows[0].exists) {
+            return res.json({ success: true, data: [] });
+        }
+
+        const result = await pool.query(
+            `SELECT * FROM review_history WHERE tb_name = $1 AND parent_id = $2 ORDER BY reset_ts DESC`,
+            [tb, id]
+        );
+        res.json({ success: true, data: result.rows });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, error: err.message });
@@ -780,27 +931,21 @@ app.delete('/api/delete_reclass_feature/:tb/:sub_id', async (req, res) => {
 app.get('/api/shpall/:tb', async (req, res) => {
     try {
         const bboxStr = req.query.bbox;
-        let sql, params;
-
-        if (bboxStr) {
-            const parts = bboxStr.split(',').map(Number);
-            if (parts.length === 4 && parts.every(n => !isNaN(n))) {
-                // Use PostGIS GIST index: geom && ST_MakeEnvelope(minX,minY,maxX,maxY,4326)
-                sql = `
-                    SELECT ST_AsGeoJSON(geom) AS geom_json
-                    FROM public.shpall
-                    WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
-                    LIMIT 5000
-                `;
-                params = parts;
-            }
-        }
-
-        if (!sql) {
+        if (!bboxStr) {
             return res.status(400).json({ success: false, error: 'bbox query param required: ?bbox=minX,minY,maxX,maxY' });
         }
+        const parts = bboxStr.split(',').map(Number);
+        if (parts.length !== 4 || parts.some(n => isNaN(n))) {
+            return res.status(400).json({ success: false, error: 'invalid bbox' });
+        }
 
-        const result = await pool.query(sql, params);
+        const sql = `
+            SELECT ST_AsGeoJSON(geom) AS geom_json
+            FROM public.shpall
+            WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+            LIMIT 5000
+        `;
+        const result = await pool.query(sql, parts);
         const features = result.rows
             .filter(row => row.geom_json)
             .map(row => ({ type: 'Feature', geometry: JSON.parse(row.geom_json), properties: {} }));
@@ -1052,6 +1197,9 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
 
         console.log(`Splitting feature in table ${tb} with ID ${id} and sub_id ${sub_id}`);
 
+        // Save review history before deleting the existing sub_id row
+        await saveReviewHistoryBySubId(null, tb, sub_id, 'split');
+
         if (!properties?.Farmer_ID) {
             return res.status(400).json({ error: 'Farmer_ID is required in properties' });
         }
@@ -1204,6 +1352,9 @@ app.post('/api/unsplit_feature/:tb', async (req, res) => {
             return res.status(400).json({ error: 'id must be a number' });
         }
 
+        // Save review history for all split rows before deleting
+        await saveReviewHistoryById(null, tb, featureId, 'unsplit');
+
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
@@ -1271,6 +1422,7 @@ app.put('/api/update_landuse/:tb', async (req, res) => {
         const values = [classtype, displayName, sub_id];
         const result = await pool.query(updateReclass, values);
 
+        await saveReviewHistoryBySubId(pool, tb, sub_id, 'update_landuse');
         await pool.query(`
             DO $$ BEGIN
                 UPDATE reclass_${tb}
@@ -1341,6 +1493,7 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
         const values = [JSON.stringify(geometry), displayName, sub_id];
         const result = await pool.query(query, values);
 
+        await saveReviewHistoryBySubId(pool, tb, sub_id, 'update_geometry');
         await pool.query(`
             DO $$ BEGIN
                 UPDATE reclass_${tb}
@@ -1384,7 +1537,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
             sql = `
                 SELECT json_build_object(
                     'type', 'FeatureCollection',
-                    'features', COALESCE(json_agg(f.feat) FILTER (WHERE f.feat IS NOT NULL), '[]'::json)
+                    'features', COALESCE(json_agg(f.feat ORDER BY f.regis_no NULLS LAST) FILTER (WHERE f.feat IS NOT NULL), '[]'::json)
                 ) AS geojson
                 FROM (
                     SELECT json_build_object(
@@ -1405,19 +1558,19 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                                             END,
                             'Rubr_Area',    r."Rubr_Area",
                             'id',           r.id,
-                            'Farmer_ID',    m."Farmer_ID",
-                            'Regis_No',     m."Regis_No",
-                            'No_Plot',      m."No_Plot",
+                            'Farmer_ID',    TRANSLATE(m."Farmer_ID"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
+                            'Regis_No',     TRANSLATE(m."Regis_No"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
+                            'No_Plot',      TRANSLATE(m."No_Plot"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Title_name',   m."Title_name",
                             'F_name',       m."F_name",
                             'L_name',       m."L_name",
                             'Full_nam',     m."Full_nam",
-                            'Address',      m."Address",
+                            'Address',      TRANSLATE(m."Address"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Sub_Dis',      m."Sub_Dis",
                             'District',     m."District",
                             'Province',     m."Province",
                             'F_Status',     m."F_Status",
-                            'Deed_ID',      m."Deed_ID",
+                            'Deed_ID',      TRANSLATE(m."Deed_ID"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Deed_Type',    m."Deed_Type",
                             'Rubr_Rai',     m."Rubr_Rai",
                             'Rubr_Ngan',    m."Rubr_Ngan",
@@ -1427,14 +1580,15 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                             'Deed_Ngan',    m."Deed_Ngan",
                             'Deed_sqwa',    m."Deed_sqwa",
                             'Deed_total',   m."Deed_total",
-                            'Para_Age',     m."Para_Age",
+                            'Para_Age',     TRANSLATE(m."Para_Age"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'X',            m."X",
                             'Y',            m."Y",
                             'Deed_Area',    m."Deed_Area",
                             'editor',       r.editor,
                             'ts',           r.ts
                         )
-                    ) AS feat
+                    ) AS feat,
+                    m."Regis_No" AS regis_no
                     FROM reclass_${baseTb} r
                     JOIN ${baseTb} m ON r.id = m.id
                     WHERE r.geom IS NOT NULL ${extraTypeCondition}
@@ -1446,7 +1600,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
             sql = `
                 SELECT json_build_object(
                     'type', 'FeatureCollection',
-                    'features', COALESCE(json_agg(f.feat) FILTER (WHERE f.feat IS NOT NULL), '[]'::json)
+                    'features', COALESCE(json_agg(f.feat ORDER BY f.regis_no NULLS LAST) FILTER (WHERE f.feat IS NOT NULL), '[]'::json)
                 ) AS geojson
                 FROM (
                     SELECT json_build_object(
@@ -1454,19 +1608,19 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                         'geometry', ST_AsGeoJSON(m.geom)::json,
                         'properties', json_build_object(
                             'id',           m.id,
-                            'Farmer_ID',    m."Farmer_ID",
-                            'Regis_No',     m."Regis_No",
-                            'No_Plot',      m."No_Plot",
+                            'Farmer_ID',    TRANSLATE(m."Farmer_ID"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
+                            'Regis_No',     TRANSLATE(m."Regis_No"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
+                            'No_Plot',      TRANSLATE(m."No_Plot"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Title_name',   m."Title_name",
                             'F_name',       m."F_name",
                             'L_name',       m."L_name",
                             'Full_nam',     m."Full_nam",
-                            'Address',      m."Address",
+                            'Address',      TRANSLATE(m."Address"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Sub_Dis',      m."Sub_Dis",
                             'District',     m."District",
                             'Province',     m."Province",
                             'F_Status',     m."F_Status",
-                            'Deed_ID',      m."Deed_ID",
+                            'Deed_ID',      TRANSLATE(m."Deed_ID"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Deed_Type',    m."Deed_Type",
                             'Rubr_Rai',     m."Rubr_Rai",
                             'Rubr_Ngan',    m."Rubr_Ngan",
@@ -1476,14 +1630,15 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                             'Deed_Ngan',    m."Deed_Ngan",
                             'Deed_sqwa',    m."Deed_sqwa",
                             'Deed_total',   m."Deed_total",
-                            'Para_Age',     m."Para_Age",
+                            'Para_Age',     TRANSLATE(m."Para_Age"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'X',            m."X",
                             'Y',            m."Y",
                             'Deed_Area',    m."Deed_Area",
                             'editor',       m.editor,
                             'ts',           m.ts
                         )
-                    ) AS feat
+                    ) AS feat,
+                    m."Regis_No" AS regis_no
                     FROM ${tb} m
                     WHERE m.geom IS NOT NULL
                 ) f;
@@ -1502,36 +1657,117 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
     }
 });
 
+async function ensureUsersTable() {
+    const { rows } = await pool.query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users')`
+    );
+    if (!rows[0].exists) {
+        await pool.query(`
+            CREATE TABLE users (
+                id           SERIAL PRIMARY KEY,
+                google_id    TEXT UNIQUE,
+                display_name TEXT,
+                email        TEXT,
+                photo        TEXT,
+                role         TEXT NOT NULL DEFAULT 'worker',
+                created_at   TIMESTAMP DEFAULT NOW()
+            )
+        `);
+    } else {
+        await pool.query(`
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'worker'
+        `);
+    }
+}
+
+async function ensureTaskAssignmentColumns() {
+    await pool.query(`ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS user_id INTEGER`);
+    await pool.query(`ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS assignee_email TEXT`);
+    // Backfill user_id และ assignee_email สำหรับ assignment เก่าที่ยังไม่มีข้อมูล
+    // (จับคู่ด้วย display_name เมื่อมีผู้ใช้ชื่อตรงกันเพียงคนเดียว)
+    pool.query(`
+        UPDATE task_assignments ta
+        SET user_id = u.id,
+            assignee_email = u.email
+        FROM users u
+        WHERE ta.user_id IS NULL
+          AND ta.assignee_email IS NULL
+          AND LOWER(u.display_name) = LOWER(ta.assignee_name)
+          AND (SELECT COUNT(*) FROM users u2
+               WHERE LOWER(u2.display_name) = LOWER(ta.assignee_name)) = 1
+    `).catch(e => console.error('[BACKFILL-ASSIGN]', e.message));
+}
+
 app.get('/api/users', async (req, res) => {
     try {
-        // Check if users table exists, if not create it
-        const checkTableSql = `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')`;
-        const checkResult = await pool.query(checkTableSql);
-        const tableExists = checkResult.rows[0].exists;
-
-        if (!tableExists) {
-            const createTableSql = `
-                CREATE TABLE users (
-                    id SERIAL PRIMARY KEY,
-                    google_id TEXT UNIQUE,
-                    display_name TEXT,
-                    email TEXT,
-                    photo TEXT,
-                    created_at TIMESTAMP DEFAULT NOW()
-                )
-            `;
-            await pool.query(createTableSql);
-        }
-
-        const sql = `SELECT * FROM users`;
-        const result = await pool.query(sql);
-        // console.log(result.rows);
+        await ensureUsersTable();
+        const result = await pool.query(
+            `SELECT id, display_name, email, photo, role, created_at FROM users ORDER BY created_at`
+        );
         res.status(200).json(result.rows);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message });
     }
 })
+
+/* PUT /api/users/:id/role  – เปลี่ยน role ของ user (admin ใช้) */
+app.put('/api/users/:id/role', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+        if (!['admin', 'worker'].includes(role)) {
+            return res.status(400).json({ error: 'role ต้องเป็น admin หรือ worker' });
+        }
+        await ensureUsersTable();
+        const result = await pool.query(
+            `UPDATE users SET role=$1 WHERE id=$2 RETURNING id, display_name, email, role`,
+            [role, parseInt(id)]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
+        res.json({ success: true, data: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/* GET /api/my-assignment/:tb  – ดึง assignment ของผู้ login อยู่ สำหรับ table นั้น */
+app.get('/api/my-assignment/:tb', async (req, res) => {
+    try {
+        const sessionUser = req.session?.user;
+        if (!sessionUser) return res.status(401).json({ error: 'Not authenticated' });
+
+        await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
+
+        const tb = req.params.tb.toLowerCase();
+        const result = await pool.query(
+            `SELECT * FROM task_assignments
+             WHERE LOWER(tb_name) = $1
+               AND (
+                 user_id = $2
+                 OR LOWER(assignee_email) = LOWER($3)
+                 OR (user_id IS NULL AND LOWER(assignee_name) = LOWER($4))
+               )
+             ORDER BY id_from LIMIT 1`,
+            [tb, sessionUser.id, sessionUser.email || '', sessionUser.displayName || '']
+        );
+        const row = result.rows[0] || null;
+        // Backfill user_id และ email ทันทีที่เจอ เพื่อให้ครั้งต่อไปค้นด้วย id/email ได้เลย
+        if (row && sessionUser.email && (!row.user_id || !row.assignee_email)) {
+            pool.query(
+                `UPDATE task_assignments SET user_id = $1, assignee_email = $2
+                 WHERE id = $3`,
+                [sessionUser.id, sessionUser.email, row.id]
+            ).catch(e => console.error('[BACKFILL-ROW]', e.message));
+        }
+        res.json({ success: true, data: row });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.get('/api/layerlist', async (req, res) => {
     try {
@@ -2757,7 +2993,8 @@ app.get('/api/task-assignments-all', async (req, res) => {
 app.post('/api/task-assignments', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
-        const { tb_name, assignee_name, assignee_photo, id_from, id_to, note } = req.body;
+        await ensureTaskAssignmentColumns();
+        const { tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note } = req.body;
         if (!tb_name || !assignee_name || id_from == null || id_to == null) {
             return res.status(400).json({ error: 'tb_name, assignee_name, id_from, id_to are required' });
         }
@@ -2765,10 +3002,11 @@ app.post('/api/task-assignments', async (req, res) => {
             return res.status(400).json({ error: 'id_from must be <= id_to' });
         }
         const result = await pool.query(
-            `INSERT INTO task_assignments (tb_name, assignee_name, assignee_photo, id_from, id_to, note)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            `INSERT INTO task_assignments (tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
-            [tb_name, assignee_name, assignee_photo || null, parseInt(id_from), parseInt(id_to), note || null]
+            [tb_name, assignee_name, assignee_email || null, assignee_photo || null,
+             user_id ? parseInt(user_id) : null, parseInt(id_from), parseInt(id_to), note || null]
         );
         res.json({ success: true, data: result.rows[0] });
     } catch (err) {
@@ -2781,8 +3019,9 @@ app.post('/api/task-assignments', async (req, res) => {
 app.put('/api/task-assignments/:id', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
         const { id } = req.params;
-        const { assignee_name, assignee_photo, id_from, id_to, note } = req.body;
+        const { assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note } = req.body;
         if (!assignee_name || id_from == null || id_to == null) {
             return res.status(400).json({ error: 'assignee_name, id_from, id_to are required' });
         }
@@ -2791,10 +3030,13 @@ app.put('/api/task-assignments/:id', async (req, res) => {
         }
         const result = await pool.query(
             `UPDATE task_assignments
-             SET assignee_name=$1, assignee_photo=$2, id_from=$3, id_to=$4, note=$5, updated_at=NOW()
-             WHERE id=$6
+             SET assignee_name=$1, assignee_email=$2, assignee_photo=$3, user_id=$4,
+                 id_from=$5, id_to=$6, note=$7, updated_at=NOW()
+             WHERE id=$8
              RETURNING *`,
-            [assignee_name, assignee_photo || null, parseInt(id_from), parseInt(id_to), note || null, parseInt(id)]
+            [assignee_name, assignee_email || null, assignee_photo || null,
+             user_id ? parseInt(user_id) : null,
+             parseInt(id_from), parseInt(id_to), note || null, parseInt(id)]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Assignment not found' });
         res.json({ success: true, data: result.rows[0] });
@@ -2902,6 +3144,309 @@ app.get('/api/task-progress/:tb', async (req, res) => {
         res.json({ success: true, data: progressData });
     } catch (err) {
         console.error('[TASK-PROGRESS]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* ── Helper: แปลง sqm → { total_sqm, area_rai, area_ngan, area_sqwa, area_rai_decimal } ── */
+function toAreaObj(sqm) {
+    const s = parseFloat(sqm) || 0;
+    if (s <= 0) return { total_sqm: 0, area_rai: 0, area_ngan: 0, area_sqwa: 0, area_rai_decimal: 0 };
+    const rai = Math.floor(s / 1600);
+    const rem = s - rai * 1600;
+    return {
+        total_sqm: parseFloat(s.toFixed(2)),
+        area_rai: rai,
+        area_ngan: Math.floor(rem / 400),
+        area_sqwa: Math.floor((rem % 400) / 4),
+        area_rai_decimal: parseFloat((s / 1600).toFixed(4))
+    };
+}
+const emptyArea = { total_sqm: 0, area_rai: 0, area_ngan: 0, area_sqwa: 0, area_rai_decimal: 0 };
+
+/* GET /api/worker-summary-all
+   สรุปงานต่อคนข้ามทุก table ใน layerlist แบ่ง 3 หมวด:
+   reshape (โฉนด), reclass_all, reclass_rubber (เฉพาะยางพาราลงทะเบียน) */
+app.get('/api/worker-summary-all', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name FROM layerlist ORDER BY created_at`);
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    projects: [],
+                    reshape:        { ...emptyArea, farmer_count: 0 },
+                    reclass_all:    { ...emptyArea, sub_plot_count: 0, farmer_count: 0 },
+                    reclass_rubber: { ...emptyArea, sub_plot_count: 0, farmer_count: 0 }
+                };
+            }
+        };
+
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            // ── Reshape from main table ──
+            const mainReshapeRows = await pool.query(`
+                SELECT editor,
+                    COUNT(*) AS farmer_count,
+                    ROUND(COALESCE(SUM("Sqm_Deed"), 0)::numeric, 2) AS total_sqm
+                FROM ${tb}
+                WHERE editor IS NOT NULL AND editor != ''
+                GROUP BY editor
+            `).catch(() => ({ rows: [] }));
+
+            const projReshape = {};
+            for (const r of mainReshapeRows.rows) {
+                ensureEditor(r.editor);
+                const a = toAreaObj(r.total_sqm);
+                const fc = parseInt(r.farmer_count);
+                projReshape[r.editor] = { ...a, farmer_count: fc };
+                editorMap[r.editor].reshape.total_sqm        += a.total_sqm;
+                editorMap[r.editor].reshape.farmer_count     += fc;
+            }
+
+            // ── Reclass from reclass table ──
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+            const projReclassAll = {};
+            const projReclassRubber = {};
+
+            if (reclassExists.rows[0].exists) {
+                const [allRes, rubberRes] = await Promise.all([
+                    pool.query(`
+                        SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
+                            ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
+                        FROM reclass_${tb}
+                        WHERE editor IS NOT NULL AND editor != ''
+                        GROUP BY editor
+                    `),
+                    pool.query(`
+                        SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
+                            ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
+                        FROM reclass_${tb}
+                        WHERE editor IS NOT NULL AND editor != ''
+                            AND LOWER(TRIM(classtype)) = 'rubber'
+                        GROUP BY editor
+                    `)
+                ]);
+                for (const r of allRes.rows) {
+                    ensureEditor(r.editor);
+                    const a = toAreaObj(r.total_sqm);
+                    const sp = parseInt(r.sp), fc = parseInt(r.fc);
+                    projReclassAll[r.editor] = { ...a, sub_plot_count: sp, farmer_count: fc };
+                    editorMap[r.editor].reclass_all.total_sqm    += a.total_sqm;
+                    editorMap[r.editor].reclass_all.sub_plot_count += sp;
+                    editorMap[r.editor].reclass_all.farmer_count  += fc;
+                }
+                for (const r of rubberRes.rows) {
+                    ensureEditor(r.editor);
+                    const a = toAreaObj(r.total_sqm);
+                    const sp = parseInt(r.sp), fc = parseInt(r.fc);
+                    projReclassRubber[r.editor] = { ...a, sub_plot_count: sp, farmer_count: fc };
+                    editorMap[r.editor].reclass_rubber.total_sqm    += a.total_sqm;
+                    editorMap[r.editor].reclass_rubber.sub_plot_count += sp;
+                    editorMap[r.editor].reclass_rubber.farmer_count  += fc;
+                }
+            }
+
+            // รวม project entry เฉพาะที่มีข้อมูล
+            const allEditorsInProject = new Set([
+                ...Object.keys(projReshape),
+                ...Object.keys(projReclassAll),
+                ...Object.keys(projReclassRubber)
+            ]);
+            for (const ed of allEditorsInProject) {
+                editorMap[ed].projects.push({
+                    tb_name: layer.tb_name,
+                    reshape:        projReshape[ed]        || { ...emptyArea, farmer_count: 0 },
+                    reclass_all:    projReclassAll[ed]     || { ...emptyArea, sub_plot_count: 0, farmer_count: 0 },
+                    reclass_rubber: projReclassRubber[ed]  || { ...emptyArea, sub_plot_count: 0, farmer_count: 0 }
+                });
+            }
+        }
+
+        // คำนวณ rai/ngan/sqwa รวมจาก total_sqm
+        const data = Object.values(editorMap).map(e => {
+            ['reshape', 'reclass_all', 'reclass_rubber'].forEach(k => {
+                const a = toAreaObj(e[k].total_sqm);
+                Object.assign(e[k], a);
+            });
+            return e;
+        }).sort((a, b) => b.reclass_rubber.total_sqm - a.reclass_rubber.total_sqm);
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[WORKER-SUMMARY-ALL]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/worker-summary/:tb
+   สรุปงานต่อคนใน table เดียว แบ่ง 3 หมวด:
+   reshape, reclass_all, reclass_rubber */
+app.get('/api/worker-summary/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        // ── Reshape ──
+        const reshapeMap = {};
+        await pool.query(`
+            SELECT editor,
+                COUNT(*) AS farmer_count,
+                ROUND(COALESCE(SUM("Sqm_Deed"), 0)::numeric, 2) AS total_sqm
+            FROM ${tb}
+            WHERE editor IS NOT NULL AND editor != ''
+            GROUP BY editor
+        `).then(r => r.rows.forEach(row => {
+            reshapeMap[row.editor] = { ...toAreaObj(row.total_sqm), farmer_count: parseInt(row.farmer_count) };
+        })).catch(() => {});
+
+        // ── Reclass ──
+        const reclassAllMap = {}, reclassRubberMap = {};
+        const reclassExists = await pool.query(
+            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=$1)`,
+            [`reclass_${tb}`]
+        );
+        if (reclassExists.rows[0].exists) {
+            const [allRes, rubberRes] = await Promise.all([
+                pool.query(`
+                    SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
+                        ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
+                    FROM reclass_${tb}
+                    WHERE editor IS NOT NULL AND editor != ''
+                    GROUP BY editor
+                `),
+                pool.query(`
+                    SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
+                        ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
+                    FROM reclass_${tb}
+                    WHERE editor IS NOT NULL AND editor != ''
+                        AND LOWER(TRIM(classtype)) = 'rubber'
+                    GROUP BY editor
+                `)
+            ]);
+            allRes.rows.forEach(r => {
+                reclassAllMap[r.editor] = { ...toAreaObj(r.total_sqm), sub_plot_count: parseInt(r.sp), farmer_count: parseInt(r.fc) };
+            });
+            rubberRes.rows.forEach(r => {
+                reclassRubberMap[r.editor] = { ...toAreaObj(r.total_sqm), sub_plot_count: parseInt(r.sp), farmer_count: parseInt(r.fc) };
+            });
+        }
+
+        const allEditors = new Set([...Object.keys(reshapeMap), ...Object.keys(reclassAllMap), ...Object.keys(reclassRubberMap)]);
+        const emptyR  = { ...emptyArea, farmer_count: 0 };
+        const emptyRC = { ...emptyArea, sub_plot_count: 0, farmer_count: 0 };
+
+        const data = [...allEditors].map(editor => ({
+            editor,
+            photo: photoMap[editor] || null,
+            reshape:        reshapeMap[editor]      || emptyR,
+            reclass_all:    reclassAllMap[editor]   || emptyRC,
+            reclass_rubber: reclassRubberMap[editor] || emptyRC
+        })).sort((a, b) => b.reclass_rubber.total_sqm - a.reclass_rubber.total_sqm);
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[WORKER-SUMMARY]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/checker-summary/:tb
+   สรุปงานตรวจ (reviewer) ต่อคนใน table เดียว */
+app.get('/api/checker-summary/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const reclassExists = await pool.query(
+            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=$1)`,
+            [`reclass_${tb}`]
+        );
+        if (!reclassExists.rows[0].exists) {
+            return res.json({ success: true, data: [] });
+        }
+
+        await ensureReclassReviewColumns(tb);
+
+        const [classRes, deedRes] = await Promise.all([
+            pool.query(`
+                SELECT reviewer,
+                    COUNT(*) AS sub_plot_count,
+                    COUNT(DISTINCT id) AS farmer_count,
+                    ROUND(COALESCE(SUM(shpsplit_sqm), 0)::numeric, 2) AS class_sqm
+                FROM reclass_${tb}
+                WHERE reviewer IS NOT NULL AND reviewer != ''
+                GROUP BY reviewer
+                ORDER BY class_sqm DESC
+            `),
+            pool.query(`
+                SELECT r.reviewer,
+                    ROUND(COALESCE(SUM(t."Deed_Sqm"), 0)::numeric, 2) AS deed_sqm,
+                    ROUND(COALESCE(SUM(t."Rubr_Sqm"), 0)::numeric, 2) AS rubber_sqm
+                FROM (
+                    SELECT DISTINCT reviewer, id
+                    FROM reclass_${tb}
+                    WHERE reviewer IS NOT NULL AND reviewer != ''
+                ) r
+                JOIN ${tb} t ON t.id = r.id
+                GROUP BY r.reviewer
+            `)
+        ]);
+
+        const deedMap = {};
+        deedRes.rows.forEach(r => {
+            deedMap[r.reviewer] = {
+                deed_sqm:   parseFloat(r.deed_sqm)   || 0,
+                rubber_sqm: parseFloat(r.rubber_sqm) || 0
+            };
+        });
+
+        const data = classRes.rows.map(r => {
+            const d = deedMap[r.reviewer] || { deed_sqm: 0, rubber_sqm: 0 };
+            const class_sqm = parseFloat(r.class_sqm) || 0;
+            return {
+                reviewer:       r.reviewer,
+                photo:          photoMap[r.reviewer] || null,
+                sub_plot_count: parseInt(r.sub_plot_count),
+                farmer_count:   parseInt(r.farmer_count),
+                class_sqm,
+                class_rai:   class_sqm / 1600,
+                deed_sqm:    d.deed_sqm,
+                deed_rai:    d.deed_sqm / 1600,
+                rubber_sqm:  d.rubber_sqm,
+                rubber_rai:  d.rubber_sqm / 1600
+            };
+        });
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[CHECKER-SUMMARY]', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
