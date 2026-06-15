@@ -2,6 +2,7 @@
 const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.8784385963758], 13);
 const featureGroup = L.featureGroup();
 const lddFeatureGroup = L.featureGroup();
+let _userRole = null;
 
 // Custom Rubber Tree Icon
 const rubberTreeIcon = L.icon({
@@ -552,13 +553,19 @@ const loadGeoData = async () => {
                 { data: 'age', title: 'อายุ (ปี)' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
                 { data: 'deed_id', title: 'เลขโฉนด' },
-                { 
-                    data: 'deed_sqm', 
-                    title: 'เนื้อที่เป้าหมายโฉนด (m²)',
-                    render: (data, type, row) => Math.round(Number(data || 0)).toLocaleString()
+                {
+                    data: null,
+                    title: 'เนื้อที่เป้าหมาย (m²)',
+                    render: (data, type, row) => {
+                        const deedSqm = Number(row.deed_sqm || 0);
+                        if (deedSqm === 0) {
+                            return '0 <small style="color:gray">(ยาง)</small>';
+                        }
+                        return Math.round(deedSqm).toLocaleString();
+                    }
                 },
-                { 
-                    data: 'current_sqm', 
+                {
+                    data: 'current_sqm',
                     title: 'เนื้อที่ขณะนี้ (m²)',
                     render: (data, type, row) => Math.round(Number(data || 0)).toLocaleString()
                 },
@@ -566,8 +573,10 @@ const loadGeoData = async () => {
                     data: null,
                     title: 'ตรวจสอบ (m²)',
                     render: (data, type, row) => {
-                        const target = Number(row.deed_sqm || 0);
-                        const current = Number(row.current_sqm || 0);  // เปรียบเทียบ m² กับ m²
+                        const deedSqm = Number(row.deed_sqm || 0);
+                        const rubrSqm = Number(row.rubr_sqm || 0);
+                        const target = deedSqm > 0 ? deedSqm : rubrSqm;
+                        const current = Number(row.current_sqm || 0);
                         const diff = Math.round(target - current);
                         const color = Math.abs(diff) <= 100 ? 'green' : 'red';
                         const diffStyle = `color: ${color}; font-weight: bold;`;
@@ -601,6 +610,13 @@ const loadGeoData = async () => {
             select: true,
             destroy: true,
             scrollX: true,
+            initComplete: function () {
+                if (_userRole !== 'admin') {
+                    this.api().columns().every(function () {
+                        if (this.header().textContent.trim() === 'ลบข้อมูล') this.visible(false);
+                    });
+                }
+            }
         });
 
         const updateMap = () => {
@@ -640,11 +656,11 @@ const loadGeoData = async () => {
                         highlightSelectedLayer(marker);
                     });
                 } else {
-                    // For Polygon/MultiPolygon, add as GeoJSON layer
+                    // Add individual polygon layers directly so featureGroup.eachLayer() finds them
                     L.geoJson(geoJsonData, {
                         style: getFeatureStyle,
                         onEachFeature: onEachFeature,
-                    }).addTo(featureGroup);
+                    }).eachLayer(l => featureGroup.addLayer(l));
                 }
             });
         };
@@ -966,6 +982,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             document.getElementById('display-name').textContent = user.displayName;
             document.getElementById('displayName').value = user.displayName;
+            _userRole = user.role || 'worker';
 
             await initApp();
 
