@@ -144,4 +144,24 @@ DROP TABLE IF EXISTS public.template;
 
 -- Index creation will happen during layer creation
 
+--
+-- Task assignments table (used by authen.js auto-link on login)
+--
+
+CREATE TABLE IF NOT EXISTS public.task_assignments (
+    id             SERIAL PRIMARY KEY,
+    tb_name        TEXT NOT NULL,
+    assignee_name  TEXT NOT NULL,
+    assignee_photo TEXT,
+    assignee_email TEXT,
+    user_id        INTEGER,
+    id_from        INTEGER NOT NULL,
+    id_to          INTEGER NOT NULL,
+    note           TEXT,
+    created_at     TIMESTAMP DEFAULT NOW(),
+    updated_at     TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE public.task_assignments OWNER TO postgres;
+
 COMMIT;
