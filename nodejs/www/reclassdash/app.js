@@ -1301,16 +1301,10 @@ const loadGeoData = async () => {
 
         // ── Filter status buttons ──
         $(document).off('click.filterBtn').on('click.filterBtn', '.btn-filter-status', function () {
-            const clickedFilter = $(this).data('filter');
-            // Toggle: click active button again → clear filter (show all)
-            if (_activeFilter === clickedFilter) {
-                _activeFilter = '';
-                $('.btn-filter-status').removeClass('active');
-            } else {
-                _activeFilter = clickedFilter;
-                $('.btn-filter-status').removeClass('active');
-                $(this).addClass('active');
-            }
+            const clickedFilter = $(this).data('filter') || '';
+            _activeFilter = clickedFilter;
+            $('.btn-filter-status').removeClass('active');
+            $(this).addClass('active');
             dataTable.draw();
         });
 
