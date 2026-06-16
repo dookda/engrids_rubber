@@ -5,8 +5,8 @@ let _activeFilter = '';
 let _panelCheckerDirty = false;
 const _checkerDraft = {};   // { [sub_id]: { check_area, check_shape, remark } }
 let _userRole = null;
-let _workerStatusFilter = 'all';
-let _adminNavFilter = 'all';
+let _workerStatusFilter = 'unchecked';
+let _adminNavFilter = 'none';
 let _highlightedLayers = [];
 let _currentReviewId = null;
 let _focusedLayer = null;      // { layer, originalStyle } — currently zoomed-to polygon
@@ -14,20 +14,12 @@ let _focusedSubId = null;
 
 // Returns unique parent IDs filtered by current _workerStatusFilter
 const _getWorkerNavIds = (allRows) => {
-    if (_workerStatusFilter === 'all') {
-        return [...new Set(allRows.map(r => String(r.id)))];
-    }
-    const _isPartial = r => {
-        const hasAny = r.check_area || r.check_shape;
-        const pass = r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
-        const fail = r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-        return hasAny && !pass && !fail;
-    };
+    const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
+    const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
     const filtered = allRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !r.check_area && !r.check_shape;
-        if (_workerStatusFilter === 'pass') return r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
-        if (_workerStatusFilter === 'fail') return r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-        if (_workerStatusFilter === 'partial') return _isPartial(r);
+        if (_workerStatusFilter === 'unchecked') return !_isPass(r) && !_isFail(r);
+        if (_workerStatusFilter === 'pass') return _isPass(r);
+        if (_workerStatusFilter === 'fail') return _isFail(r);
         return true;
     });
     return [...new Set(filtered.map(r => String(r.id)))];
@@ -73,12 +65,12 @@ $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
     try {
         const rowData = settings.aoData[dataIndex]._aData;
         if (!rowData) return true;
+        const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
+        const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
         switch (_activeFilter) {
-            case 'none': return !rowData.check_area && !rowData.check_shape;
-            case 'pass': return rowData.check_area === 'ผ่าน' && rowData.check_shape === 'ผ่าน';
-            case 'fail': return rowData.check_area === 'ไม่ผ่าน' || rowData.check_shape === 'ไม่ผ่าน';
-            case 'mixed': return (rowData.check_area === 'ผ่าน' && rowData.check_shape === 'ไม่ผ่าน') ||
-                (rowData.check_area === 'ไม่ผ่าน' && rowData.check_shape === 'ผ่าน');
+            case 'none': return !_isPass(rowData) && !_isFail(rowData);
+            case 'pass': return _isPass(rowData);
+            case 'fail': return _isFail(rowData);
             case 'remark': return !!(rowData.remark || rowData.user_remark);
             default: return true;
         }
@@ -437,35 +429,24 @@ const buildWorkerPlotList = (filterId = null) => {
         $('#workerPlotList').html('<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่พบแปลง</div>');
         return;
     }
-    // Counts = number of unique parent IDs in each status (always global, not per-ID)
-    const allUniqueIds = [...new Set(allRows.map(r => String(r.id)))];
-    const getSubsOf = id => allRows.filter(r => String(r.id) === id);
-    const cntAll      = allUniqueIds.length;
-    const cntUnchecked = allUniqueIds.filter(id => getSubsOf(id).every(r => !r.check_area && !r.check_shape)).length;
-    const cntPass      = allUniqueIds.filter(id => getSubsOf(id).every(r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน')).length;
-    const cntFail      = allUniqueIds.filter(id => getSubsOf(id).some(r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน')).length;
-    const cntPartial   = cntAll - cntUnchecked - cntPass - cntFail;
-    $('#wfc-all').text(cntAll);
+    // Count per sub_id to match the list filter display
+    const _wIsPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
+    const _wIsFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
+    const cntUnchecked = allRows.filter(r => !_wIsPass(r) && !_wIsFail(r)).length;
+    const cntPass      = allRows.filter(_wIsPass).length;
+    const cntFail      = allRows.filter(_wIsFail).length;
     $('#wfc-unchecked').text(cntUnchecked);
     $('#wfc-pass').text(cntPass);
-    $('#wfc-partial').text(cntPartial > 0 ? cntPartial : 0);
     $('#wfc-fail').text(cntFail);
 
     // List display: filter by current ID (if selected), then apply status filter
     const baseRows = filterId ? allRows.filter(r => String(r.id) === String(filterId)) : allRows;
 
     // Apply status filter by admin verdict
-    const isPartial = r => {
-        const hasAny = r.check_area || r.check_shape;
-        const isPass = r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
-        const isFail = r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-        return hasAny && !isPass && !isFail;
-    };
     const displayRows = baseRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !r.check_area && !r.check_shape;
-        if (_workerStatusFilter === 'pass') return r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
-        if (_workerStatusFilter === 'fail') return r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-        if (_workerStatusFilter === 'partial') return isPartial(r);
+        if (_workerStatusFilter === 'unchecked') return !_wIsPass(r) && !_wIsFail(r);
+        if (_workerStatusFilter === 'pass') return _wIsPass(r);
+        if (_workerStatusFilter === 'fail') return _wIsFail(r);
         return true;
     });
 
@@ -484,8 +465,6 @@ const buildWorkerPlotList = (filterId = null) => {
             verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.72rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
         } else if (ca === 'ไม่ผ่าน' || cs === 'ไม่ผ่าน') {
             verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.72rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
-        } else if (ca || cs) {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:0.72rem;font-weight:700;border:1.5px solid #93c5fd;white-space:nowrap;"><i class="bi bi-slash-circle-fill"></i> บางส่วน</span>`;
         } else {
             verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:0.72rem;font-weight:700;border:1.5px solid #fde047;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
         }
@@ -533,8 +512,6 @@ const buildWorkerPlotList = (filterId = null) => {
             : '<div class="text-muted small text-center py-3"><i class="bi bi-check2-all text-success"></i> ตรวจครบแล้ว!</div>')
         : _workerStatusFilter === 'pass'
         ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ยังไม่มีที่ผ่าน</div>'
-        : _workerStatusFilter === 'partial'
-        ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่มีรายการผ่านบางส่วน</div>'
         : _workerStatusFilter === 'fail'
         ? '<div class="text-muted small text-center py-3"><i class="bi bi-emoji-smile text-success"></i> ไม่มีรายการไม่ผ่าน!</div>'
         : '<div class="text-muted small text-center py-3">ไม่พบแปลงใน ID นี้</div>';
@@ -595,32 +572,27 @@ const autoSaveUserRemark = async () => {
 const getIdStatus = (allRows, id) => {
     const subs = allRows.filter(r => String(r.id) === String(id));
     if (!subs.length) return 'none';
-    const hasAny = subs.some(r => r.check_area || r.check_shape);
-    if (!hasAny) return 'none';
-    const allPass = subs.every(r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน');
-    if (allPass) return 'pass';
     const hasFail = subs.some(r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน');
     if (hasFail) return 'fail';
-    return 'partial';
+    const allPass = subs.every(r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน');
+    if (allPass) return 'pass';
+    return 'none';
 };
 
 const updateAdminStatusCounts = () => {
     if (!$.fn.DataTable.isDataTable('#featureTable')) return;
     const allRows = $('#featureTable').DataTable().rows().data().toArray();
     const uniqueIds = [...new Set(allRows.map(r => String(r.id)))];
-    let cntNone = 0, cntPass = 0, cntFail = 0, cntPartial = 0;
+    let cntNone = 0, cntPass = 0, cntFail = 0;
     uniqueIds.forEach(id => {
         const s = getIdStatus(allRows, id);
         if (s === 'none') cntNone++;
         else if (s === 'pass') cntPass++;
         else if (s === 'fail') cntFail++;
-        else cntPartial++;
     });
-    $('#asc-all').text(uniqueIds.length);
     $('#asc-none').text(cntNone);
     $('#asc-pass').text(cntPass);
     $('#asc-fail').text(cntFail);
-    $('#asc-partial').text(cntPartial);
 };
 
 // Helper to navigate between plots (Prev/Next) — by unique parent ID
@@ -843,7 +815,7 @@ const showFeaturePanel = (feature, layer) => {
     } else if (ca === 'ไม่ผ่าน' || cs === 'ไม่ผ่าน') {
         statusHtml = '<span class="badge bg-danger" style="font-size:0.7rem;">❌ มีไม่ผ่าน</span>';
     } else {
-        statusHtml = '<span class="badge bg-warning text-dark" style="font-size:0.7rem;">⏳ ตรวจบางส่วน</span>';
+        statusHtml = '<span class="badge bg-secondary" style="font-size:0.7rem;">⏳ ยังไม่ตรวจ</span>';
     }
     // status summary badge removed (replaced by per-ID panel)
 
@@ -1329,9 +1301,10 @@ const loadGeoData = async () => {
 
         // ── Filter status buttons ──
         $(document).off('click.filterBtn').on('click.filterBtn', '.btn-filter-status', function () {
+            const clickedFilter = $(this).data('filter') || '';
+            _activeFilter = clickedFilter;
             $('.btn-filter-status').removeClass('active');
             $(this).addClass('active');
-            _activeFilter = $(this).data('filter');
             dataTable.draw();
         });
 
@@ -1347,7 +1320,7 @@ const loadGeoData = async () => {
             $('#id-sub-list .deed-check-area').val(val);
             $('#id-sub-list .sub-review-row').each(function () {
                 $(this).find('.sub-check-shape').val(val);
-                $(this).removeClass('is-pass is-fail is-partial');
+                $(this).removeClass('is-pass is-fail');
                 $(this).addClass(val === 'ผ่าน' ? 'is-pass' : 'is-fail');
             });
         });
@@ -1489,6 +1462,7 @@ const loadGeoData = async () => {
                 // id-reviewer-info always visible
 
                 updateAdminStatusCounts();
+                buildWorkerPlotList(_currentReviewId);
                 btn.html('<i class="bi bi-check-circle-fill"></i> บันทึกแล้ว').removeClass('btn-success').addClass('btn-primary');
                 setTimeout(() => btn.html('<i class="bi bi-floppy-fill me-1"></i> บันทึกผลการตรวจ').removeClass('btn-primary').addClass('btn-success').prop('disabled', false), 2000);
 
@@ -2037,6 +2011,9 @@ const loadGeoData = async () => {
                         showFeaturePanel({ properties: rowData });
                     }
 
+                    updateAdminStatusCounts();
+                    buildWorkerPlotList(_currentReviewId);
+
                     setTimeout(() => {
                         btn.html('<i class="bi bi-floppy"></i> บันทึก').removeClass('btn-review-saved').prop('disabled', false);
                     }, 2000);
@@ -2066,6 +2043,8 @@ const loadGeoData = async () => {
                 if (result.success) {
                     const row = btn.closest('tr');
                     dataTable.row(row).remove().draw();
+                    updateAdminStatusCounts();
+                    buildWorkerPlotList(_currentReviewId);
                 } else {
                     alert('ลบไม่สำเร็จ: ' + (result.error || 'Unknown error'));
                     btn.prop('disabled', false).html('<i class="bi bi-trash3-fill"></i>');
@@ -2432,9 +2411,16 @@ $(document).on('click', '#btn-worker-next', () => navigatePlots(1));
 
 // ── Admin status filter cards ──
 $(document).on('click', '#adminStatusBar .admin-status-card', function () {
-    _adminNavFilter = $(this).data('status');
-    $('#adminStatusBar .admin-status-card').removeClass('active');
-    $(this).addClass('active');
+    const clickedStatus = $(this).data('status');
+    // Toggle: click active button again → clear filter (show all for nav)
+    if (_adminNavFilter === clickedStatus) {
+        _adminNavFilter = 'all';
+        $('#adminStatusBar .admin-status-card').removeClass('active');
+    } else {
+        _adminNavFilter = clickedStatus;
+        $('#adminStatusBar .admin-status-card').removeClass('active');
+        $(this).addClass('active');
+    }
     // Update nav counter to reflect filtered IDs
     if ($.fn.DataTable.isDataTable('#featureTable')) {
         const allRows = $('#featureTable').DataTable().rows({ search: 'applied' }).data().toArray();
@@ -2449,10 +2435,16 @@ $(document).on('click', '#adminStatusBar .admin-status-card', function () {
 
 // ── Worker status filter tabs ──
 $(document).on('click', '#workerStatusFilter .worker-status-card', function () {
-    _workerStatusFilter = $(this).data('filter');
-    $('#workerStatusFilter .worker-status-card').removeClass('active');
-    $(this).addClass('active');
-    // filter ภายใน ID ที่เลือกอยู่เสมอ (ถ้ายังไม่เลือก ID จึงแสดงทั้งหมด)
+    const clickedFilter = $(this).data('filter');
+    // Toggle: click active button again → clear filter
+    if (_workerStatusFilter === clickedFilter) {
+        _workerStatusFilter = 'all';
+        $('#workerStatusFilter .worker-status-card').removeClass('active');
+    } else {
+        _workerStatusFilter = clickedFilter;
+        $('#workerStatusFilter .worker-status-card').removeClass('active');
+        $(this).addClass('active');
+    }
     buildWorkerPlotList(_currentReviewId || null);
 });
 
@@ -2548,6 +2540,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             _userRole = user.role || 'worker';
             _applyWorkerVisibility();
             _applyAdminVisibility();
+
+            // Force update counts now that role is known (fixes race condition with DataTable init)
+            updateAdminStatusCounts();
+            buildWorkerPlotList(_currentReviewId || null);
 
             // Re-load progress with correct user identity after login
             const urlParams = new URLSearchParams(window.location.search);
