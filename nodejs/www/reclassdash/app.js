@@ -62,6 +62,7 @@ const _applyWorkerVisibility = () => {
         buildWorkerPlotList(firstId);
         if (firstId) _currentReviewId = firstId;
     }
+    $('.btn-filter-status[data-filter="none"]').html('⏳ รอตรวจ');
 };
 
 const _applyAdminVisibility = () => {
@@ -1149,7 +1150,7 @@ const loadGeoData = async () => {
                         if (_userRole === 'worker') {
                             if (data === 'ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.82rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
                             if (data === 'ไม่ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.82rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
-                            return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f1f5f9;color:#94a3b8;font-size:0.82rem;border:1.5px solid #e2e8f0;white-space:nowrap;"><i class="bi bi-dash-circle"></i> -</span>`;
+                            return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fffbeb;color:#b45309;font-size:0.82rem;font-weight:700;border:1.5px solid #fde68a;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
                         }
                         const passSelected = data === 'ผ่าน' ? 'selected' : '';
                         const failSelected = data === 'ไม่ผ่าน' ? 'selected' : '';
@@ -1168,7 +1169,7 @@ const loadGeoData = async () => {
                         if (_userRole === 'worker') {
                             if (data === 'ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.82rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
                             if (data === 'ไม่ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.82rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
-                            return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f1f5f9;color:#94a3b8;font-size:0.82rem;border:1.5px solid #e2e8f0;white-space:nowrap;"><i class="bi bi-dash-circle"></i> -</span>`;
+                            return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fffbeb;color:#b45309;font-size:0.82rem;font-weight:700;border:1.5px solid #fde68a;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
                         }
                         const passSelected = data === 'ผ่าน' ? 'selected' : '';
                         const failSelected = data === 'ไม่ผ่าน' ? 'selected' : '';
