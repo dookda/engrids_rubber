@@ -24,8 +24,9 @@ app.use(session({
     saveUninitialized: false,
     proxy: true,
     cookie: {
-        secure: (process.env.GOOGLE_CALLBACK_URL || '').startsWith('https'),
+        secure: 'auto',
         sameSite: 'lax',
+        maxAge: 24 * 60 * 60 * 1000,
     }
 }));
 
