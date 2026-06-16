@@ -102,6 +102,7 @@ async function ensureDatabase() {
     }
 }
 
+app.set('trust proxy', 1);
 app.use('/rub', require('./service/authen'));
 app.use('/rub', require('./service/api'));
 app.use('/rub', express.static('www'));
