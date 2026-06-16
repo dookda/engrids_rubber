@@ -6,23 +6,34 @@ let _panelCheckerDirty = false;
 const _checkerDraft = {};   // { [sub_id]: { check_area, check_shape, remark } }
 let _userRole = null;
 let _workerStatusFilter = 'unchecked';
-let _adminNavFilter = 'none';
+let _adminNavFilter = 'all';
 let _highlightedLayers = [];
 let _currentReviewId = null;
 let _focusedLayer = null;      // { layer, originalStyle } — currently zoomed-to polygon
 let _focusedSubId = null;
 
-// Returns unique parent IDs filtered by current _workerStatusFilter
+// Returns unique parent IDs filtered by current _workerStatusFilter (group-level status)
 const _getWorkerNavIds = (allRows) => {
     const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-    const filtered = allRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !_isPass(r) && !_isFail(r);
-        if (_workerStatusFilter === 'pass') return _isPass(r);
-        if (_workerStatusFilter === 'fail') return _isFail(r);
+    const grouped = {};
+    allRows.forEach(r => {
+        const key = String(r.id);
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+    const getGroupStatus = rows => {
+        if (rows.some(_isFail)) return 'fail';
+        if (rows.every(_isPass)) return 'pass';
+        return 'unchecked';
+    };
+    return Object.keys(grouped).filter(id => {
+        const status = getGroupStatus(grouped[id]);
+        if (_workerStatusFilter === 'unchecked') return status === 'unchecked';
+        if (_workerStatusFilter === 'pass') return status === 'pass';
+        if (_workerStatusFilter === 'fail') return status === 'fail';
         return true;
     });
-    return [...new Set(filtered.map(r => String(r.id)))];
 };
 
 const _resetHighlights = () => {
@@ -429,30 +440,46 @@ const buildWorkerPlotList = (filterId = null) => {
         $('#workerPlotList').html('<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่พบแปลง</div>');
         return;
     }
-    // Count per sub_id to match the list filter display
     const _wIsPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _wIsFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-    const cntUnchecked = allRows.filter(r => !_wIsPass(r) && !_wIsFail(r)).length;
-    const cntPass      = allRows.filter(_wIsPass).length;
-    const cntFail      = allRows.filter(_wIsFail).length;
+
+    // Group ALL rows by parent ID first
+    const allGrouped = {};
+    allRows.forEach(row => {
+        const key = String(row.id);
+        if (!allGrouped[key]) allGrouped[key] = [];
+        allGrouped[key].push(row);
+    });
+
+    // Compute group-level status: fail > unchecked > pass
+    const getGroupStatus = rows => {
+        if (rows.some(_wIsFail)) return 'fail';
+        if (rows.every(_wIsPass)) return 'pass';
+        return 'unchecked';
+    };
+
+    // Count filter badges by group (ID) status
+    const allGroupIds = Object.keys(allGrouped);
+    const cntUnchecked = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'unchecked').length;
+    const cntPass      = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'pass').length;
+    const cntFail      = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'fail').length;
     $('#wfc-unchecked').text(cntUnchecked);
     $('#wfc-pass').text(cntPass);
     $('#wfc-fail').text(cntFail);
 
-    // List display: filter by current ID (if selected), then apply status filter
-    const baseRows = filterId ? allRows.filter(r => String(r.id) === String(filterId)) : allRows;
-
-    // Apply status filter by admin verdict
-    const displayRows = baseRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !_wIsPass(r) && !_wIsFail(r);
-        if (_workerStatusFilter === 'pass') return _wIsPass(r);
-        if (_workerStatusFilter === 'fail') return _wIsFail(r);
-        return true;
-    });
-
     // Apply ID search filter from input
     const idSearch = ($('#worker-id-search').val() || '').trim();
-    const finalRows = idSearch ? displayRows.filter(r => String(r.id).includes(idSearch)) : displayRows;
+
+    // Filter which ID groups to show (filter at group level, not sub-plot level)
+    const displayGroupIds = allGroupIds.filter(id => {
+        if (filterId && id !== String(filterId)) return false;
+        if (idSearch && !id.includes(idSearch)) return false;
+        const status = getGroupStatus(allGrouped[id]);
+        if (_workerStatusFilter === 'unchecked') return status === 'unchecked';
+        if (_workerStatusFilter === 'pass') return status === 'pass';
+        if (_workerStatusFilter === 'fail') return status === 'fail';
+        return true;
+    });
 
     // Build single item HTML
     const buildItem = row => {
@@ -462,11 +489,11 @@ const buildWorkerPlotList = (filterId = null) => {
         const cs = row.check_shape || '';
         let verdictHtml;
         if (ca === 'ผ่าน' && cs === 'ผ่าน') {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.72rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
         } else if (ca === 'ไม่ผ่าน' || cs === 'ไม่ผ่าน') {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.72rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
         } else {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:0.72rem;font-weight:700;border:1.5px solid #fde047;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
         }
         const noteTag = row.user_remark ? `<span style="font-size:0.65rem;color:#1d4ed8;"><i class="bi bi-chat-dots-fill"></i></span>` : '';
         const notePreview = row.user_remark
@@ -483,38 +510,33 @@ const buildWorkerPlotList = (filterId = null) => {
         </div>`;
     };
 
-    // Always group by parent ID so headers are visible in all filter modes
-    const showGrouped = true;
-    let html;
-    if (showGrouped) {
-        const groups = {};
-        finalRows.forEach(row => {
-            const key = String(row.id);
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(row);
-        });
-        html = Object.entries(groups).map(([id, rows]) =>
-            `<div class="worker-id-group">
-                <div class="worker-id-group-header">
-                    <i class="bi bi-folder2-open me-1"></i>ID: ${id}
-                    <span class="ms-1" style="font-size:0.68rem;opacity:0.75;">(${rows.length} แปลง)</span>
-                </div>
-                ${rows.map(buildItem).join('')}
-            </div>`
-        ).join('');
-    } else {
-        html = finalRows.map(buildItem).join('');
-    }
+    // Build group header badge
+    const getGroupBadge = status => {
+        if (status === 'pass')      return `<span class="worker-group-badge worker-group-badge-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
+        if (status === 'fail')      return `<span class="worker-group-badge worker-group-badge-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+        return `<span class="worker-group-badge worker-group-badge-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
+    };
+
+    // Build grouped HTML — show ALL sub-plots in each matched ID group
+    const html = displayGroupIds.map(id => {
+        const rows = allGrouped[id];
+        const groupStatus = getGroupStatus(rows);
+        return `<div class="worker-id-group">
+            <div class="worker-id-group-header">
+                <span><i class="bi bi-folder2-open me-1"></i>ID: ${id} <span class="worker-group-count">(${rows.length} แปลง)</span></span>
+                ${getGroupBadge(groupStatus)}
+            </div>
+            ${rows.map(buildItem).join('')}
+        </div>`;
+    }).join('');
 
     const emptyMsg = _workerStatusFilter === 'unchecked'
-        ? (filterId && cntUnchecked > 0
-            ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่มีรายการรอตรวจใน ID นี้</div>'
-            : '<div class="text-muted small text-center py-3"><i class="bi bi-check2-all text-success"></i> ตรวจครบแล้ว!</div>')
+        ? '<div class="text-muted small text-center py-3"><i class="bi bi-check2-all text-success"></i> ตรวจครบแล้ว!</div>'
         : _workerStatusFilter === 'pass'
-        ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ยังไม่มีที่ผ่าน</div>'
+        ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ยังไม่มี ID ที่ผ่านครบ</div>'
         : _workerStatusFilter === 'fail'
         ? '<div class="text-muted small text-center py-3"><i class="bi bi-emoji-smile text-success"></i> ไม่มีรายการไม่ผ่าน!</div>'
-        : '<div class="text-muted small text-center py-3">ไม่พบแปลงใน ID นี้</div>';
+        : '<div class="text-muted small text-center py-3">ไม่พบแปลง</div>';
 
     $('#workerPlotList').html(html || emptyMsg);
 
@@ -544,7 +566,7 @@ const autoSaveUserRemark = async () => {
         const res = await fetch(`/rub/api/update_user_remark/${tb}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sub_id: subId, user_remark: userRemark, user_name: displayName })
+            body: JSON.stringify({ sub_id: subId, user_remark: userRemark })
         });
         const data = await res.json();
         if (data.success) {
@@ -554,7 +576,6 @@ const autoSaveUserRemark = async () => {
             if (tableRow.any()) {
                 const rowData = tableRow.data();
                 rowData.user_remark = userRemark;
-                rowData.user_name = displayName;
                 rowData.user_remark_ts = updatedTs;
                 tableRow.data(rowData).draw(false);
             }
@@ -789,9 +810,9 @@ const showFeaturePanel = (feature, layer) => {
     }
 
     // ── User: "บันทึกล่าสุด" footer ──
-    if (props.user_name || props.user_remark) {
+    if (props.user_remark) {
         $('#panel-user-info').show();
-        $('#panel-user-name').text(props.user_name || '-');
+        $('#panel-user-name').text('-');
         if (props.user_remark_ts) {
             const d = new Date(props.user_remark_ts);
             $('#panel-user-time').text(d.toLocaleString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' น.');
@@ -823,12 +844,15 @@ const showFeaturePanel = (feature, layer) => {
     try {
         const dt = $('#featureTable').DataTable();
         const allRows = dt.rows({ search: 'applied' }).data().toArray();
-        const uniqueIds = [...new Set(allRows.map(r => String(r.id)))];
+        const allUniqueIds = [...new Set(allRows.map(r => String(r.id)))];
+        const uniqueIds = (_userRole !== 'worker' && _adminNavFilter !== 'all')
+            ? allUniqueIds.filter(id => getIdStatus(allRows, id) === _adminNavFilter)
+            : allUniqueIds;
         const currentIdIdx = uniqueIds.indexOf(String(props.id));
         if (currentIdIdx !== -1) {
             $('#plot-nav-count').text(`${currentIdIdx + 1} / ${uniqueIds.length}`);
         } else {
-            $('#plot-nav-count').text(`0 / ${uniqueIds.length}`);
+            $('#plot-nav-count').text(`- / ${uniqueIds.length}`);
         }
     } catch (e) {
         console.warn('DataTable not ready for counter');
@@ -994,7 +1018,7 @@ const loadGeoData = async () => {
             remark: item.remark || '',
             reviewer: item.reviewer || '',
             user_remark: item.user_remark || '',
-            user_name: item.user_name || '',
+
             user_remark_ts: item.user_remark_ts || '',
             review_ts: item.review_ts || ''
         }));
@@ -1424,7 +1448,7 @@ const loadGeoData = async () => {
                             fetch(`/rub/api/update_user_remark/${tb}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ sub_id: subId, user_remark: '', user_name: '' })
+                                body: JSON.stringify({ sub_id: subId, user_remark: '' })
                             }).then(r => r.json()).then(() => subId).catch(() => subId)
                         );
                     }
@@ -1443,8 +1467,7 @@ const loadGeoData = async () => {
                         if (isRejected) {
                             rd.user_remark = '';
                             rd.user_remark_ts = '';
-                            rd.user_name = '';
-                        }
+                                                    }
                         tableRow.data(rd).draw(false);
                         const node = tableRow.node();
                         if (node) {
@@ -1492,8 +1515,7 @@ const loadGeoData = async () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         sub_id: subId,
-                        user_remark: userRemark,
-                        user_name: displayName
+                        user_remark: userRemark
                     })
                 });
 
@@ -1509,8 +1531,7 @@ const loadGeoData = async () => {
                     if (tableRow.any()) {
                         const rowData = tableRow.data();
                         rowData.user_remark = userRemark;
-                        rowData.user_name = displayName;
-                        rowData.user_remark_ts = data.data && data.data[0] ? data.data[0].user_remark_ts : new Date().toISOString();
+                                                rowData.user_remark_ts = data.data && data.data[0] ? data.data[0].user_remark_ts : new Date().toISOString();
                         tableRow.data(rowData).draw(false);
                         // Re-populate panel but preserve dirty=false
                         showFeaturePanel({ properties: rowData });
@@ -1832,8 +1853,7 @@ const loadGeoData = async () => {
                     const rowData = dataTable.row(row).data();
                     rowData.user_remark = userRemark;
                     rowData.user_remark_ts = updatedTs;
-                    if (displayName) rowData.user_name = displayName;
-                    dataTable.row(row).data(rowData);
+                    if (displayName)                     dataTable.row(row).data(rowData);
 
                     let dateStr = '';
                     if (updatedTs) {
@@ -1959,7 +1979,7 @@ const loadGeoData = async () => {
                             await fetch(`/rub/api/update_user_remark/${tb}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ sub_id: subId, user_remark: '', user_name: '' })
+                                body: JSON.stringify({ sub_id: subId, user_remark: '' })
                             });
                         } catch (_) { }
                     }
@@ -1990,7 +2010,6 @@ const loadGeoData = async () => {
                     if (isRejected) {
                         rowData.user_remark = '';
                         rowData.user_remark_ts = '';
-                        rowData.user_name = '';
                         // Clear the input in the table row visually
                         row.find('.user-remark').val('');
                         row.find('.user-remark-time').remove();
@@ -2383,7 +2402,7 @@ $(document).on('click', '#worker-sel-delete', async function () {
         const res = await fetch(`/rub/api/update_user_remark/${tb}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sub_id: subId, user_remark: '', user_name: displayName })
+            body: JSON.stringify({ sub_id: subId, user_remark: '' })
         });
         const data = await res.json();
         if (data.success) {
@@ -2394,7 +2413,7 @@ $(document).on('click', '#worker-sel-delete', async function () {
                 const tableRow = dt.row((idx, d) => String(d.sub_id) === subId);
                 if (tableRow.any()) {
                     const rd = tableRow.data();
-                    rd.user_remark = ''; rd.user_name = ''; rd.user_remark_ts = '';
+                    rd.user_remark = ''; rd.user_remark_ts = '';
                     tableRow.data(rd).draw(false);
                 }
             }
@@ -2479,7 +2498,7 @@ $(document).on('click', '#worker-sel-save', async function () {
         const res = await fetch(`/rub/api/update_user_remark/${tb}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sub_id: subId, user_remark: remark, user_name: displayName })
+            body: JSON.stringify({ sub_id: subId, user_remark: remark })
         });
         const data = await res.json();
         if (data.success) {
@@ -2490,7 +2509,7 @@ $(document).on('click', '#worker-sel-save', async function () {
                 const tableRow = dt.row((idx, d) => String(d.sub_id) === subId);
                 if (tableRow.any()) {
                     const rd = tableRow.data();
-                    rd.user_remark = remark; rd.user_name = displayName; rd.user_remark_ts = updatedTs;
+                    rd.user_remark = remark; rd.user_remark_ts = updatedTs;
                     tableRow.data(rd).draw(false);
                 }
             }

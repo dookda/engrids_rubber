@@ -92,7 +92,6 @@ async function ensureReclassReviewColumns(tb) {
         { name: 'review_ts',      type: 'timestamp without time zone' },
         { name: 'user_remark',    type: 'text' },
         { name: 'user_remark_ts', type: 'timestamp without time zone' },
-        { name: 'user_name',      type: 'text' },
         { name: '"class_Area"',    type: 'numeric' },
     ];
     for (const col of cols) {
@@ -729,7 +728,7 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
         `).catch(() => {});
 
         // Auto-add review columns if they don't exist (for older tables)
-        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'user_name', 'class_Area'];
+        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'class_Area'];
         for (const col of alterCols) {
             let colType = 'text';
             if (col === 'review_ts' || col === 'user_remark_ts') colType = 'timestamp without time zone';
@@ -774,7 +773,6 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.remark,
                     a.reviewer,
                     a.user_remark,
-                    a.user_name,
                     a.user_remark_ts,
                     a.review_ts,
                     a.ts,
@@ -891,7 +889,7 @@ app.put('/api/update_user_remark/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { sub_id, user_remark, user_name } = req.body;
+        const { sub_id, user_remark } = req.body;
         if (!sub_id) {
             return res.status(400).json({ error: 'sub_id is required' });
         }
@@ -899,12 +897,11 @@ app.put('/api/update_user_remark/:tb', async (req, res) => {
         const sql = `
             UPDATE reclass_${tb}
             SET user_remark = $1,
-                user_name = $2,
                 user_remark_ts = CASE WHEN $1::text IS NULL THEN NULL ELSE NOW() END
-            WHERE sub_id = $3
+            WHERE sub_id = $2
             RETURNING *`;
 
-        const values = [user_remark || null, user_name || null, sub_id];
+        const values = [user_remark || null, sub_id];
         const result = await pool.query(sql, values);
 
         if (result.rowCount === 0) {
@@ -1326,7 +1323,7 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
             properties.Farmer_ID,
             sub_id,
             id,
-            properties.classtype,
+            properties.Classtype,
             displayName,
             properties.shpsplit_sqm || null
         ]);
@@ -1540,9 +1537,9 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
             const baseTb = tb.replace('v_reclass_', '');
             let extraTypeCondition = '';
             if (typeFilter === 'rubber') {
-                extraTypeCondition = "AND LOWER(TRIM(r.classtype)) = 'rubber'";
+                extraTypeCondition = `AND LOWER(TRIM(r.classtype)) = 'rubber'`;
             } else if (typeFilter === 'rubber_and_ex') {
-                extraTypeCondition = "AND LOWER(TRIM(r.classtype)) IN ('rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other')";
+                extraTypeCondition = `AND LOWER(TRIM(r.classtype)) IN ('rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other')`;
             }
 
             sql = `
@@ -1555,7 +1552,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                         'type', 'Feature',
                         'geometry', ST_AsGeoJSON(r.geom)::json,
                         'properties', json_build_object(
-                            'classtype',    CASE r.classtype
+                            'Classtype',    CASE r.classtype
                                                 WHEN 'rubber' THEN 'ยางพาราที่ลงทะเบียน'
                                                 WHEN 'not-rubber' THEN 'ยางพาราที่ไม่ได้ลงทะเบียน'
                                                 WHEN 'Other' THEN 'ไม่ใช่ยางพารา'
@@ -1567,7 +1564,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                                                 WHEN 'ex_other' THEN 'พื้นที่กันออก (เพิ่มเติม)'
                                                 ELSE r.classtype
                                             END,
-                            'class_Area',   r."class_Area",
+                            'Class_Area',   r."class_Area",
                             'id',           r.id,
                             'Farmer_ID',    TRANSLATE(m."Farmer_ID"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
                             'Regis_No',     TRANSLATE(m."Regis_No"::text, '๐๑๒๓๔๕๖๗๘๙', '0123456789'),
