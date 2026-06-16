@@ -316,7 +316,7 @@ async function updateAreaDisplay(feature) {
             el.innerHTML = '<span style="color:red">* พื้นที่ไม่ตรงกับข้อมูลเป้าหมาย</span>';
         }
         feature.set('shpsplit_sqm', area);
-        feature.set('Rubr_Area', Number((area / 1600).toFixed(2)));
+        feature.set('class_Area', Number((area / 1600).toFixed(2)));
     } catch (err) {
         console.error('Area calc error:', err);
     }
@@ -379,7 +379,7 @@ const loadGeoData = async (id, shouldFit = true) => {
                 Rubr_total: item['Rubr_total'],
                 Deed_Sqm: item['Deed_Sqm'],
                 shpsplit_sqm: item.shpsplit_sqm,
-                Rubr_Area: item['Rubr_Area'],
+                class_Area: item['class_Area'],
                 classtype: item.classtype,
                 check_area: item.check_area || '',
                 check_shape: item.check_shape || '',
