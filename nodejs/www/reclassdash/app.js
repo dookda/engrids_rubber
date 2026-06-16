@@ -12,17 +12,28 @@ let _currentReviewId = null;
 let _focusedLayer = null;      // { layer, originalStyle } — currently zoomed-to polygon
 let _focusedSubId = null;
 
-// Returns unique parent IDs filtered by current _workerStatusFilter
+// Returns unique parent IDs filtered by current _workerStatusFilter (group-level status)
 const _getWorkerNavIds = (allRows) => {
     const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-    const filtered = allRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !_isPass(r) && !_isFail(r);
-        if (_workerStatusFilter === 'pass') return _isPass(r);
-        if (_workerStatusFilter === 'fail') return _isFail(r);
+    const grouped = {};
+    allRows.forEach(r => {
+        const key = String(r.id);
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+    const getGroupStatus = rows => {
+        if (rows.some(_isFail)) return 'fail';
+        if (rows.every(_isPass)) return 'pass';
+        return 'unchecked';
+    };
+    return Object.keys(grouped).filter(id => {
+        const status = getGroupStatus(grouped[id]);
+        if (_workerStatusFilter === 'unchecked') return status === 'unchecked';
+        if (_workerStatusFilter === 'pass') return status === 'pass';
+        if (_workerStatusFilter === 'fail') return status === 'fail';
         return true;
     });
-    return [...new Set(filtered.map(r => String(r.id)))];
 };
 
 const _resetHighlights = () => {
@@ -429,30 +440,46 @@ const buildWorkerPlotList = (filterId = null) => {
         $('#workerPlotList').html('<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่พบแปลง</div>');
         return;
     }
-    // Count per sub_id to match the list filter display
     const _wIsPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _wIsFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
-    const cntUnchecked = allRows.filter(r => !_wIsPass(r) && !_wIsFail(r)).length;
-    const cntPass      = allRows.filter(_wIsPass).length;
-    const cntFail      = allRows.filter(_wIsFail).length;
+
+    // Group ALL rows by parent ID first
+    const allGrouped = {};
+    allRows.forEach(row => {
+        const key = String(row.id);
+        if (!allGrouped[key]) allGrouped[key] = [];
+        allGrouped[key].push(row);
+    });
+
+    // Compute group-level status: fail > unchecked > pass
+    const getGroupStatus = rows => {
+        if (rows.some(_wIsFail)) return 'fail';
+        if (rows.every(_wIsPass)) return 'pass';
+        return 'unchecked';
+    };
+
+    // Count filter badges by group (ID) status
+    const allGroupIds = Object.keys(allGrouped);
+    const cntUnchecked = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'unchecked').length;
+    const cntPass      = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'pass').length;
+    const cntFail      = allGroupIds.filter(id => getGroupStatus(allGrouped[id]) === 'fail').length;
     $('#wfc-unchecked').text(cntUnchecked);
     $('#wfc-pass').text(cntPass);
     $('#wfc-fail').text(cntFail);
 
-    // List display: filter by current ID (if selected), then apply status filter
-    const baseRows = filterId ? allRows.filter(r => String(r.id) === String(filterId)) : allRows;
-
-    // Apply status filter by admin verdict
-    const displayRows = baseRows.filter(r => {
-        if (_workerStatusFilter === 'unchecked') return !_wIsPass(r) && !_wIsFail(r);
-        if (_workerStatusFilter === 'pass') return _wIsPass(r);
-        if (_workerStatusFilter === 'fail') return _wIsFail(r);
-        return true;
-    });
-
     // Apply ID search filter from input
     const idSearch = ($('#worker-id-search').val() || '').trim();
-    const finalRows = idSearch ? displayRows.filter(r => String(r.id).includes(idSearch)) : displayRows;
+
+    // Filter which ID groups to show (filter at group level, not sub-plot level)
+    const displayGroupIds = allGroupIds.filter(id => {
+        if (filterId && id !== String(filterId)) return false;
+        if (idSearch && !id.includes(idSearch)) return false;
+        const status = getGroupStatus(allGrouped[id]);
+        if (_workerStatusFilter === 'unchecked') return status === 'unchecked';
+        if (_workerStatusFilter === 'pass') return status === 'pass';
+        if (_workerStatusFilter === 'fail') return status === 'fail';
+        return true;
+    });
 
     // Build single item HTML
     const buildItem = row => {
@@ -462,11 +489,11 @@ const buildWorkerPlotList = (filterId = null) => {
         const cs = row.check_shape || '';
         let verdictHtml;
         if (ca === 'ผ่าน' && cs === 'ผ่าน') {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.72rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
         } else if (ca === 'ไม่ผ่าน' || cs === 'ไม่ผ่าน') {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.72rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
         } else {
-            verdictHtml = `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:#fef9c3;color:#854d0e;font-size:0.72rem;font-weight:700;border:1.5px solid #fde047;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
         }
         const noteTag = row.user_remark ? `<span style="font-size:0.65rem;color:#1d4ed8;"><i class="bi bi-chat-dots-fill"></i></span>` : '';
         const notePreview = row.user_remark
@@ -483,38 +510,33 @@ const buildWorkerPlotList = (filterId = null) => {
         </div>`;
     };
 
-    // Always group by parent ID so headers are visible in all filter modes
-    const showGrouped = true;
-    let html;
-    if (showGrouped) {
-        const groups = {};
-        finalRows.forEach(row => {
-            const key = String(row.id);
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(row);
-        });
-        html = Object.entries(groups).map(([id, rows]) =>
-            `<div class="worker-id-group">
-                <div class="worker-id-group-header">
-                    <i class="bi bi-folder2-open me-1"></i>ID: ${id}
-                    <span class="ms-1" style="font-size:0.68rem;opacity:0.75;">(${rows.length} แปลง)</span>
-                </div>
-                ${rows.map(buildItem).join('')}
-            </div>`
-        ).join('');
-    } else {
-        html = finalRows.map(buildItem).join('');
-    }
+    // Build group header badge
+    const getGroupBadge = status => {
+        if (status === 'pass')      return `<span class="worker-group-badge worker-group-badge-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
+        if (status === 'fail')      return `<span class="worker-group-badge worker-group-badge-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+        return `<span class="worker-group-badge worker-group-badge-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
+    };
+
+    // Build grouped HTML — show ALL sub-plots in each matched ID group
+    const html = displayGroupIds.map(id => {
+        const rows = allGrouped[id];
+        const groupStatus = getGroupStatus(rows);
+        return `<div class="worker-id-group">
+            <div class="worker-id-group-header">
+                <span><i class="bi bi-folder2-open me-1"></i>ID: ${id} <span class="worker-group-count">(${rows.length} แปลง)</span></span>
+                ${getGroupBadge(groupStatus)}
+            </div>
+            ${rows.map(buildItem).join('')}
+        </div>`;
+    }).join('');
 
     const emptyMsg = _workerStatusFilter === 'unchecked'
-        ? (filterId && cntUnchecked > 0
-            ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ไม่มีรายการรอตรวจใน ID นี้</div>'
-            : '<div class="text-muted small text-center py-3"><i class="bi bi-check2-all text-success"></i> ตรวจครบแล้ว!</div>')
+        ? '<div class="text-muted small text-center py-3"><i class="bi bi-check2-all text-success"></i> ตรวจครบแล้ว!</div>'
         : _workerStatusFilter === 'pass'
-        ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ยังไม่มีที่ผ่าน</div>'
+        ? '<div class="text-muted small text-center py-3"><i class="bi bi-inbox"></i> ยังไม่มี ID ที่ผ่านครบ</div>'
         : _workerStatusFilter === 'fail'
         ? '<div class="text-muted small text-center py-3"><i class="bi bi-emoji-smile text-success"></i> ไม่มีรายการไม่ผ่าน!</div>'
-        : '<div class="text-muted small text-center py-3">ไม่พบแปลงใน ID นี้</div>';
+        : '<div class="text-muted small text-center py-3">ไม่พบแปลง</div>';
 
     $('#workerPlotList').html(html || emptyMsg);
 
