@@ -1,5 +1,6 @@
 const express = require('express');
 const session = require('express-session');
+const PgSession = require('connect-pg-simple')(session);
 const passport = require('passport');
 const { Pool } = require('pg');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
@@ -19,6 +20,11 @@ const pool = new Pool({
 });
 
 app.use(session({
+    store: new PgSession({
+        pool,
+        tableName: 'session',
+        createTableIfMissing: true,
+    }),
     secret: process.env.SESSION_SECRET || 'keyboard cat',
     resave: false,
     saveUninitialized: false,
@@ -130,7 +136,7 @@ app.get('/auth/callback',
                         [user.id, user.photo, user.displayName, user.email]
                     ).catch(e => console.error('[AUTOLINK]', e.message));
                 }
-                return res.redirect('/rub/index.html');
+                req.session.save(() => res.redirect('/rub/index.html'));
             });
         })(req, res, next);
     }
