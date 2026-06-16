@@ -79,7 +79,9 @@
       "PowerShell(& \"g:\\\\file_D\\\\Kanyapat\\\\web_yang\\\\new_engrids_rubberv2\\\\engrids_rubber\\\\copy-backups.ps1\")",
       "PowerShell(\\(Get-Command docker\\).Source)",
       "PowerShell(Get-WinEvent -FilterHashtable @{LogName=\"Microsoft-Windows-TaskScheduler/Operational\"; Id=102,201} -MaxEvents 10 2>$null | Where-Object { $_.Message -match \"RubBackupSync\" } | Select-Object TimeCreated, Id, Message | Format-List)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(grep -v \"^[^:]*:[^:]*:\\\\`\")",
+      "Bash(grep -v \"AS\\\\|--\\\\|//\")"
     ]
   }
 }
