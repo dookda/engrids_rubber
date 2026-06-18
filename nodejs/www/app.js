@@ -58,7 +58,7 @@ async function showAssigneeSelect(event, tb, targetType) {
     const role = window.currentUser?.role || 'worker';
     const subPath = targetType === 'reshape' ? 'reshape' : 'reclassdash';
 
-    // Worker: ดึง assignment ของตัวเองและ navigate ตรง ไม่ต้องเปิด modal
+    // Worker: ดึง assignment ของตัวเอง (อาจมีหลายช่วง ID) – ถ้ามีช่วงเดียว navigate ตรง ถ้ามีหลายช่วงให้เลือก
     if (role === 'worker') {
         try {
             const res = await fetch(`/rub/api/my-assignment/${tb}`);
@@ -67,12 +67,50 @@ async function showAssigneeSelect(event, tb, targetType) {
                 window.location.reload();
                 return;
             }
-            const { data } = await res.json();
-            if (data) {
-                window.location.href = `./${subPath}/index.html?tb=${tb}&id_from=${data.id_from}&id_to=${data.id_to}&assignee=${encodeURIComponent(data.assignee_name)}`;
-            } else {
+            const { list } = await res.json();
+            const items = Array.isArray(list) ? list : [];
+
+            if (items.length === 0) {
                 alert('คุณยังไม่ได้รับมอบหมายงานในโครงการนี้\nกรุณาติดต่อ Admin');
+                return;
             }
+
+            if (items.length === 1) {
+                const data = items[0];
+                window.location.href = `./${subPath}/index.html?tb=${tb}&id_from=${data.id_from}&id_to=${data.id_to}&assignee=${encodeURIComponent(data.assignee_name)}`;
+                return;
+            }
+
+            // มีมากกว่า 1 ช่วง ID ที่ได้รับมอบหมาย -> ให้เลือกว่าจะทำช่วงไหน
+            const modalEl = document.getElementById('selectionModal');
+            const listEl = document.getElementById('assigneeList');
+            const titleEl = document.getElementById('selectionModalLabel');
+            if (!modalEl || !listEl) return;
+
+            if (titleEl) titleEl.innerHTML = '<i class="bi bi-person-check-fill me-2 text-success"></i>เลือกช่วง ID ที่จะทำ';
+            listEl.innerHTML = '';
+            items.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'btn w-100 text-start d-flex align-items-center mb-2 px-3 py-2 border-0 shadow-sm';
+                btn.style.cssText = 'border-radius:15px; background:#ffffff;';
+                btn.innerHTML = `
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white me-3"
+                         style="width:42px;height:42px;background:linear-gradient(135deg,#6b9c75,#4a7c59);">
+                        <i class="bi bi-list-task" style="font-size:1.1rem;"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold" style="color:#2d3e2d;">ID ${item.id_from} – ${item.id_to}</div>
+                        ${item.note ? `<div class="small text-muted" style="font-size:0.72rem;">${item.note}</div>` : ''}
+                    </div>
+                    <i class="bi bi-chevron-right ms-2" style="color:#4a7c59;font-size:1.1rem;"></i>
+                `;
+                btn.onclick = () => {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+                    window.location.href = `./${subPath}/index.html?tb=${tb}&id_from=${item.id_from}&id_to=${item.id_to}&assignee=${encodeURIComponent(item.assignee_name)}`;
+                };
+                listEl.appendChild(btn);
+            });
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
         } catch (e) {
             alert('เกิดข้อผิดพลาดในการตรวจสอบงานที่ได้รับมอบหมาย');
         }
