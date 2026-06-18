@@ -1696,15 +1696,26 @@ async function checkMyAssignment(displayName) {
     const rangeText = document.getElementById('myAssignmentRange');
     if (!alertEl || !rangeText || !tb) return;
 
+    // ถ้า URL ระบุ id_from/id_to มาแล้ว (มาจากการเลือกช่วงงานก่อนหน้า) ให้ใช้ค่านั้นตรงๆ
+    // เพราะ 1 คนอาจได้รับมอบหมายหลายช่วง ID และ id_from/id_to ใน URL คือช่วงที่กำลังทำอยู่จริง
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlIdFrom = urlParams.get('id_from');
+    const urlIdTo = urlParams.get('id_to');
+    if (urlIdFrom && urlIdTo) {
+        rangeText.textContent = `ID ${urlIdFrom} – ${urlIdTo}`;
+        alertEl.style.display = 'block';
+        return;
+    }
+
     try {
         const res = await fetch(`/rub/api/task-assignments/${tb}`);
         const { data } = await res.json();
-        
+
         if (!data || data.length === 0) return;
 
         // Find assignment for current user
         const mine = data.find(a => a.assignee_name && a.assignee_name.toLowerCase().includes(displayName.toLowerCase()));
-        
+
         if (mine) {
             rangeText.textContent = `ID ${mine.id_from} – ${mine.id_to}`;
             alertEl.style.display = 'block';

@@ -1740,7 +1740,7 @@ app.put('/api/users/:id/role', async (req, res) => {
     }
 });
 
-/* GET /api/my-assignment/:tb  – ดึง assignment ของผู้ login อยู่ สำหรับ table นั้น */
+/* GET /api/my-assignment/:tb  – ดึง assignment ทั้งหมดของผู้ login อยู่ สำหรับ table นั้น (1 อีเมลอาจมีหลายช่วง ID) */
 app.get('/api/my-assignment/:tb', async (req, res) => {
     try {
         const sessionUser = req.session?.user;
@@ -1758,19 +1758,21 @@ app.get('/api/my-assignment/:tb', async (req, res) => {
                  OR LOWER(assignee_email) = LOWER($3)
                  OR (user_id IS NULL AND LOWER(assignee_name) = LOWER($4))
                )
-             ORDER BY id_from LIMIT 1`,
+             ORDER BY id_from`,
             [tb, sessionUser.id, sessionUser.email || '', sessionUser.displayName || '']
         );
-        const row = result.rows[0] || null;
+        const rows = result.rows;
         // Backfill user_id และ email ทันทีที่เจอ เพื่อให้ครั้งต่อไปค้นด้วย id/email ได้เลย
-        if (row && sessionUser.email && (!row.user_id || !row.assignee_email)) {
+        const toBackfill = rows.filter(row => sessionUser.email && (!row.user_id || !row.assignee_email));
+        if (toBackfill.length) {
             pool.query(
                 `UPDATE task_assignments SET user_id = $1, assignee_email = $2
-                 WHERE id = $3`,
-                [sessionUser.id, sessionUser.email, row.id]
+                 WHERE id = ANY($3::int[])`,
+                [sessionUser.id, sessionUser.email, toBackfill.map(r => r.id)]
             ).catch(e => console.error('[BACKFILL-ROW]', e.message));
         }
-        res.json({ success: true, data: row });
+        // คง field "data" เป็น row เดียวไว้เพื่อ backward-compat (ใช้ตัวแรก) และเพิ่ม "list" เป็น array ของทุกช่วงที่ได้รับมอบหมาย
+        res.json({ success: true, data: rows[0] || null, list: rows });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
