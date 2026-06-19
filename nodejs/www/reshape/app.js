@@ -519,6 +519,7 @@ const loadGeoData = async () => {
                 age: item['Para_Age'] || '',
                 geom: geom,
                 id_farmer: item['Farmer_ID'] || '',
+                regis_no: item['Regis_No'] || '',
                 deed_id: item['Deed_ID'] || '',
                 deed_sqm: item['Deed_Sqm'] || 0,          // เนื้อที่เป้าหมายโฉนด (m²) = Deed_Sqm
                 deed_total: item['Deed_total'] || 0,        // เนื้อที่เป้าหมายโฉนด (ไร่) = Deed_total
@@ -552,6 +553,7 @@ const loadGeoData = async () => {
                 { data: 'farm_name', title: 'ชื่อเกษตรกร' },
                 { data: 'age', title: 'อายุ (ปี)' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
+                { data: 'regis_no', title: 'เลขที่ทะเบียน (Regis_No)' },
                 { data: 'deed_id', title: 'เลขโฉนด' },
                 {
                     data: null,
