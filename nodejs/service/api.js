@@ -1344,6 +1344,100 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
     }
 });
 
+// ── Auto Farmer_ID: จองเลขทะเบียนเกษตรกรชั่วคราว ──────────────────────────
+// ใช้เฉพาะตอนแปลงไม่มี Farmer_ID มาจับคู่ (เช่น plot ที่ id ไม่ตรงกับตาราง main)
+// เพื่อให้ split ผ่านการตรวจสอบของ backend ได้ — ไม่ใช่การบันทึก Farmer_ID จริงลงตารางข้อมูล
+// เก็บแค่ "เลขที่จองไปแล้ว" ไว้กันชนกัน เวลามีหลายคน/หลายเครื่อง/หลายแท็บทำงานพร้อมกัน
+async function ensureAutoFarmerIdRegistryTable() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS auto_farmer_id_registry (
+            tb         text NOT NULL,
+            plot_id    text NOT NULL,
+            farmer_id  text NOT NULL,
+            created_at timestamp DEFAULT NOW(),
+            PRIMARY KEY (tb, plot_id),
+            UNIQUE (tb, farmer_id)
+        )
+    `);
+}
+
+function hashToIntServer(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash * 33) ^ str.charCodeAt(i)) >>> 0; // djb2 variant, unsigned 32-bit
+    }
+    return hash;
+}
+
+app.post('/api/auto-farmer-id/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!tb || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+        const { id } = req.body;
+        if (id === undefined || id === null || String(id).trim() === '') {
+            return res.status(400).json({ error: 'id is required' });
+        }
+        const plotId = String(id).trim();
+
+        await ensureAutoFarmerIdRegistryTable();
+
+        const existing = await pool.query(
+            `SELECT farmer_id FROM auto_farmer_id_registry WHERE tb = $1 AND plot_id = $2`,
+            [tb, plotId]
+        );
+        if (existing.rowCount > 0) {
+            return res.json({ success: true, farmer_id: existing.rows[0].farmer_id });
+        }
+
+        let seed = plotId;
+        for (let attempt = 0; attempt < 50; attempt++) {
+            const n = hashToIntServer(seed);
+            const candidate = String(1000000000 + (n % 9000000000));
+
+            const clash = await pool.query(
+                `SELECT 1 FROM ${tb} WHERE "Farmer_ID" = $1
+                 UNION ALL
+                 SELECT 1 FROM auto_farmer_id_registry WHERE tb = $2 AND farmer_id = $1
+                 LIMIT 1`,
+                [candidate, tb]
+            );
+            if (clash.rowCount > 0) {
+                seed = candidate;
+                continue;
+            }
+
+            try {
+                await pool.query(
+                    `INSERT INTO auto_farmer_id_registry (tb, plot_id, farmer_id) VALUES ($1, $2, $3)`,
+                    [tb, plotId, candidate]
+                );
+                return res.json({ success: true, farmer_id: candidate });
+            } catch (e) {
+                if (e.code === '23505') {
+                    // ชนกันแบบ race condition — เช็คว่ามีคนจองให้ plot นี้ไปแล้วหรือยัง
+                    const again = await pool.query(
+                        `SELECT farmer_id FROM auto_farmer_id_registry WHERE tb = $1 AND plot_id = $2`,
+                        [tb, plotId]
+                    );
+                    if (again.rowCount > 0) {
+                        return res.json({ success: true, farmer_id: again.rows[0].farmer_id });
+                    }
+                    seed = candidate;
+                    continue;
+                }
+                throw e;
+            }
+        }
+
+        return res.status(500).json({ error: 'ไม่สามารถสร้างเลขที่ไม่ซ้ำได้' });
+    } catch (err) {
+        console.error('auto-farmer-id error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── Unsplit: คืนแปลงเดิม (ลบแถว split ทั้งหมด แล้ว re-insert ต้นฉบับ) ──
 app.post('/api/unsplit_feature/:tb', async (req, res) => {
     try {

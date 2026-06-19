@@ -290,6 +290,117 @@ let mergeMode = false;
 let selectedForMerge = [];     // array of OL Features
 let skipNextClick = false;    // prevent click handler from deselecting after drawend
 
+// ── 6b. Auto Farmer_ID for plots with no match ───────────
+// บาง plot ไม่มี Farmer_ID มาจับคู่ (เช่น plot ที่ถูกแบ่ง/รวมใหม่) ทำให้ split ไม่ผ่าน
+// เพราะ backend บังคับว่าต้องมี Farmer_ID — จึง "จองเลข" ผ่าน /api/auto-farmer-id/:tb
+// (เก็บแค่เลขที่จองไปแล้วในตารางเล็กๆ ไม่ใช่การบันทึก Farmer_ID จริงลงตารางข้อมูล)
+// เพื่อให้การันตีไม่ชนกันได้จริงแม้เปิดทำงานพร้อมกันหลายคน/หลายเครื่อง/หลายเบราว์เซอร์
+// ถ้าเรียก backend ไม่ได้ (เช่นเน็ตหลุด) จะ fallback ไปใช้ localStorage แทนชั่วคราว
+function hashToInt(str) {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash * 33) ^ str.charCodeAt(i)) >>> 0; // djb2 variant, unsigned 32-bit
+    }
+    return hash;
+}
+
+// เก็บ "ทะเบียน" เลข Farmer_ID ไว้ใน localStorage (แชร์กันได้ทุกแท็บ/ทุกหน้าต่างของเบราว์เซอร์เดียวกัน)
+// ทำให้เปิดหลายแท็บพร้อมกันแล้วสุ่มเลขชนกันไม่ได้ — แต่ข้าม "คนละเบราว์เซอร์/คนละเครื่อง" ไม่ได้
+// เพราะ localStorage ไม่ได้แชร์ข้ามเบราว์เซอร์/เครื่อง (ต้องมี backend/DB กลางถึงจะทำได้)
+const FARMER_ID_STORAGE_KEY = 'reclass_farmer_id_registry_v1';
+
+function loadFarmerIdRegistry() {
+    try {
+        const raw = localStorage.getItem(FARMER_ID_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return {
+            real: new Set(Array.isArray(parsed && parsed.real) ? parsed.real : []),
+            cache: new Map(Object.entries((parsed && parsed.cache) || {}))
+        };
+    } catch (_) {
+        return { real: new Set(), cache: new Map() };
+    }
+}
+
+function saveFarmerIdRegistry(registry) {
+    try {
+        localStorage.setItem(FARMER_ID_STORAGE_KEY, JSON.stringify({
+            real: Array.from(registry.real),
+            cache: Object.fromEntries(registry.cache)
+        }));
+    } catch (_) { /* localStorage ใช้งานไม่ได้ (เช่น private mode) — ข้ามไป ไม่ critical */ }
+}
+
+// เก็บ Farmer_ID จริงหลายตัวพร้อมกันในครั้งเดียว (เรียกตอนโหลดข้อมูลแต่ละครั้ง ไม่ใช่ทุก feature)
+function registerRealFarmerIds(values) {
+    const registry = loadFarmerIdRegistry();
+    let changed = false;
+    values.forEach(v => {
+        if (v === null || v === undefined || String(v).trim() === '') return;
+        const id = String(v).trim();
+        if (!registry.real.has(id)) { registry.real.add(id); changed = true; }
+    });
+    if (changed) saveFarmerIdRegistry(registry);
+}
+
+// สุ่มเลขแบบ deterministic จาก plotId — ถ้าชนกับเลขจริงหรือเลขที่สุ่มให้ plot อื่นไปแล้ว จะ re-hash ต่อ
+// (deterministic เหมือนกันทุกครั้ง เพราะ seed เดิมจะวน sequence เดิมเสมอ)
+function generateFarmerIdForPlot(plotId, registry) {
+    const known = new Set(registry.real);
+    registry.cache.forEach(v => known.add(v));
+    let seed = String(plotId);
+    let id;
+    do {
+        const n = hashToInt(seed);
+        id = String(1000000000 + (n % 9000000000));
+        seed = id; // re-hash จากผลลัพธ์เดิมถ้าชนกัน เพื่อให้ deterministic
+    } while (known.has(id));
+    return id;
+}
+
+// fallback แบบ frontend-only (ใช้เมื่อเรียก backend ไม่ได้เท่านั้น)
+function ensureFarmerIdLocalFallback(feature) {
+    const plotId = String(feature.get('id'));
+    const registry = loadFarmerIdRegistry();
+    if (registry.cache.has(plotId)) {
+        const cached = registry.cache.get(plotId);
+        feature.set('Farmer_ID', cached);
+        return cached;
+    }
+    const newId = generateFarmerIdForPlot(plotId, registry);
+    registry.cache.set(plotId, newId);
+    saveFarmerIdRegistry(registry);
+    feature.set('Farmer_ID', newId);
+    return newId;
+}
+
+// คืน Farmer_ID ของ feature นี้ ถ้าไม่มีจะ "จอง" เลขผ่าน backend ให้ทันที (กันชนกันข้ามเครื่อง/เบราว์เซอร์)
+// plot id เดียวกัน (ไม่ว่าจะถูกแบ่งเป็นกี่ sub_id, โหลดข้อมูลใหม่กี่ครั้ง, หรือเปิดหลายแท็บ/หลายเครื่อง) จะได้เลขเดิมเสมอ
+async function ensureFarmerId(feature) {
+    const current = feature.get('Farmer_ID');
+    if (current !== null && current !== undefined && String(current).trim() !== '') {
+        return current;
+    }
+    const plotId = feature.get('id');
+    const tb = document.getElementById('tb').value;
+    try {
+        const res = await fetch(`/rub/api/auto-farmer-id/${tb}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: plotId })
+        });
+        const data = await res.json();
+        if (res.ok && data.success && data.farmer_id) {
+            feature.set('Farmer_ID', data.farmer_id);
+            return data.farmer_id;
+        }
+        throw new Error(data.error || 'auto-farmer-id failed');
+    } catch (err) {
+        console.error('ensureFarmerId: backend reservation failed, using local fallback —', err);
+        return ensureFarmerIdLocalFallback(feature);
+    }
+}
+
 // ── 7. Area helpers ──────────────────────────────────────
 async function calculateArea(geometry) {
     const res = await fetch('/rub/api/area', {
@@ -351,6 +462,8 @@ const loadGeoData = async (id, shouldFit = true) => {
         const { data } = await spatialRes.json();
         const jsonTarget = await targetRes.json();
         console.log('Spatial:', data, 'Target:', jsonTarget);
+
+        registerRealFarmerIds(data.map(item => item['Farmer_ID']));
 
         const features = data.map(item => {
             const f = new ol.Feature({
@@ -466,7 +579,21 @@ function filterClasstypeOptions(ct) {
 
 function showFeaturePanel(feature) {
     document.getElementById('sub_id').value = feature.get('sub_id') || '';
-    document.getElementById('xls_id_farmer').value = feature.get('Farmer_ID') || '';
+
+    const farmerIdField = document.getElementById('xls_id_farmer');
+    const existingFarmerId = feature.get('Farmer_ID');
+    if (existingFarmerId !== null && existingFarmerId !== undefined && String(existingFarmerId).trim() !== '') {
+        farmerIdField.value = existingFarmerId;
+    } else {
+        farmerIdField.value = 'กำลังสร้างเลข...';
+        ensureFarmerId(feature).then(id => {
+            // อัปเดตเฉพาะถ้าผู้ใช้ยังเลือกแปลงนี้อยู่ (เผื่อสลับไปเลือกแปลงอื่นระหว่างรอ)
+            if (selectedFeature === feature) {
+                farmerIdField.value = id;
+            }
+        });
+    }
+
     document.getElementById('rubr_sqm').value = Number(feature.get('Rubr_Sqm') || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
     const currentArea = feature.get('shpsplit_sqm');
@@ -812,6 +939,14 @@ async function executeSplit() {
     const id = document.getElementById('id').value;
     const tb = document.getElementById('tb').value;
     const displayName = document.getElementById('displayName').value;
+
+    // แปลงที่ไม่มี Farmer_ID มาจับคู่ — จองเลขให้ก่อนตัด (backend บังคับต้องมีค่านี้)
+    const hadNoFarmerId = !String(selectedFeature.get('Farmer_ID') || '').trim();
+    const farmerId = await ensureFarmerId(selectedFeature);
+    if (hadNoFarmerId) {
+        document.getElementById('xls_id_farmer').value = farmerId;
+        showToast('ไม่พบเลขทะเบียนเกษตรกร — สร้างเลขชั่วคราวให้: ' + farmerId, 'info');
+    }
 
     const polygon = featureToGeoJSON(selectedFeature);
     const line_fc = splitLineCoords;
