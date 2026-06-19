@@ -887,7 +887,7 @@ document.getElementById('btnRestore').addEventListener("click", async () => {
                 const bsModal = bootstrap.Modal.getInstance(modal);
                 bsModal.hide();
             }
-            alert(`Restore เรียบร้อย (ID: ${id})\nเนื้อที่: ${restoredArea.toFixed(0)} m²`);
+            alert(`Restore เรียบร้อย (ID: ${id})\nเนื้อที่: ${restoredSqmDeed.toFixed(0)} m²`);
         } else {
             alert('Failed to restore features: ' + (result.error || ''));
         }
