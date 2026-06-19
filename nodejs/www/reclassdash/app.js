@@ -1000,6 +1000,7 @@ const loadGeoData = async () => {
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
             id_farmer: item.farmer_id || '',
+            regis_no: item['Regis_No'] || '',
             farm_name: item.farm_name || '',
             f_name: item['F_name'] || '',
             l_name: item['L_name'] || '',
@@ -1057,6 +1058,7 @@ const loadGeoData = async () => {
                 },
                 { data: 'id', title: 'ID' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
+                { data: 'regis_no', title: 'เลขที่ทะเบียน (Regis_No)' },
                 {
                     data: 'farm_name',
                     title: 'ชื่อเกษตรกร',
