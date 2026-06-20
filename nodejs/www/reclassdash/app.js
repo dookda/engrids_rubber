@@ -114,6 +114,7 @@ function formatRemarkPopup(text) {
 const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.8784385963758], 13);
 const featureGroup = L.featureGroup();
 const reshapeFeatureGroup = L.featureGroup();
+const othersFeatureGroup = L.featureGroup(); // แปลงของเพื่อนร่วมโปรเจค (read-only background)
 
 // Custom Rubber Tree Icon
 const rubberTreeIcon = L.icon({
@@ -200,8 +201,8 @@ let _shpallTimer = null;
 
 function _shpallStyle() {
     return {
-        color: '#0055ff', weight: 2.5, opacity: 0.9,
-        fillColor: '#0055ff', fillOpacity: 0.15
+        color: '#0055ff', weight: 1.5, opacity: 0.65,
+        fillColor: '#0055ff', fillOpacity: 0.10
     };
 }
 
@@ -243,6 +244,8 @@ const baseLayers = {
     "Stadia Light": light
 };
 
+// othersFeatureGroup ต้องถูก addTo ก่อน featureGroup เพื่อให้แปลงตัวเองแสดงอยู่บนสุด
+othersFeatureGroup.addTo(map);
 const overlayMaps = {
     "แปลงยาง (reclass)": featureGroup.addTo(map),
     "แปลงยาง (reshape)": reshapeFeatureGroup,
@@ -305,7 +308,7 @@ const focusPlot = (rowData) => {
             const prevOrigStyle = _focusedLayer.originalStyle;
             const inGroup = _highlightedLayers.some(h => h.layer === prevLayer);
             if (inGroup) {
-                prevLayer.setStyle({ color: '#FF6600', fillColor: prevOrigStyle.fillColor, weight: 3, opacity: 1, fillOpacity: 0.45, dashArray: '5,3' });
+                prevLayer.setStyle({ color: '#FFD600', fillColor: prevOrigStyle.fillColor, weight: 3, opacity: 1, fillOpacity: 0.45, dashArray: '5,3' });
             } else {
                 prevLayer.setStyle(prevOrigStyle);
             }
@@ -324,7 +327,7 @@ const focusPlot = (rowData) => {
         _focusedLayer = { layer, originalStyle };
         _focusedSubId = subId;
         layer.setStyle({
-            color: '#FF6600',
+            color: '#FFD600',
             fillColor: originalStyle.fillColor,
             weight: 6,
             opacity: 1,
@@ -885,7 +888,6 @@ const getFeatureStyle = (feature) => {
         weight: 2,
         opacity: 1,
         color: 'white',
-        dashArray: '3',
         fillOpacity: 0.5
     };
 };
@@ -992,7 +994,27 @@ const loadGeoData = async () => {
             }
         }
 
-
+        // แสดงแปลงของเพื่อนร่วมโปรเจค (นอก range ของตัวเอง) — ใช้สี classtype จริง + ขอบ dashed แดงเพื่อแยกแยะ
+        othersFeatureGroup.clearLayers();
+        if (!isNaN(id_from) && !isNaN(id_to)) {
+            const othersData = result.data.filter(item => item.id < id_from || item.id > id_to);
+            othersData.forEach(item => {
+                let geom = null;
+                try { geom = JSON.parse(item.geom); } catch (_) {}
+                if (!geom) return;
+                const classStyle = getFeatureStyle({ properties: { classtype: item.classtype } });
+                L.geoJson({ type: 'Feature', geometry: geom, properties: { id: item.id, classtype: item.classtype } }, {
+                    interactive: false,
+                    style: {
+                        fillColor: classStyle.fillColor,
+                        fillOpacity: 0.35,
+                        color: '#FF2D55',
+                        weight: 2,
+                        opacity: 0.9
+                    }
+                }).addTo(othersFeatureGroup);
+            });
+        }
 
         const tableData = data.map(item => ({
             id: item.id,

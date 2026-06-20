@@ -2,6 +2,7 @@
 const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.8784385963758], 13);
 const featureGroup = L.featureGroup();
 const lddFeatureGroup = L.featureGroup();
+const othersFeatureGroup = L.featureGroup(); // แปลงของเพื่อนร่วมโปรเจค (read-only background)
 let _userRole = null;
 
 // Custom Rubber Tree Icon
@@ -117,8 +118,8 @@ let _shpallTimer = null;
 
 function _shpallStyle() {
     return {
-        color: '#0055ff', weight: 2.5, opacity: 0.9,
-        fillColor: '#0055ff', fillOpacity: 0.15
+        color: '#0055ff', weight: 1.5, opacity: 0.65,
+        fillColor: '#0055ff', fillOpacity: 0.10
     };
 }
 
@@ -137,6 +138,8 @@ async function loadShpallLayer() {
             }).addTo(shpallLayer);
             console.log(`shpall: แสดง ${data.features.length} แปลง`);
         }
+        // ให้ featureGroup (แปลงที่วาด) อยู่บนเส้น shpall เสมอ
+        featureGroup.bringToFront();
     } catch (err) {
         console.error('shpall load error:', err);
     }
@@ -161,6 +164,7 @@ const baseLayers = {
     "Stadia Light": light
 };
 
+othersFeatureGroup.addTo(map); // เปิดไว้ตลอด — addTo ก่อน featureGroup เพื่อให้แปลงตัวเองอยู่บนสุด
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
     "แปลงยาง (เดิม)": shpallLayer,
@@ -194,8 +198,12 @@ map.pm.addControls({
 // Disable browser default context menu on map so right-click can delete nodes
 map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
 
-// Set global Geoman option: right-click removes vertex
-map.pm.setGlobalOptions({ removeVertexOn: 'contextmenu' });
+// Set global Geoman options: right-click removes vertex + สีเส้นขณะวาด (เหลืองสว่าง เห็นชัดบนทุก layer)
+map.pm.setGlobalOptions({
+    removeVertexOn: 'contextmenu',
+    templineStyle:  { color: '#FBBF24', weight: 3, opacity: 1 },
+    hintlineStyle:  { color: '#FBBF24', weight: 2, opacity: 0.8, dashArray: '7,5' }
+});
 
 const getFeatureStyle = (feature) => {
     let target = Number(feature.properties.deed_sqm || 0);
@@ -246,6 +254,7 @@ const highlightSelectedLayer = (layerToHighlight) => {
 map.on('pm:create', (e) => {
     const layer = e.layer;
     featureGroup.addLayer(layer);
+    featureGroup.bringToFront(); // ดึงทุกแปลงใน featureGroup ขึ้นบนเส้น shpall เสมอ
     layer.pm.enable({ removeVertexOn: 'contextmenu' });
 
     // If a point is selected, replace it with this new polygon
@@ -502,6 +511,30 @@ const loadGeoData = async () => {
             }
         }
 
+
+        // แสดงแปลงของเพื่อนร่วมโปรเจค (นอก range ของตัวเอง) เป็น layer read-only สีม่วง
+        othersFeatureGroup.clearLayers();
+        if (!isNaN(id_from) && !isNaN(id_to)) {
+            const othersData = data.filter(item => item.id < id_from || item.id > id_to);
+            othersData.forEach(item => {
+                let geom = null;
+                try {
+                    if (item.geom) geom = JSON.parse(item.geom);
+                    else if (item.geom_point) geom = JSON.parse(item.geom_point);
+                } catch (_) {}
+                if (!geom || geom.type === 'Point') return;
+                L.geoJson({ type: 'Feature', geometry: geom, properties: { id: item.id } }, {
+                    interactive: false,
+                    style: {
+                        color: '#FF2D55',
+                        weight: 2,
+                        opacity: 0.85,
+                        fillColor: '#FF2D55',
+                        fillOpacity: 0.12
+                    }
+                }).addTo(othersFeatureGroup);
+            });
+        }
 
         const tableData = filteredData.map(item => {
             let geom = null;
