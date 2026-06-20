@@ -236,11 +236,11 @@ const highlightSelectedLayer = (layerToHighlight) => {
     if (layerToHighlight) {
         if (layerToHighlight instanceof L.Path) {
             layerToHighlight.setStyle({
-                color: '#00FFFF',
-                weight: 4,
-                opacity: 1,
-                fillColor: '#00FFFF',
-                fillOpacity: 0.4
+                color: '#00e5ff',
+                weight: 2.5,
+                opacity: 0.85,
+                fillColor: '#00e5ff',
+                fillOpacity: 0.18
             });
             layerToHighlight.bringToFront();
             layerToHighlight.openPopup();
