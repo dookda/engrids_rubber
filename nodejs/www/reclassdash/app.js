@@ -36,6 +36,22 @@ const _getWorkerNavIds = (allRows) => {
     });
 };
 
+// เนื้อที่ "กันออก" (ex_*) ยังถือเป็นส่วนหนึ่งของแปลงยางเดิม ต้องรวมกับ "ยาง"
+// เพื่อเทียบกับเป้าหมายยางพารา (rubr_sqm) — ไม่ใช่เทียบจากเนื้อที่ยางอย่างเดียว
+const _sumRubberAndExcluded = (id) => {
+    let rubberSqm = 0, exSqm = 0;
+    if ($.fn.DataTable.isDataTable('#featureTable')) {
+        const rows = $('#featureTable').DataTable().rows().data().toArray()
+            .filter(r => String(r.id) === String(id));
+        rows.forEach(r => {
+            const val = Number(r.shpsplit_sqm || 0);
+            if (r.classtype === 'rubber') rubberSqm += val;
+            else if (String(r.classtype || '').startsWith('ex_')) exSqm += val;
+        });
+    }
+    return { rubberSqm, exSqm, total: rubberSqm + exSqm };
+};
+
 const _resetHighlights = () => {
     _highlightedLayers.forEach(({ layer, style }) => {
         try { layer.setStyle(style); } catch (_) { }
@@ -453,8 +469,22 @@ const _updateAreaCards = (rowData) => {
     $('#target-land-sqm').text(Number(rowData.deed_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
     $('#curr-land-sqm').text(Number(rowData.current_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
 
-    // Right card: current area
-    $('#curr-area-sqm').text(Number(rowData.shpsplit_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
+    // Right card: current area (รวมยาง + กันออกของ ID เดียวกัน เมื่อเป็นแถวยาง)
+    if (rowData.classtype === 'rubber') {
+        const { rubberSqm, exSqm, total } = _sumRubberAndExcluded(rowData.id);
+        $('#curr-area-sqm').text(total.toLocaleString('th-TH', { maximumFractionDigits: 0 }));
+        if (exSqm > 0) {
+            $('#rubber-current-label').text('เนื้อที่ขณะนี้ (รวมกันออก):');
+            $('#rubber-excluded-note').text(`${rubberSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} ยาง + ${exSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} กันออก`).show();
+        } else {
+            $('#rubber-current-label').text('เนื้อที่ขณะนี้:');
+            $('#rubber-excluded-note').hide();
+        }
+    } else {
+        $('#curr-area-sqm').text(Number(rowData.shpsplit_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
+        $('#rubber-current-label').text('เนื้อที่ขณะนี้:');
+        $('#rubber-excluded-note').hide();
+    }
 
     // Classtype badge
     $('#display-classtype').html(`<span class="classtype-badge w-100 text-center" style="background:${rdColor}15; color:#000; border:1px solid ${rdColor}40; font-weight: 500;">${rdLabel}</span>`);
@@ -708,7 +738,9 @@ const showFeaturePanel = (feature, layer) => {
     // Area rubber (Reclass)
     const targetRubberSqm = Number(props.rubr_sqm || 0);
     const currAreaSqm = Number(props.shpsplit_sqm || 0); // shpsplit_sqm
-    $('#curr-area-sqm').text(currAreaSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 }));
+    // เมื่อเป็นแถวยาง ให้นับรวมกับพื้นที่กันออก (ex_*) ของ ID เดียวกันด้วย
+    const rubberAgg = props.classtype === 'rubber' ? _sumRubberAndExcluded(props.id) : null;
+    $('#curr-area-sqm').text((rubberAgg ? rubberAgg.total : currAreaSqm).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
 
     // Classtype Label & Color
     const labelMap = {
@@ -748,9 +780,17 @@ const showFeaturePanel = (feature, layer) => {
         $('#rubber-card-target-label').text('เนื้อที่เป้าหมายยางพารา:');
         $('#target-rubber-sqm').text(targetRubberSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 }));
         $('#target-rubber-sqm').next('small').show();
+        if (rubberAgg && rubberAgg.exSqm > 0) {
+            $('#rubber-current-label').text('เนื้อที่ขณะนี้ (รวมกันออก):');
+            $('#rubber-excluded-note').text(`${rubberAgg.rubberSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} ยาง + ${rubberAgg.exSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} กันออก`).show();
+        } else {
+            $('#rubber-current-label').text('เนื้อที่ขณะนี้:');
+            $('#rubber-excluded-note').hide();
+        }
     } else {
         $('#rubber-card-label').html(`<i class="bi bi-tag-fill"></i> ${label}`);
         $('#rubber-target-row').addClass('d-none');
+        $('#rubber-excluded-note').hide();
     }
 
     // ── User remark ──
@@ -1085,6 +1125,17 @@ const loadGeoData = async () => {
             review_ts: item.review_ts || ''
         }));
 
+        // รวมเนื้อที่ "ยางพารา" + "กันออกทุกชนิด (ex_*)" ต่อ ID เดียวกัน
+        // เพราะพื้นที่กันออก (เช่น ถนน, บ่อน้ำ, สิ่งปลูกสร้าง) ยังถือเป็นส่วนหนึ่งของ
+        // แปลงยางเดิม ต้องนับรวมเข้าเป้าหมายยางพารา ไม่ใช่หักออกไปเฉยๆ
+        const idAreaAgg = {};
+        tableData.forEach(r => {
+            const agg = idAreaAgg[r.id] || (idAreaAgg[r.id] = { rubberSqm: 0, exSqm: 0 });
+            const val = Number(r.shpsplit_sqm || 0);
+            if (r.classtype === 'rubber') agg.rubberSqm += val;
+            else if (String(r.classtype || '').startsWith('ex_')) agg.exSqm += val;
+        });
+
         const dataTable = $('#featureTable').DataTable({
             data: tableData,
             scrollX: true,
@@ -1170,15 +1221,32 @@ const loadGeoData = async () => {
                     render: (data, type, row) => {
                         const val = Number(data || 0);
                         const valStr = val.toLocaleString('th-TH', { maximumFractionDigits: 0 });
-                        if (row.classtype !== 'rubber') return `<span class="area-num">${valStr}</span>`;
-                        const rubrSqm = Number(row.rubr_sqm || 0);
-                        const diff = Math.round(val - rubrSqm);
-                        const sign = diff >= 0 ? '+' : '';
-                        const diffColor = Math.abs(diff) <= 100 ? 'green' : 'red';
-                        const diffHtml = rubrSqm > 0
-                            ? ` <small style="color:${diffColor}">(${sign}${diff.toLocaleString('th-TH')})</small>`
-                            : '';
-                        return `<span class="area-num">${valStr}${diffHtml}</span>`;
+                        const agg = idAreaAgg[row.id] || { rubberSqm: 0, exSqm: 0 };
+
+                        if (row.classtype === 'rubber') {
+                            const total = agg.rubberSqm + agg.exSqm;
+                            const totalStr = total.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+                            const rubrSqm = Number(row.rubr_sqm || 0);
+                            const diff = Math.round(total - rubrSqm);
+                            const sign = diff >= 0 ? '+' : '';
+                            const diffColor = Math.abs(diff) <= 100 ? 'green' : 'red';
+                            const diffHtml = rubrSqm > 0
+                                ? ` <small style="color:${diffColor}">(${sign}${diff.toLocaleString('th-TH')})</small>`
+                                : '';
+                            const breakdownHtml = agg.exSqm > 0
+                                ? `<div class="text-muted" style="font-size:0.68rem; line-height:1.2;">${valStr} ยาง + ${agg.exSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} กันออก</div>`
+                                : '';
+                            return `<span class="area-num">${totalStr}${diffHtml}</span>${breakdownHtml}`;
+                        }
+
+                        if (String(row.classtype || '').startsWith('ex_')) {
+                            return `<span class="area-num">${valStr}</span>
+                                <div style="font-size:0.68rem; line-height:1.2; color:#166534;">
+                                    <i class="bi bi-check-circle-fill"></i> รวมในเป้าหมายยางแล้ว
+                                </div>`;
+                        }
+
+                        return `<span class="area-num">${valStr}</span>`;
                     }
                 },
                 {
