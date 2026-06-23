@@ -2191,10 +2191,10 @@ const normalizeProperties = (props) => {
     normalized.Deed_Sqm = sourceLower.deed_sqm || (normalized.Deed_total * 1600) || 0;
     // Rubr_Sqm = เนื้อที่เป้าหมายยางพารา (m²)
     normalized.Rubr_Sqm = sourceLower.rubr_sqm || (normalized.Rubr_total * 1600) || 0;
-    // Deed_Area = เนื้อที่เป้าหมายโฉนด (ไร่) — 2 decimal
-    normalized.Deed_Area = sourceLower.deed_area || parseFloat((normalized.Deed_Sqm / 1600).toFixed(2));
     // Sqm_Deed = เนื้อที่ขณะนี้โฉนด (m²)
     normalized.Sqm_Deed = sourceLower.sqm_deed || 0;
+    // Deed_Area = เนื้อที่ขณะนี้โฉนด (ไร่) — ผูกกับ Sqm_Deed เสมอ ไม่ดึงจาก attribute เป้าหมายของไฟล์ดิบ
+    normalized.Deed_Area = parseFloat((normalized.Sqm_Deed / 1600).toFixed(2));
 
     // System fields
     normalized.refinal = sourceLower.refinal || '';
