@@ -52,8 +52,8 @@
 
 html,
 body {
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-x: hidden;
     font-family: "Noto Sans Thai", 'Inter', sans-serif;
     font-optical-sizing: auto;
     font-weight: 400;
@@ -65,21 +65,18 @@ body {
 
 /* ===== Full-height Layout ===== */
 .app-wrapper {
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
 
 .main-row {
-    flex: 1;
-    min-height: 0;
+    align-items: stretch;
 }
 
 .map-col {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 16px);
     padding-top: 8px;
     padding-bottom: 8px;
     position: relative;
@@ -88,29 +85,8 @@ body {
 .sidebar-col {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 16px);
     padding-top: 8px;
     padding-bottom: 8px;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-/* Custom scrollbar */
-.sidebar-col::-webkit-scrollbar {
-    width: 5px;
-}
-
-.sidebar-col::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sidebar-col::-webkit-scrollbar-thumb {
-    background: #a5d6a7;
-    border-radius: 10px;
-}
-
-.sidebar-col::-webkit-scrollbar-thumb:hover {
-    background: #66bb6a;
 }
 
 /* ===== Map ===== */
