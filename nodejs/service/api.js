@@ -950,7 +950,7 @@ app.get('/api/shpall/:tb', async (req, res) => {
         }
 
         const sql = `
-            SELECT ST_AsGeoJSON(geom) AS geom_json
+            SELECT ST_AsGeoJSON(geom) AS geom_json, farm_name, grow_rai, land_rai
             FROM public.shpall
             WHERE geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
             LIMIT 5000
@@ -958,7 +958,15 @@ app.get('/api/shpall/:tb', async (req, res) => {
         const result = await pool.query(sql, parts);
         const features = result.rows
             .filter(row => row.geom_json)
-            .map(row => ({ type: 'Feature', geometry: JSON.parse(row.geom_json), properties: {} }));
+            .map(row => ({
+                type: 'Feature',
+                geometry: JSON.parse(row.geom_json),
+                properties: {
+                    farm_name: row.farm_name,
+                    grow_rai: row.grow_rai,
+                    land_rai: row.land_rai
+                }
+            }));
 
         res.status(200).json({ success: true, type: 'FeatureCollection', features });
     } catch (err) {

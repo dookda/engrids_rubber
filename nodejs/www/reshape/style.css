@@ -1,3 +1,28 @@
+/* ===== shpall (แปลงยาง เดิม) permanent label — text only, no box ===== */
+.shpall-tooltip {
+    display: none;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1.25;
+    color: #1a4fa0;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow:
+        -1px -1px 0 #fff, 1px -1px 0 #fff,
+        -1px 1px 0 #fff, 1px 1px 0 #fff,
+        0 0 2px #fff;
+}
+.shpall-tooltip::before {
+    display: none;
+}
+#map.shpall-labels-on.shpall-zoomed-in .shpall-tooltip {
+    display: inline-block;
+}
+
 /* ===== Global Reset & Typography ===== */
 *,
 *::before,

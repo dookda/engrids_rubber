@@ -198,6 +198,8 @@ const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/gwc/servic
 const shpallLayer = L.featureGroup();
 let _shpallActive = false;
 let _shpallTimer = null;
+const SHPALL_MIN_ZOOM = 13; // โหลด/แสดงเส้นขอบแปลงเฉพาะตอนซูมใกล้พอ ลดข้อมูลที่ต้องโหลดตอนซูมไกล
+const SHPALL_LABEL_MIN_ZOOM = 17; // ตัวหนังสือป้ายแปลงขึ้นช้ากว่าเส้นขอบ ต้องซูมเข้าไปอีกถึงจะเห็น
 
 function _shpallStyle() {
     return {
@@ -206,8 +208,27 @@ function _shpallStyle() {
     };
 }
 
+function _shpallRaiToSqm(rai) {
+    const n = parseFloat(String(rai).replace(/,/g, ''));
+    return isNaN(n) ? null : n * 1600;
+}
+
+function _shpallLabel(props) {
+    const growRai = props.grow_rai;
+    const landRai = props.land_rai;
+    const growSqm = _shpallRaiToSqm(growRai);
+    const landSqm = _shpallRaiToSqm(landRai);
+    return `${props.farm_name || '-'}<br>` +
+        `ยางพาราที่ลงทะเบียน: ${growRai || '-'} ไร่ (${growSqm !== null ? growSqm.toLocaleString('th-TH') : '-'} ตร.ม.)<br>` +
+        `พื้นที่โฉนด: ${landRai || '-'} ไร่ (${landSqm !== null ? landSqm.toLocaleString('th-TH') : '-'} ตร.ม.)`;
+}
+
 async function loadShpallLayer() {
     if (!_shpallActive) return;
+    if (map.getZoom() < SHPALL_MIN_ZOOM) {
+        shpallLayer.clearLayers();
+        return;
+    }
     const tb = document.getElementById('tb').value || new URLSearchParams(window.location.search).get('tb') || 'shpall';
     try {
         const b = map.getBounds();
@@ -217,7 +238,12 @@ async function loadShpallLayer() {
         shpallLayer.clearLayers();
         if (data.success && data.features && data.features.length > 0) {
             L.geoJSON({ type: 'FeatureCollection', features: data.features }, {
-                interactive: false, style: _shpallStyle
+                interactive: false, style: _shpallStyle,
+                onEachFeature: (feature, layer) => {
+                    layer.bindTooltip(_shpallLabel(feature.properties || {}), {
+                        permanent: true, direction: 'center', className: 'shpall-tooltip'
+                    });
+                }
             }).addTo(shpallLayer);
             console.log(`shpall: แสดง ${data.features.length} แปลง`);
         }
@@ -232,9 +258,20 @@ function _shpallDebounce() {
     _shpallTimer = setTimeout(loadShpallLayer, 400);
 }
 
+function _shpallUpdateLabelZoomClass() {
+    document.getElementById('map').classList.toggle('shpall-zoomed-in', map.getZoom() >= SHPALL_LABEL_MIN_ZOOM);
+}
+map.on('zoomend', _shpallUpdateLabelZoomClass);
+_shpallUpdateLabelZoomClass();
+
 shpallLayer.on('add', () => { _shpallActive = true; loadShpallLayer(); });
 shpallLayer.on('remove', () => { _shpallActive = false; shpallLayer.clearLayers(); });
 map.on('moveend zoomend', _shpallDebounce);
+
+// toggle เปิด/ปิดเฉพาะตัวหนังสือป้ายแปลง (เดิม) โดยไม่กระทบเส้นขอบแปลง
+const shpallLabelToggle = L.layerGroup();
+shpallLabelToggle.on('add', () => document.getElementById('map').classList.add('shpall-labels-on'));
+shpallLabelToggle.on('remove', () => document.getElementById('map').classList.remove('shpall-labels-on'));
 
 const baseLayers = {
     "Google Road": gmap_road,
@@ -250,6 +287,7 @@ const overlayMaps = {
     "แปลงยาง (reclass)": featureGroup.addTo(map),
     "แปลงยาง (reshape)": reshapeFeatureGroup,
     "แปลงยาง (เดิม)": shpallLayer,
+    "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
     "Longdo Map": longdoLayer.addTo(map)
 };
 

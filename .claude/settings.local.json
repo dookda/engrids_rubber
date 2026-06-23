@@ -89,7 +89,9 @@
       "Bash(node --check \"nodejs/www/app.js\")",
       "Bash(node --check \"nodejs/www/admin/app.js\")",
       "Bash(node --check \"nodejs/www/reclass/app.js\")",
-      "Bash(node --check \"nodejs/service/api.js\")"
+      "Bash(node --check \"nodejs/service/api.js\")",
+      "Bash(node --check nodejs/www/reclassdash/app.js)",
+      "Bash(node --check nodejs/service/api.js)"
     ]
   }
 }

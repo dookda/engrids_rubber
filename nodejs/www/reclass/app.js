@@ -44,9 +44,17 @@ const ndviWms = new ol.layer.Tile({
     zIndex: 5
 });
 
+const SHPALL_MIN_ZOOM = 13; // โหลด/แสดงเส้นขอบแปลงเฉพาะตอนซูมใกล้พอ ลดข้อมูลที่ต้องโหลดตอนซูมไกล
+const SHPALL_LABEL_MIN_ZOOM = 17; // ตัวหนังสือป้ายแปลงขึ้นช้ากว่าเส้นขอบ ต้องซูมเข้าไปอีกถึงจะเห็น
+
+function _shpallStrategy(extent, resolution) {
+    if (map.getView().getZoom() < SHPALL_MIN_ZOOM) return [];
+    return ol.loadingstrategy.bbox(extent, resolution);
+}
+
 const shpallSource = new ol.source.Vector({
     format: new ol.format.GeoJSON(),
-    strategy: ol.loadingstrategy.bbox,
+    strategy: _shpallStrategy,
     url: function(extent) {
         const tb = (document.getElementById('tb') && document.getElementById('tb').value)
             || new URLSearchParams(window.location.search).get('tb') || 'shpall';
@@ -58,20 +66,55 @@ const shpallSource = new ol.source.Vector({
     }
 });
 
+function _shpallRaiToSqm(rai) {
+    const n = parseFloat(String(rai).replace(/,/g, ''));
+    return isNaN(n) ? null : n * 1600;
+}
+
+function _shpallLabelText(feature) {
+    const props = feature.getProperties();
+    const growRai = props.grow_rai;
+    const landRai = props.land_rai;
+    const growSqm = _shpallRaiToSqm(growRai);
+    const landSqm = _shpallRaiToSqm(landRai);
+    return `${props.farm_name || '-'}\n` +
+        `ยางพารา: ${growRai || '-'} ไร่ (${growSqm !== null ? growSqm.toLocaleString('th-TH') : '-'} ตร.ม.)\n` +
+        `โฉนด: ${landRai || '-'} ไร่ (${landSqm !== null ? landSqm.toLocaleString('th-TH') : '-'} ตร.ม.)`;
+}
+
+let _shpallLabelsVisible = true;
+// fake "layer" object (getVisible/setVisible) so it can reuse the existing checkbox-row renderer below
+const shpallLabelToggle = {
+    getVisible: () => _shpallLabelsVisible,
+    setVisible: (v) => { _shpallLabelsVisible = v; shpallLayer.changed(); }
+};
+
 const shpallLayer = new ol.layer.Vector({
     source: shpallSource,
     title: 'แปลงยาง (เดิม)',
     visible: false,
     zIndex: 6,
-    style: new ol.style.Style({
-        stroke: new ol.style.Stroke({
-            color: '#0055ff',
-            width: 1.5
-        }),
-        fill: new ol.style.Fill({
-            color: 'rgba(0, 85, 255, 0.10)'
-        })
-    })
+    style: function(feature) {
+        const style = new ol.style.Style({
+            stroke: new ol.style.Stroke({
+                color: '#0055ff',
+                width: 1.5
+            }),
+            fill: new ol.style.Fill({
+                color: 'rgba(0, 85, 255, 0.10)'
+            })
+        });
+        if (_shpallLabelsVisible && map.getView().getZoom() >= SHPALL_LABEL_MIN_ZOOM) {
+            style.setText(new ol.style.Text({
+                text: _shpallLabelText(feature),
+                font: '600 10px "Noto Sans Thai", sans-serif',
+                fill: new ol.style.Fill({ color: '#1a4fa0' }),
+                stroke: new ol.style.Stroke({ color: '#ffffff', width: 2.5 }),
+                overflow: true
+            }));
+        }
+        return style;
+    }
 });
 
 
@@ -148,6 +191,15 @@ const map = new ol.Map({
         zoom: 13,
         maxZoom: 22
     })
+});
+
+// ล้างแปลง shpall ที่โหลดไว้เมื่อซูมออกต่ำกว่าเกณฑ์ ป้องกันแปลงค้างแสดงผลตอนซูมไกล
+// และ re-render style ทุกครั้งที่ซูมเปลี่ยน เพื่อให้ตัวหนังสือป้ายขึ้น/หายตามเกณฑ์ SHPALL_LABEL_MIN_ZOOM
+map.getView().on('change:resolution', () => {
+    if (map.getView().getZoom() < SHPALL_MIN_ZOOM) {
+        shpallSource.clear();
+    }
+    shpallLayer.changed();
 });
 
 // Disable double-click zoom to prevent unwanted zooming while drawing split line
@@ -1726,6 +1778,7 @@ function buildLayerSwitcher() {
     const overlayItems = [
         { layer: vectorLayer, label: 'แปลง (reclass)' },
         { layer: shpallLayer, label: 'แปลง (เดิม)' },
+        { layer: shpallLabelToggle, label: 'ชื่อแปลง (เดิม)' },
     ];
 
     const sep = document.createElement('div');
