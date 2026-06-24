@@ -44,7 +44,8 @@ const _sumRubberAndExcluded = (id) => {
         const rows = $('#featureTable').DataTable().rows().data().toArray()
             .filter(r => String(r.id) === String(id));
         rows.forEach(r => {
-            const val = Number(r.shpsplit_sqm || 0);
+            // ปัดเศษรายแถวก่อนรวม ให้ตรงกับตัวเลขที่แสดงต่อแถวในตาราง (กันผลรวมคลาดเคลื่อน ±1 จาก rounding)
+            const val = Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) exSqm += val;
         });
@@ -131,6 +132,7 @@ const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.87843
 const featureGroup = L.featureGroup();
 const reshapeFeatureGroup = L.featureGroup();
 const othersFeatureGroup = L.featureGroup(); // แปลงของเพื่อนร่วมโปรเจค (read-only background)
+const pointRefFeatureGroup = L.featureGroup(); // จุดอ้างอิงเดิม (GPS) — แสดงคู่กับโพลิกอนที่ขึ้นรูปแล้ว เปิด/ปิดได้
 
 // Custom Rubber Tree Icon
 const rubberTreeIcon = L.icon({
@@ -302,6 +304,7 @@ othersFeatureGroup.addTo(map);
 const overlayMaps = {
     "แปลงยาง (reclass)": featureGroup.addTo(map),
     "แปลงยาง (reshape)": reshapeFeatureGroup,
+    "จุดอ้างอิงเดิม (GPS)": pointRefFeatureGroup, // ปิดไว้เป็นค่าเริ่มต้น — ผู้ใช้เปิดดูเองตอนต้องการเทียบกับโพลิกอนที่วาด
     "แปลงยาง (เดิม)": shpallLayer,
     "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
     "Longdo Map": longdoLayer.addTo(map)
@@ -1099,6 +1102,7 @@ const loadGeoData = async () => {
             sub_id: item.sub_id,
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
+            geom_point: item.geom_point ? JSON.parse(item.geom_point) : null, // จุดอ้างอิงเดิม (GPS) จากแปลงหลัก
             id_farmer: item.farmer_id || '',
             regis_no: item['Regis_No'] || '',
             farm_name: item.farm_name || '',
@@ -1131,7 +1135,8 @@ const loadGeoData = async () => {
         const idAreaAgg = {};
         tableData.forEach(r => {
             const agg = idAreaAgg[r.id] || (idAreaAgg[r.id] = { rubberSqm: 0, exSqm: 0 });
-            const val = Number(r.shpsplit_sqm || 0);
+            // ปัดเศษรายแถวก่อนรวม ให้ตรงกับตัวเลขที่แสดงต่อแถวในตาราง (กันผลรวมคลาดเคลื่อน ±1 จาก rounding)
+            const val = Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') agg.rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) agg.exSqm += val;
         });
@@ -1781,7 +1786,33 @@ const loadGeoData = async () => {
 
         const updateMap = () => {
             featureGroup.clearLayers(); // Clear existing layers
+            pointRefFeatureGroup.clearLayers();
             const visibleRows = dataTable.rows({ search: 'applied' }).data().toArray();
+
+            // แต่ละแปลงหลัก (id) อาจมีหลาย sub_id (จากการ split) แต่มีจุดอ้างอิงเดิมจุดเดียว — กันซ้ำ
+            const seenRefIds = new Set();
+            visibleRows.forEach(row => {
+                if (row.geom_point && row.geom_point.type === 'Point' && !seenRefIds.has(row.id)) {
+                    seenRefIds.add(row.id);
+                    const [refLng, refLat] = row.geom_point.coordinates;
+                    // วงฮาโลสีเหลืองช่วยให้เห็นจุดชัดบนพื้นหลังทุกสี ก่อนวางไอคอนต้นยางทับ
+                    L.circleMarker([refLat, refLng], {
+                        radius: 10,
+                        color: '#ffeb3b',
+                        weight: 2,
+                        opacity: 0.95,
+                        fillColor: '#ffeb3b',
+                        fillOpacity: 0.3,
+                        interactive: false
+                    }).addTo(pointRefFeatureGroup);
+                    L.marker([refLat, refLng], {
+                        icon: rubberTreeIcon,
+                        opacity: 0.9,
+                        interactive: false,
+                        keyboard: false
+                    }).addTo(pointRefFeatureGroup);
+                }
+            });
 
             visibleRows.forEach(row => {
                 const geojson = {

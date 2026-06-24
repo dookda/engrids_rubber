@@ -3,6 +3,7 @@ const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.87843
 const featureGroup = L.featureGroup();
 const lddFeatureGroup = L.featureGroup();
 const othersFeatureGroup = L.featureGroup(); // แปลงของเพื่อนร่วมโปรเจค (read-only background)
+const pointRefFeatureGroup = L.featureGroup(); // จุดอ้างอิงเดิม (GPS) — แสดงคู่กับโพลิกอนที่ขึ้นรูปแล้ว เปิด/ปิดได้
 let _userRole = null;
 
 // Custom Rubber Tree Icon
@@ -203,6 +204,7 @@ const baseLayers = {
 othersFeatureGroup.addTo(map); // เปิดไว้ตลอด — addTo ก่อน featureGroup เพื่อให้แปลงตัวเองอยู่บนสุด
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
+    "จุดอ้างอิงเดิม (GPS)": pointRefFeatureGroup, // ปิดไว้เป็นค่าเริ่มต้น — ผู้ใช้เปิดดูเองตอนต้องการเทียบกับโพลิกอนที่วาด
     "แปลงยาง (เดิม)": shpallLayer,
     "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
     "Longdo Map": longdoLayer.addTo(map),
@@ -580,6 +582,9 @@ const loadGeoData = async () => {
             } else if (item.geom_point) {
                 geom = JSON.parse(item.geom_point);
             }
+            // เก็บ geom_point ไว้เสมอ แยกจาก geom หลัก เพื่อให้ยังดูจุดอ้างอิงเดิมได้แม้ขึ้นรูปโพลิกอนแล้ว
+            let geomPoint = null;
+            try { if (item.geom_point) geomPoint = JSON.parse(item.geom_point); } catch (_) {}
             return {
                 id: item.id,
                 refinal: item.refinal,
@@ -588,6 +593,7 @@ const loadGeoData = async () => {
                 l_name: item['L_name'] || '',
                 age: item['Para_Age'] || '',
                 geom: geom,
+                geom_point: geomPoint,
                 id_farmer: item['Farmer_ID'] || '',
                 regis_no: item['Regis_No'] || '',
                 deed_id: item['Deed_ID'] || '',
@@ -693,9 +699,30 @@ const loadGeoData = async () => {
 
         const updateMap = () => {
             featureGroup.clearLayers(); // Clear existing layers
+            pointRefFeatureGroup.clearLayers();
             const visibleRows = dataTable.rows({ search: 'applied' }).data().toArray();
 
             visibleRows.forEach(row => {
+                // จุดอ้างอิงเดิม (GPS) — แสดงคู่กับโพลิกอนเสมอถ้ามีข้อมูล ไม่ขึ้นกับว่าขึ้นรูปแล้วหรือยัง
+                if (row.geom_point && row.geom_point.type === 'Point') {
+                    const [refLng, refLat] = row.geom_point.coordinates;
+                    // วงฮาโลสีเหลืองช่วยให้เห็นจุดชัดบนพื้นหลังทุกสี ก่อนวางไอคอนต้นยางทับ
+                    L.circleMarker([refLat, refLng], {
+                        radius: 10,
+                        color: '#ffeb3b',
+                        weight: 2,
+                        opacity: 0.95,
+                        fillColor: '#ffeb3b',
+                        fillOpacity: 0.3,
+                        interactive: false
+                    }).addTo(pointRefFeatureGroup);
+                    L.marker([refLat, refLng], {
+                        icon: rubberTreeIcon,
+                        opacity: 0.9,
+                        interactive: false,
+                        keyboard: false
+                    }).addTo(pointRefFeatureGroup);
+                }
                 const geoJsonData = {
                     type: 'Feature',
                     geometry: row.geom,

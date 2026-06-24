@@ -181,11 +181,52 @@ const splitLineLayer = new ol.layer.Vector({
     zIndex: 20
 });
 
+// Reference point layer — จุดอ้างอิงเดิม (GPS) ของแปลง แสดงคู่กับโพลิกอนเสมอ ปิดไว้เป็นค่าเริ่มต้น
+const pointRefSource = new ol.source.Vector();
+const pointRefLayer = new ol.layer.Vector({
+    source: pointRefSource,
+    visible: false,
+    zIndex: 11,
+    style: [
+        // วงฮาโลสีเหลืองช่วยให้เห็นจุดชัดบนพื้นหลังทุกสี ก่อนวางไอคอนต้นยางทับ
+        new ol.style.Style({
+            image: new ol.style.Circle({
+                radius: 10,
+                fill: new ol.style.Fill({ color: 'rgba(255, 235, 59, 0.3)' }),
+                stroke: new ol.style.Stroke({ color: 'rgba(255, 235, 59, 0.95)', width: 2 })
+            })
+        }),
+        new ol.style.Style({
+            image: new ol.style.Icon({
+                src: 'data:image/svg+xml;base64,' + btoa(`
+                    <svg xmlns="http://www.w3.org/2000/svg" width="512" height="640" viewBox="0 0 512 640">
+                        <defs>
+                            <linearGradient id="p-grad-ref" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#81c784" />
+                                <stop offset="100%" style="stop-color:#2e7d32" />
+                            </linearGradient>
+                        </defs>
+                        <path fill="url(#p-grad-ref)" d="M256 640c-15 0-30-5-40-15C160 560 32 420 32 256 32 120 144 0 256 0s224 120 224 256c0 164-128 304-184 369-10 10-25 15-40 15z"/>
+                        <circle cx="256" cy="245" r="170" fill="white"/>
+                        <path fill="#2e7d32" d="M256 120c-40 0-80 35-80 110 0 60 80 110 80 110s80-50 80-110c0-75-40-110-80-110z"/>
+                        <path fill="#1b5e20" d="M256 150c-30 0-60 25-60 80 0 50 60 90 60 90s60-40 60-90c0-55-30-80-60-80z" opacity="0.6"/>
+                        <path fill="#5d4037" d="M236 320h40v40h-40z"/>
+                    </svg>
+                `),
+                size: [512, 640],
+                scale: 0.055,
+                opacity: 0.9,
+                anchor: [0.5, 1]
+            })
+        })
+    ]
+});
+
 // ── 4. Map ────────────────────────────────────────────────
 const map = new ol.Map({
     target: 'map',
     layers: [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer,
-        ndviWms, shpallLayer, vectorLayer, splitLineLayer],
+        ndviWms, shpallLayer, vectorLayer, pointRefLayer, splitLineLayer],
     view: new ol.View({
         center: ol.proj.fromLonLat([100.8784385963758, 18.819620993471577]),
         zoom: 13,
@@ -558,6 +599,21 @@ const loadGeoData = async (id, shouldFit = true) => {
 
         vectorSource.clear();
         vectorSource.addFeatures(features);
+
+        // จุดอ้างอิงเดิม (GPS) ของแปลง — ทุก sub_id ของ id เดียวกันใช้จุดเดิมร่วมกัน เอาแค่จุดแรกที่เจอ
+        pointRefSource.clear();
+        const refItem = data.find(item => item.geom_point);
+        if (refItem) {
+            try {
+                const geomPoint = JSON.parse(refItem.geom_point);
+                if (geomPoint && geomPoint.type === 'Point') {
+                    const refFeat = new ol.Feature({
+                        geometry: new ol.geom.Point(geomPoint.coordinates).transform(EPSG4326, EPSG3857)
+                    });
+                    pointRefSource.addFeature(refFeat);
+                }
+            } catch (_) {}
+        }
 
         // Fit view
         if (shouldFit) {
@@ -1777,6 +1833,7 @@ function buildLayerSwitcher() {
     // ── Overlay layers (checkbox, multiple) ───────────────
     const overlayItems = [
         { layer: vectorLayer, label: 'แปลง (reclass)' },
+        { layer: pointRefLayer, label: 'จุดอ้างอิงเดิม (GPS)' },
         { layer: shpallLayer, label: 'แปลง (เดิม)' },
         { layer: shpallLabelToggle, label: 'ชื่อแปลง (เดิม)' },
     ];
