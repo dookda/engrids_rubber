@@ -659,11 +659,9 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
                             THEN ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326))
                             ELSE geom 
                         END,
-                        geom_point = CASE 
-                            WHEN ST_GeometryType(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) = 'ST_Point' 
+                        geom_point = CASE
+                            WHEN ST_GeometryType(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) = 'ST_Point'
                             THEN ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)
-                            WHEN ST_GeometryType(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326)) IN ('ST_Polygon', 'ST_MultiPolygon')
-                            THEN ST_Centroid(ST_SetSRID(ST_GeomFromGeoJSON($1), 4326))
                             ELSE geom_point
                         END,
                         "Sqm_Deed"  = $3,
@@ -1650,11 +1648,9 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
                     THEN ST_Multi(g.geom_wgs)
                     ELSE geom 
                 END,
-                geom_point = CASE 
-                    WHEN ST_GeometryType(g.geom_wgs) = 'ST_Point' 
+                geom_point = CASE
+                    WHEN ST_GeometryType(g.geom_wgs) = 'ST_Point'
                     THEN g.geom_wgs
-                    WHEN ST_GeometryType(g.geom_wgs) IN ('ST_Polygon', 'ST_MultiPolygon')
-                    THEN ST_Centroid(g.geom_wgs)
                     ELSE geom_point
                 END,
                 shpsplit_sqm = ST_Area(ST_Transform(g.geom_wgs, 32647)),
