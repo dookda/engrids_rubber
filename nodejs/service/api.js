@@ -3464,7 +3464,8 @@ app.get('/api/worker-summary-all', async (req, res) => {
 });
 
 /* GET /api/worker-summary/:tb
-   สรุปค่าจ้างต่อคนจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) แยกตามประเภทเอกสาร (Deed_Type) */
+   สรุปค่าจ้างต่อคนจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) แยกตามประเภทเอกสาร (Deed_Type)
+   นับเฉพาะแปลงที่ทำเสร็จแล้ว (classified = TRUE) ไม่นับแปลงที่เพิ่งวาดเค้า/reshape แล้วยังไม่จำแนกที่ดิน */
 app.get('/api/worker-summary/:tb', async (req, res) => {
     try {
         const tb = req.params.tb.toLowerCase();
@@ -3483,6 +3484,7 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
             FROM ${tb}
             WHERE editor IS NOT NULL AND editor != ''
                 AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
+                AND classified = TRUE
             GROUP BY editor, COALESCE("Deed_Type", 'ไม่ระบุ')
             ORDER BY editor, total_rai DESC
         `);
@@ -3520,6 +3522,7 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
             FROM ${tb}
             WHERE editor IS NOT NULL AND editor != ''
                 AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
+                AND classified = TRUE
             ORDER BY editor, COALESCE("Deed_Type", 'ไม่ระบุ'), id
         `);
         const details = detailsRes.rows.map(r => ({
