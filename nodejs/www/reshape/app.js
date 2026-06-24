@@ -3,6 +3,7 @@ const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.87843
 const featureGroup = L.featureGroup();
 const lddFeatureGroup = L.featureGroup();
 const othersFeatureGroup = L.featureGroup(); // แปลงของเพื่อนร่วมโปรเจค (read-only background)
+const pointRefFeatureGroup = L.featureGroup(); // จุดอ้างอิงเดิม (GPS) — แสดงคู่กับโพลิกอนที่ขึ้นรูปแล้ว เปิด/ปิดได้
 let _userRole = null;
 
 // Custom Rubber Tree Icon
@@ -203,6 +204,7 @@ const baseLayers = {
 othersFeatureGroup.addTo(map); // เปิดไว้ตลอด — addTo ก่อน featureGroup เพื่อให้แปลงตัวเองอยู่บนสุด
 const overlayMaps = {
     "แปลงยาง": featureGroup.addTo(map),
+    "จุดอ้างอิงเดิม (GPS)": pointRefFeatureGroup, // ปิดไว้เป็นค่าเริ่มต้น — ผู้ใช้เปิดดูเองตอนต้องการเทียบกับโพลิกอนที่วาด
     "แปลงยาง (เดิม)": shpallLayer,
     "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
     "Longdo Map": longdoLayer.addTo(map),
@@ -332,6 +334,25 @@ map.on('pm:create', (e) => {
 });
 
 // Area calculation utilities
+
+// Detects empty/degenerate geometry (e.g. coordinates: [] left behind after
+// deleting every vertex of a polygon), which Postgis will happily store as an
+// empty geometry and Leaflet will then throw on when rendering it back.
+function isValidGeometry(geometry) {
+    if (!geometry || !Array.isArray(geometry.coordinates)) return false;
+    const isRingValid = (ring) => Array.isArray(ring) && ring.length >= 4;
+    switch (geometry.type) {
+        case 'Point':
+            return geometry.coordinates.length === 2;
+        case 'Polygon':
+            return geometry.coordinates.length > 0 && geometry.coordinates.every(isRingValid);
+        case 'MultiPolygon':
+            return geometry.coordinates.length > 0 &&
+                geometry.coordinates.every(poly => Array.isArray(poly) && poly.length > 0 && poly.every(isRingValid));
+        default:
+            return geometry.coordinates.length > 0;
+    }
+}
 
 function customLineToPolygon(geojsonFeature) {
     const geom = geojsonFeature.geometry;
@@ -580,6 +601,9 @@ const loadGeoData = async () => {
             } else if (item.geom_point) {
                 geom = JSON.parse(item.geom_point);
             }
+            // เก็บ geom_point ไว้เสมอ แยกจาก geom หลัก เพื่อให้ยังดูจุดอ้างอิงเดิมได้แม้ขึ้นรูปโพลิกอนแล้ว
+            let geomPoint = null;
+            try { if (item.geom_point) geomPoint = JSON.parse(item.geom_point); } catch (_) {}
             return {
                 id: item.id,
                 refinal: item.refinal,
@@ -588,6 +612,7 @@ const loadGeoData = async () => {
                 l_name: item['L_name'] || '',
                 age: item['Para_Age'] || '',
                 geom: geom,
+                geom_point: geomPoint,
                 id_farmer: item['Farmer_ID'] || '',
                 regis_no: item['Regis_No'] || '',
                 deed_id: item['Deed_ID'] || '',
@@ -693,9 +718,31 @@ const loadGeoData = async () => {
 
         const updateMap = () => {
             featureGroup.clearLayers(); // Clear existing layers
+            pointRefFeatureGroup.clearLayers();
             const visibleRows = dataTable.rows({ search: 'applied' }).data().toArray();
 
             visibleRows.forEach(row => {
+              try {
+                // จุดอ้างอิงเดิม (GPS) — แสดงคู่กับโพลิกอนเสมอถ้ามีข้อมูล ไม่ขึ้นกับว่าขึ้นรูปแล้วหรือยัง
+                if (row.geom_point && row.geom_point.type === 'Point' && row.geom_point.coordinates.length === 2) {
+                    const [refLng, refLat] = row.geom_point.coordinates;
+                    // วงฮาโลสีเหลืองช่วยให้เห็นจุดชัดบนพื้นหลังทุกสี ก่อนวางไอคอนต้นยางทับ
+                    L.circleMarker([refLat, refLng], {
+                        radius: 10,
+                        color: '#ffeb3b',
+                        weight: 2,
+                        opacity: 0.95,
+                        fillColor: '#ffeb3b',
+                        fillOpacity: 0.3,
+                        interactive: false
+                    }).addTo(pointRefFeatureGroup);
+                    L.marker([refLat, refLng], {
+                        icon: rubberTreeIcon,
+                        opacity: 0.9,
+                        interactive: false,
+                        keyboard: false
+                    }).addTo(pointRefFeatureGroup);
+                }
                 const geoJsonData = {
                     type: 'Feature',
                     geometry: row.geom,
@@ -713,6 +760,10 @@ const loadGeoData = async () => {
                 }
 
                 if (row.geom.type === 'Point') {
+                    if (row.geom.coordinates.length !== 2) {
+                        console.warn(`Skipping row ${row.id}: empty/invalid Point geometry`, row.geom);
+                        return;
+                    }
                     // For Point geometries, add a marker with custom rubber tree icon
                     const [lng, lat] = row.geom.coordinates;
                     const marker = L.marker([lat, lng], {
@@ -727,13 +778,18 @@ const loadGeoData = async () => {
                         selectedLayer = marker;
                         highlightSelectedLayer(marker);
                     });
-                } else {
+                } else if (isValidGeometry(row.geom)) {
                     // Add individual polygon layers directly so featureGroup.eachLayer() finds them
                     L.geoJson(geoJsonData, {
                         style: getFeatureStyle,
                         onEachFeature: onEachFeature,
                     }).eachLayer(l => featureGroup.addLayer(l));
+                } else {
+                    console.warn(`Skipping row ${row.id}: empty/invalid polygon geometry`, row.geom);
                 }
+              } catch (rowErr) {
+                console.error(`Error rendering row ${row.id}:`, rowErr);
+              }
             });
         };
 
@@ -865,6 +921,40 @@ document.getElementById('save').addEventListener('click', async () => {
             return;
         }
     }
+    if (!isValidGeometry(finalGeojson.geometry)) {
+        // ผู้ใช้ลบ node จนรูปร่างไม่เหลือพื้นที่ — ตีความว่าต้องการล้างรูปนี้ทิ้งแล้วกลับไปวาดใหม่จากจุดอ้างอิงเดิม
+        const wantsClear = confirm('รูปร่างแปลงถูกลบจน ไม่เหลือพื้นที่ ต้องการล้างรูปร่างนี้และกลับไปแสดงจุดอ้างอิงเดิมเพื่อวาดใหม่หรือไม่?');
+        if (!wantsClear) return;
+
+        try {
+            const tb = document.getElementById('tb').value;
+            const response = await fetch(`/rub/api/clearshape/${tb}/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refinal, displayName })
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                layerEdited = false;
+                featureGroup.eachLayer(layer => {
+                    layer.pm.disable();
+                    layer.areaLabel?.remove();
+                });
+                featureGroup.clearLayers();
+                selectedLayer = null;
+                await loadGeoData();
+                alert(`ล้างรูปร่างแล้ว กลับไปแสดงจุดอ้างอิงเดิม (ID: ${id})`);
+            } else {
+                alert('ล้างรูปร่างไม่สำเร็จ: ' + (result.error || ''));
+            }
+        } catch (error) {
+            console.error('Error clearing shape:', error);
+            alert('ไม่สามารถล้างรูปร่างได้');
+        }
+        return;
+    }
+
     features.push(finalGeojson);
 
     try {

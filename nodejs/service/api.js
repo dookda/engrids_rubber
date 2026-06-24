@@ -195,6 +195,15 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
         const checkResult = await pool.query(checkTableSql, [reclassTableName]);
         const reclassTableExists = checkResult.rows[0].exists;
 
+        // จุดอ้างอิงเดิม (GPS ก่อนขึ้นรูป) เก็บไว้ที่ตารางหลัก ไม่ใช่ทุกตารางจะมีคอลัมน์นี้ — เช็คก่อนเสมอ
+        const geomPointColCheck = await pool.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = 'geom_point'",
+            [tb]
+        );
+        const geomPointSelect = geomPointColCheck.rowCount > 0
+            ? 'ST_ASGeoJSON(t.geom_point) AS geom_point'
+            : 'NULL::json AS geom_point';
+
         let sql, values;
         if (reclassTableExists) {
             sql = `SELECT r.id,
@@ -214,7 +223,7 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
                         t."Full_nam",
                         t."Farmer_ID",
                         ST_ASGeoJSON(r.geom) AS geom,
-                        ST_ASGeoJSON(st_makepoint(100, 18)) AS geom_point
+                        ${geomPointSelect}
                     FROM ${reclassTableName} r
                     JOIN ${tb} t ON r.id = t.id
                     WHERE r.geom IS NOT NULL AND r.id = $1`;
@@ -233,7 +242,7 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
                         t."Full_nam",
                         t."Farmer_ID",
                         ST_ASGeoJSON(t.geom) AS geom,
-                        ST_ASGeoJSON(st_makepoint(100, 18)) AS geom_point
+                        ${geomPointSelect}
                     FROM ${tb} t
                     WHERE t.geom IS NOT NULL AND t.id = $1`;
             values = [fid];
@@ -606,6 +615,15 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
 
             for (const feature of features) {
                 const geometry = feature.geometry;
+
+                // Reject empty/degenerate geometry (e.g. coordinates: [] left behind
+                // after deleting every vertex) — Postgis stores these as an empty
+                // geometry without erroring, which then breaks rendering on reload.
+                if (!geometry || !Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'รูปร่างแปลงไม่ถูกต้อง (geometry ว่างเปล่า)' });
+                }
+
                 const geojsonStr = JSON.stringify(geometry);
 
                 let area;
@@ -707,6 +725,40 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
     }
 });
 
+// ล้าง geometry ของแปลง (กรณีผู้ใช้ลบ node จนรูปร่างไม่เหลือพื้นที่ ตั้งใจจะวาดใหม่จากจุดอ้างอิงเดิม)
+app.put('/api/clearshape/:tb/:id', async (req, res) => {
+    try {
+        let { tb, id } = req.params;
+        tb = tb.toLowerCase();
+
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const featureId = parseInt(id, 10);
+        if (isNaN(featureId)) {
+            return res.status(400).json({ error: 'Feature ID must be a number' });
+        }
+
+        const { refinal, displayName } = req.body;
+
+        await pool.query(`
+            UPDATE ${tb}
+            SET geom = NULL,
+                "Sqm_Deed" = 0,
+                "Deed_Area" = 0,
+                refinal = $2,
+                editor = $3
+            WHERE id = $1
+        `, [featureId, refinal || '', displayName || null]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error in /api/clearshape:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // savefeature endpoint removed — was only used by digitize folder (deleted)
 
 
@@ -750,6 +802,15 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
             WHERE "class_Area" IS NULL AND shpsplit_sqm IS NOT NULL;
         `);
 
+        // จุดอ้างอิงเดิม (GPS ก่อนขึ้นรูป) เก็บไว้ที่ตารางหลัก ไม่ใช่ทุกตารางจะมีคอลัมน์นี้ — เช็คก่อนเสมอ
+        const geomPointColCheck = await pool.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND column_name = 'geom_point'",
+            [tb]
+        );
+        const geomPointSelect = geomPointColCheck.rowCount > 0
+            ? 'ST_ASGeoJSON(b.geom_point) AS geom_point'
+            : 'NULL::json AS geom_point';
+
         const sql = `SELECT a.id,
                     a.sub_id,
                     b.refinal,
@@ -778,7 +839,8 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.user_remark_ts,
                     a.review_ts,
                     a.ts,
-                    ST_ASGeoJSON(a.geom) AS geom FROM reclass_${tb} a
+                    ST_ASGeoJSON(a.geom) AS geom,
+                    ${geomPointSelect} FROM reclass_${tb} a
                 LEFT JOIN ${tb} b
                 ON a.id = b.id
                 WHERE a.geom IS NOT NULL`;
