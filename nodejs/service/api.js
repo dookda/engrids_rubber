@@ -387,7 +387,8 @@ app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
                         UPDATE ${tb} AS t
                         SET geom         = NULL,
                             geom_point   = b.geom_point,
-                            "Sqm_Deed"   = b."Sqm_Deed"
+                            "Sqm_Deed"   = b."Sqm_Deed",
+                            "Deed_Area"  = ROUND((b."Sqm_Deed" / 1600.0)::numeric, 2)
                         FROM backup_${tb} AS b
                         WHERE t.id = $1 AND b.id = $1
                         RETURNING t.*
@@ -418,7 +419,8 @@ app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
                         UPDATE ${tb} AS t
                         SET geom         = b.geom,
                             geom_point   = b.geom_point,
-                            "Sqm_Deed"   = b."Sqm_Deed"
+                            "Sqm_Deed"   = b."Sqm_Deed",
+                            "Deed_Area"  = ROUND((b."Sqm_Deed" / 1600.0)::numeric, 2)
                         FROM backup_${tb} AS b
                         WHERE t.id = $1 AND b.id = $1
                         RETURNING t.*
@@ -524,7 +526,8 @@ app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
             sql = `
                 UPDATE ${tb} AS t
                 SET geom        = r.geom,
-                    "Sqm_Deed"  = ST_Area(ST_Transform(r.geom, ${epsg}))
+                    "Sqm_Deed"  = ST_Area(ST_Transform(r.geom, ${epsg})),
+                    "Deed_Area" = ROUND((ST_Area(ST_Transform(r.geom, ${epsg})) / 1600.0)::numeric, 2)
                 FROM reclass_${tb} AS r
                 WHERE t.id = $1 AND r.id = $1
                 RETURNING t.*
@@ -2990,6 +2993,7 @@ app.post('/api/restore-from-backup/:tb/:id', async (req, res) => {
             const updateResult = await pool.query(`
                 UPDATE ${tb}
                 SET "Sqm_Deed"  = b."Sqm_Deed",
+                    "Deed_Area" = ROUND((b."Sqm_Deed" / 1600.0)::numeric, 2),
                     geom        = b.geom,
                     geom_point  = b.geom_point
                 FROM backup_${tb} b
