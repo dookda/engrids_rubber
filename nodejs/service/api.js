@@ -615,6 +615,15 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
 
             for (const feature of features) {
                 const geometry = feature.geometry;
+
+                // Reject empty/degenerate geometry (e.g. coordinates: [] left behind
+                // after deleting every vertex) — Postgis stores these as an empty
+                // geometry without erroring, which then breaks rendering on reload.
+                if (!geometry || !Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'รูปร่างแปลงไม่ถูกต้อง (geometry ว่างเปล่า)' });
+                }
+
                 const geojsonStr = JSON.stringify(geometry);
 
                 let area;
@@ -712,6 +721,40 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
         }
     } catch (err) {
         console.error('Error in /api/updatefeatures:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ล้าง geometry ของแปลง (กรณีผู้ใช้ลบ node จนรูปร่างไม่เหลือพื้นที่ ตั้งใจจะวาดใหม่จากจุดอ้างอิงเดิม)
+app.put('/api/clearshape/:tb/:id', async (req, res) => {
+    try {
+        let { tb, id } = req.params;
+        tb = tb.toLowerCase();
+
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const featureId = parseInt(id, 10);
+        if (isNaN(featureId)) {
+            return res.status(400).json({ error: 'Feature ID must be a number' });
+        }
+
+        const { refinal, displayName } = req.body;
+
+        await pool.query(`
+            UPDATE ${tb}
+            SET geom = NULL,
+                "Sqm_Deed" = 0,
+                "Deed_Area" = 0,
+                refinal = $2,
+                editor = $3
+            WHERE id = $1
+        `, [featureId, refinal || '', displayName || null]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error in /api/clearshape:', err);
         res.status(500).json({ error: err.message });
     }
 });
