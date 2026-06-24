@@ -1189,6 +1189,24 @@ a:hover {
 .pay-id-subline:last-child {
     border-bottom: none;
 }
+.pay-id-cell .pay-id-clamp {
+    max-height: 2.4em;
+    overflow: hidden;
+}
+.pay-id-cell.expanded .pay-id-clamp {
+    max-height: none;
+}
+.pay-id-toggle-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 0.72rem;
+    color: #0288d1;
+    cursor: pointer;
+}
+.pay-id-toggle-btn:hover {
+    text-decoration: underline;
+}
 
 /* ── Area column highlight (selected basis) ── */
 .area-col-selected {

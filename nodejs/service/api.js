@@ -3565,6 +3565,7 @@ app.get('/api/checker-summary/:tb', async (req, res) => {
                 SELECT reviewer,
                     COUNT(*) AS sub_plot_count,
                     COUNT(DISTINCT id) AS farmer_count,
+                    array_agg(DISTINCT id ORDER BY id) AS ids,
                     ROUND(COALESCE(SUM(shpsplit_sqm), 0)::numeric, 2) AS class_sqm
                 FROM reclass_${tb}
                 WHERE reviewer IS NOT NULL AND reviewer != ''
@@ -3601,6 +3602,7 @@ app.get('/api/checker-summary/:tb', async (req, res) => {
                 photo:          photoMap[r.reviewer] || null,
                 sub_plot_count: parseInt(r.sub_plot_count),
                 farmer_count:   parseInt(r.farmer_count),
+                ids:            r.ids || [],
                 class_sqm,
                 class_rai:   class_sqm / 1600,
                 deed_sqm:    d.deed_sqm,
