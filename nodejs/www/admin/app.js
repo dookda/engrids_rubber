@@ -1328,6 +1328,8 @@ ${bodyHtml}
 
 let paymentModal = null;
 let paymentWorkerData = [];
+let paymentDeedTypes = [];
+let paymentDetails = [];
 
 function openPaymentModal(tb_name) {
     if (!paymentModal) {
@@ -1342,8 +1344,11 @@ function openPaymentModal(tb_name) {
 
     fetch(`/rub/api/worker-summary/${tb_name}`)
         .then(r => r.json())
-        .then(({ data }) => {
+        .then(({ data, deed_types, details }) => {
             paymentWorkerData = data || [];
+            paymentDeedTypes  = deed_types || [];
+            paymentDetails    = details || [];
+            populatePayDeedTypeSelect();
             renderPaymentTable();
         })
         .catch(() => {
@@ -1352,88 +1357,291 @@ function openPaymentModal(tb_name) {
         });
 }
 
+function populatePayDeedTypeSelect() {
+    const sel = document.getElementById('pay_deed_type');
+    sel.innerHTML = '<option value="all">ทั้งหมด</option>' +
+        paymentDeedTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    sel.value = 'all';
+}
+
+/* ── สรุปรายแปลง: ไอดีไหนเป็นประเภทเอกสารอะไร (filterable by deed type + search) ── */
+function filterPayDetails(selected, searchTerm) {
+    const term = (searchTerm || '').trim().toLowerCase();
+    return paymentDetails.filter(d => {
+        if (selected !== 'all' && d.deed_type !== selected) return false;
+        if (!term) return true;
+        return String(d.id).toLowerCase().includes(term) ||
+               String(d.editor).toLowerCase().includes(term) ||
+               String(d.deed_type).toLowerCase().includes(term);
+    });
+}
+
+/* รวมยอด rows ตาม key (deed_type หรือ editor) → [{ key, plot_count, total_rai }] เรียงไร่มาก→น้อย */
+function groupPayDetails(rows, key) {
+    const map = {};
+    rows.forEach(d => {
+        const k = d[key];
+        if (!map[k]) map[k] = { key: k, plot_count: 0, total_rai: 0 };
+        map[k].plot_count += 1;
+        map[k].total_rai += d.total_rai;
+    });
+    return Object.values(map).sort((a, b) => b.total_rai - a.total_rai);
+}
+
+/* บาง table มี ID เป็นพันรายการ — ถ้าแสดงทีละ chip จะยาวเกินไปและทำให้ DOM หนัก
+   จึงอัดรายชื่อ ID ให้เป็นช่วงต่อเนื่อง เช่น [12,13,14,20] → "12-14, 20" สั้นกระชับไม่ว่าจะมีกี่ ID */
+function compressIdRanges(ids) {
+    const sorted = [...new Set(ids)].sort((a, b) => a - b);
+    if (sorted.length === 0) return '';
+    const ranges = [];
+    let start = sorted[0], prev = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+        const v = sorted[i];
+        if (v === prev + 1) { prev = v; continue; }
+        ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+        start = v; prev = v;
+    }
+    ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+    return ranges.join(', ');
+}
+
+/* แต่ละกลุ่ม (ประเภทเอกสาร หรือ ผู้ทำงาน) → การ์ดสรุป + ช่วง ID แบบอัดให้สั้น (รองรับ ID เป็นพันรายการ) */
+function buildGroupCardsHtml(rows, groupKey, rate, idPrefix) {
+    const groups = groupPayDetails(rows, groupKey);
+    if (groups.length === 0) {
+        return `<div class="text-center text-muted py-3">ไม่มีข้อมูล</div>`;
+    }
+    return groups.map((g, i) => {
+        const items = rows.filter(d => d[groupKey] === g.key);
+        const pay = g.total_rai * rate;
+        const collapseId = `${idPrefix}_${i}`;
+        const titleHtml = groupKey === 'deed_type'
+            ? `<span class="badge bg-light text-dark border">${g.key}</span>`
+            : `<span class="fw-bold">${g.key}</span>`;
+
+        let bodyHtml;
+        if (groupKey === 'deed_type') {
+            const ids = items.map(d => d.id);
+            bodyHtml = `<div class="pay-id-range">ID: ${compressIdRanges(ids)}</div>`;
+        } else {
+            const byType = {};
+            items.forEach(d => (byType[d.deed_type] = byType[d.deed_type] || []).push(d.id));
+            bodyHtml = Object.entries(byType).map(([type, ids]) => `
+                <div class="pay-id-subline">
+                    <span class="badge bg-light text-dark border me-1">${type}</span>
+                    <span class="pay-id-range">${compressIdRanges(ids)}</span>
+                    <span class="text-muted small">(${ids.length.toLocaleString('th-TH')} แปลง)</span>
+                </div>`).join('');
+        }
+
+        return `
+        <div class="pay-group-item border rounded mb-2">
+            <button class="btn w-100 text-start d-flex justify-content-between align-items-center flex-wrap gap-1 py-2 px-3"
+                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+                <span><i class="bi bi-chevron-down pay-group-chevron me-2"></i>${titleHtml}</span>
+                <span class="small text-muted">
+                    ${g.plot_count.toLocaleString('th-TH')} แปลง &nbsp;·&nbsp; ${g.total_rai.toFixed(2)} ไร่ &nbsp;·&nbsp;
+                    <span class="fw-bold pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</span>
+                </span>
+            </button>
+            <div class="collapse show" id="${collapseId}">
+                <div class="px-3 pb-2 pt-1 pay-id-chip-wrap">${bodyHtml}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderPayDetailBody() {
+    const selected = document.getElementById('pay_deed_type').value || 'all';
+    const rate = parseFloat(document.getElementById('pay_rate_rai').value) || 0;
+    const searchEl = document.getElementById('pay_detail_search');
+    const term = searchEl ? searchEl.value : '';
+    const rows = filterPayDetails(selected, term);
+
+    const byType = document.getElementById('payDetailByType');
+    if (byType) byType.innerHTML = buildGroupCardsHtml(rows, 'deed_type', rate, 'payTypeGrp');
+
+    const byWorker = document.getElementById('payDetailByWorker');
+    if (byWorker) byWorker.innerHTML = buildGroupCardsHtml(rows, 'editor', rate, 'payWorkerGrp');
+
+    const countEl = document.getElementById('payDetailCount');
+    if (countEl) countEl.textContent = `${rows.length.toLocaleString('th-TH')} แปลง`;
+}
+
+function buildPayDetailSectionHtml() {
+    return `
+    <div class="mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <h6 class="fw-bold mb-0"><i class="bi bi-list-check me-1"></i>สรุปรายแปลง: ไอดี &amp; ประเภทเอกสาร
+                <span class="badge bg-secondary ms-1" id="payDetailCount"></span>
+            </h6>
+            <input type="text" id="pay_detail_search" class="form-control form-control-sm" style="max-width:240px;" placeholder="ค้นหา ID แปลง / ผู้ทำงาน...">
+        </div>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header py-2 fw-bold"><i class="bi bi-collection me-1"></i>แต่ละประเภทเอกสารมี ID อะไรบ้าง</div>
+                    <div class="card-body" style="max-height:340px;overflow:auto;" id="payDetailByType"></div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-header py-2 fw-bold"><i class="bi bi-person-badge me-1"></i>แต่ละผู้ทำงานมี ID &amp; ประเภทอะไรบ้าง</div>
+                    <div class="card-body" style="max-height:340px;overflow:auto;" id="payDetailByWorker"></div>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function wirePayDetailSection() {
+    renderPayDetailBody();
+    const searchEl = document.getElementById('pay_detail_search');
+    if (searchEl) searchEl.addEventListener('input', renderPayDetailBody);
+}
+
+/* ตารางคำนวณค่าจ้าง: คิดจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) เท่านั้น
+   เลือกได้ว่าจะคิดทุกประเภทเอกสาร (แสดงแยกคอลัมน์) หรือเฉพาะประเภทเดียวจากดรอปดาวน์ */
 function renderPaymentTable() {
-    const rate  = parseFloat(document.getElementById('pay_rate_rai').value) || 0;
-    const basis = document.getElementById('pay_basis').value;
-    const data  = paymentWorkerData;
-    const wrap  = document.getElementById('paymentTableWrap');
+    const rate     = parseFloat(document.getElementById('pay_rate_rai').value) || 0;
+    const selected = document.getElementById('pay_deed_type').value || 'all';
+    const data      = paymentWorkerData;
+    const deedTypes = paymentDeedTypes;
+    const wrap      = document.getElementById('paymentTableWrap');
 
     if (!data || data.length === 0) {
         wrap.innerHTML = `<div class="alert alert-warning">
             <i class="bi bi-exclamation-triangle me-2"></i>
-            ยังไม่มีข้อมูลการทำงานใน table นี้
+            ยังไม่มีข้อมูลยางพาราลงทะเบียน (Rubr_total) ที่มีผู้ทำงานใน table นี้
         </div>`;
         return;
     }
 
-    const basisLabel = { reshape: 'โฉนด Reshape', reclass_all: 'Reclass ทั้งหมด', reclass_rubber: 'ยางพารา Rubber' };
+    const avatarOf = (r) => r.photo
+        ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+            onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true'">`
+        : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true" class="pay-avatar">`;
+
+    if (selected !== 'all') {
+        // ── คิดเฉพาะประเภทเอกสารที่เลือก ──
+        const rows = data
+            .map(r => ({ r, d: r.by_deed_type[selected] }))
+            .filter(({ d }) => d && d.total_rai > 0)
+            .map(({ r, d }, idx) => {
+                const pay = d.total_rai * rate;
+                return `<tr>
+                    <td class="text-center align-middle">${idx + 1}</td>
+                    <td class="align-middle">
+                        <div class="d-flex align-items-center gap-2">
+                            ${avatarOf(r)}
+                            <span class="fw-bold">${r.editor}</span>
+                        </div>
+                    </td>
+                    <td class="text-center align-middle">${(d.plot_count||0).toLocaleString('th-TH')} แปลง</td>
+                    <td class="text-end fw-bold align-middle">${d.total_rai.toFixed(2)} ไร่</td>
+                    <td class="text-end fw-bold align-middle pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                </tr>`;
+            }).join('');
+
+        const totalPlot = data.reduce((s, r) => s + ((r.by_deed_type[selected]||{}).plot_count || 0), 0);
+        const totalRai  = data.reduce((s, r) => s + ((r.by_deed_type[selected]||{}).total_rai || 0), 0);
+        const totalPay  = totalRai * rate;
+
+        wrap.innerHTML = `
+        <div class="table-responsive">
+            <table class="table table-hover payment-table">
+                <thead>
+                    <tr>
+                        <th class="text-center align-middle" style="width:40px">#</th>
+                        <th class="align-middle">ชื่อผู้ทำงาน</th>
+                        <th class="text-center align-middle">แปลง</th>
+                        <th class="text-end align-middle">เนื้อที่<br><small class="fw-normal text-muted">ไร่ (Rubr_total) — ${selected}</small></th>
+                        <th class="text-end align-middle">ค่าจ้าง</th>
+                    </tr>
+                </thead>
+                <tbody>${rows || `<tr><td colspan="5" class="text-center text-muted py-3">ไม่มีข้อมูลประเภท "${selected}"</td></tr>`}</tbody>
+                <tfoot>
+                    <tr class="payment-total-row">
+                        <td colspan="2" class="fw-bold align-middle">รวมทั้งหมด</td>
+                        <td class="text-center fw-bold align-middle">${totalPlot.toLocaleString('th-TH')} แปลง</td>
+                        <td class="text-end fw-bold align-middle">${totalRai.toFixed(2)} ไร่</td>
+                        <td class="text-end fw-bold align-middle pay-total-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        ${buildPayDetailSectionHtml()}`;
+        wirePayDetailSection();
+        return;
+    }
+
+    // ── คิดทุกประเภทเอกสาร แยกแสดงผลเป็นคอลัมน์ ──
+    const deedTypeCol = (type) => `<th class="text-end">${type}<br><small class="fw-normal text-muted">ไร่</small></th>`;
 
     const rows = data.map((r, i) => {
-        const basisA = r[basis] || {};
-        const pay = (basisA.area_rai_decimal || 0) * rate;
-        const avatar = r.photo
-            ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
-                onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true'">`
-            : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=2e7d32&rounded=true" class="pay-avatar">`;
+        const deedTypeCells = deedTypes.map(type => {
+            const d = r.by_deed_type[type];
+            return `<td class="text-end">${d ? d.total_rai.toFixed(2) : '—'}</td>`;
+        }).join('');
 
-        const reshapeCnt  = `${(r.reshape.farmer_count||0).toLocaleString()} แปลง`;
-        const reclassCnt  = `${(r.reclass_all.sub_plot_count||0).toLocaleString()} รายการ ·${(r.reclass_all.farmer_count||0).toLocaleString()} แปลง`;
-        const rubberCnt   = `${(r.reclass_rubber.sub_plot_count||0).toLocaleString()} รายการ ·${(r.reclass_rubber.farmer_count||0).toLocaleString()} แปลง`;
+        const pay = (r.total_rai || 0) * rate;
 
         return `<tr>
             <td class="text-center align-middle">${i + 1}</td>
             <td class="align-middle">
                 <div class="d-flex align-items-center gap-2">
-                    ${avatar}
+                    ${avatarOf(r)}
                     <span class="fw-bold">${r.editor}</span>
                 </div>
             </td>
-            <td class="text-center ${basis==='reshape'?'area-col-selected':''}">${areaCell(r.reshape, reshapeCnt)}</td>
-            <td class="text-center ${basis==='reclass_all'?'area-col-selected':''}">${areaCell(r.reclass_all, reclassCnt)}</td>
-            <td class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">${areaCell(r.reclass_rubber, rubberCnt)}</td>
+            <td class="text-center align-middle">${(r.plot_count||0).toLocaleString('th-TH')} แปลง</td>
+            ${deedTypeCells}
+            <td class="text-end fw-bold align-middle">${(r.total_rai||0).toFixed(2)} ไร่</td>
             <td class="text-end fw-bold align-middle pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
         </tr>`;
     }).join('');
 
     // Totals
-    const sumSqm = (key) => data.reduce((s, r) => s + ((r[key]||{}).total_sqm||0), 0);
-    const rSqm = sumSqm('reshape'), rcSqm = sumSqm('reclass_all'), rubSqm = sumSqm('reclass_rubber');
-    const bSqm = sumSqm(basis);
-    const totalPay = (bSqm / 1600) * rate;
-
-    const sumCell = (sqm) => {
-        return `<div class="pay-area-badge">${fmtRai(sqm)}</div>
-                <div class="pay-area-sub">${Math.round(sqm).toLocaleString('th-TH')} ตร.ม.</div>`;
-    };
+    const totalPlot = data.reduce((s, r) => s + (r.plot_count || 0), 0);
+    const totalRai  = data.reduce((s, r) => s + (r.total_rai || 0), 0);
+    const totalPay  = totalRai * rate;
+    const deedTypeTotalCells = deedTypes.map(type => {
+        const sum = data.reduce((s, r) => s + ((r.by_deed_type[type]||{}).total_rai || 0), 0);
+        return `<td class="text-end">${sum.toFixed(2)}</td>`;
+    }).join('');
 
     wrap.innerHTML = `
     <div class="table-responsive">
         <table class="table table-hover payment-table">
             <thead>
                 <tr>
-                    <th class="text-center align-middle" style="width:40px" rowspan="1">#</th>
+                    <th class="text-center align-middle" style="width:40px">#</th>
                     <th class="align-middle">ชื่อผู้ทำงาน</th>
-                    <th class="text-center ${basis==='reshape'?'area-col-selected':''}">🏡 โฉนด Reshape<br><small class="fw-normal text-muted">แปลง / ไร่ / ตร.ม.</small></th>
-                    <th class="text-center ${basis==='reclass_all'?'area-col-selected':''}">📋 Reclass ทั้งหมด<br><small class="fw-normal text-muted">รายการ / แปลง / ไร่ / ตร.ม.</small></th>
-                    <th class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">🌿 ยางพารา Rubber<br><small class="fw-normal text-muted">รายการ / แปลง / ไร่ / ตร.ม.</small></th>
-                    <th class="text-end align-middle">ค่าจ้าง<br><small class="fw-normal text-muted">(จาก ${basisLabel[basis]})</small></th>
+                    <th class="text-center align-middle">แปลง</th>
+                    ${deedTypes.map(deedTypeCol).join('')}
+                    <th class="text-end align-middle">รวมเนื้อที่<br><small class="fw-normal text-muted">ไร่ (Rubr_total)</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
             <tfoot>
                 <tr class="payment-total-row">
                     <td colspan="2" class="fw-bold align-middle">รวมทั้งหมด</td>
-                    <td class="text-center ${basis==='reshape'?'area-col-selected':''}">${sumCell(rSqm)}</td>
-                    <td class="text-center ${basis==='reclass_all'?'area-col-selected':''}">${sumCell(rcSqm)}</td>
-                    <td class="text-center ${basis==='reclass_rubber'?'area-col-selected':''}">${sumCell(rubSqm)}</td>
+                    <td class="text-center fw-bold align-middle">${totalPlot.toLocaleString('th-TH')} แปลง</td>
+                    ${deedTypeTotalCells}
+                    <td class="text-end fw-bold align-middle">${totalRai.toFixed(2)} ไร่</td>
                     <td class="text-end fw-bold align-middle pay-total-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
                 </tr>
             </tfoot>
         </table>
-    </div>`;
+    </div>
+    ${buildPayDetailSectionHtml()}`;
+    wirePayDetailSection();
 }
 
 document.getElementById('btnCalcPay').addEventListener('click', renderPaymentTable);
+document.getElementById('pay_deed_type').addEventListener('change', renderPaymentTable);
 
 document.getElementById('btnPrintPayment').addEventListener('click', () => {
     const tb = document.getElementById('paymentModalTbBadge').textContent;

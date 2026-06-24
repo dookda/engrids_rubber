@@ -349,15 +349,16 @@
                         <input type="number" id="pay_rate_rai" class="form-control payment-rate-input"
                             value="1" min="0" step="1" placeholder="1">
                         <span class="fw-bold mb-0" style="white-space:nowrap;">บาท / ไร่</span>
-                        <span class="text-muted" style="white-space:nowrap;">คำนวณจาก</span>
-                        <select id="pay_basis" class="form-select form-select-sm" style="max-width:210px;">
-                            <option value="reclass_rubber">ยางพาราที่ลงทะเบียน (Rubber)</option>
-                            <option value="reclass_all">Reclass ทั้งหมด</option>
-                            <option value="reshape">โฉนด (Reshape)</option>
+                        <span class="text-muted" style="white-space:nowrap;">ประเภทเอกสาร</span>
+                        <select id="pay_deed_type" class="form-select form-select-sm" style="max-width:220px;">
+                            <option value="all">ทั้งหมด</option>
                         </select>
                         <button class="btn btn-primary btn-sm" id="btnCalcPay">
                             <i class="bi bi-calculator me-1"></i>คำนวณ
                         </button>
+                        <span class="text-muted small w-100" style="white-space:nowrap;">
+                            <i class="bi bi-info-circle me-1"></i>คำนวณจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total)
+                        </span>
                     </div>
 
                     <!-- Summary table -->
@@ -431,7 +432,7 @@
         crossorigin="anonymous"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260624"></script>
 </body>
 
 </html>

@@ -3464,8 +3464,7 @@ app.get('/api/worker-summary-all', async (req, res) => {
 });
 
 /* GET /api/worker-summary/:tb
-   สรุปงานต่อคนใน table เดียว แบ่ง 3 หมวด:
-   reshape, reclass_all, reclass_rubber */
+   สรุปค่าจ้างต่อคนจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) แยกตามประเภทเอกสาร (Deed_Type) */
 app.get('/api/worker-summary/:tb', async (req, res) => {
     try {
         const tb = req.params.tb.toLowerCase();
@@ -3477,65 +3476,60 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
         const photoMap = {};
         usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
 
-        // ── Reshape ──
-        const reshapeMap = {};
-        await pool.query(`
-            SELECT editor,
-                COUNT(*) AS farmer_count,
-                ROUND(COALESCE(SUM("Sqm_Deed"), 0)::numeric, 2) AS total_sqm
+        const rowsRes = await pool.query(`
+            SELECT editor, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
+                COUNT(*) AS plot_count,
+                ROUND(COALESCE(SUM("Rubr_total"), 0)::numeric, 4) AS total_rai
             FROM ${tb}
             WHERE editor IS NOT NULL AND editor != ''
-            GROUP BY editor
-        `).then(r => r.rows.forEach(row => {
-            reshapeMap[row.editor] = { ...toAreaObj(row.total_sqm), farmer_count: parseInt(row.farmer_count) };
-        })).catch(() => {});
+                AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
+            GROUP BY editor, COALESCE("Deed_Type", 'ไม่ระบุ')
+            ORDER BY editor, total_rai DESC
+        `);
 
-        // ── Reclass ──
-        const reclassAllMap = {}, reclassRubberMap = {};
-        const reclassExists = await pool.query(
-            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
-              WHERE table_schema='public' AND table_name=$1)`,
-            [`reclass_${tb}`]
-        );
-        if (reclassExists.rows[0].exists) {
-            const [allRes, rubberRes] = await Promise.all([
-                pool.query(`
-                    SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
-                        ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
-                    FROM reclass_${tb}
-                    WHERE editor IS NOT NULL AND editor != ''
-                    GROUP BY editor
-                `),
-                pool.query(`
-                    SELECT editor, COUNT(*) AS sp, COUNT(DISTINCT id) AS fc,
-                        ROUND(COALESCE(SUM(shpsplit_sqm),0)::numeric,2) AS total_sqm
-                    FROM reclass_${tb}
-                    WHERE editor IS NOT NULL AND editor != ''
-                        AND LOWER(TRIM(classtype)) = 'rubber'
-                    GROUP BY editor
-                `)
-            ]);
-            allRes.rows.forEach(r => {
-                reclassAllMap[r.editor] = { ...toAreaObj(r.total_sqm), sub_plot_count: parseInt(r.sp), farmer_count: parseInt(r.fc) };
-            });
-            rubberRes.rows.forEach(r => {
-                reclassRubberMap[r.editor] = { ...toAreaObj(r.total_sqm), sub_plot_count: parseInt(r.sp), farmer_count: parseInt(r.fc) };
-            });
-        }
+        const editorMap = {};
+        const deedTypeSet = new Set();
+        rowsRes.rows.forEach(row => {
+            const editor = row.editor;
+            const rai = parseFloat(row.total_rai) || 0;
+            const plotCount = parseInt(row.plot_count);
+            deedTypeSet.add(row.deed_type);
+            if (!editorMap[editor]) {
+                editorMap[editor] = {
+                    editor,
+                    photo: photoMap[editor] || null,
+                    total_rai: 0,
+                    plot_count: 0,
+                    by_deed_type: {}
+                };
+            }
+            editorMap[editor].total_rai += rai;
+            editorMap[editor].plot_count += plotCount;
+            editorMap[editor].by_deed_type[row.deed_type] = { total_rai: rai, plot_count: plotCount };
+        });
 
-        const allEditors = new Set([...Object.keys(reshapeMap), ...Object.keys(reclassAllMap), ...Object.keys(reclassRubberMap)]);
-        const emptyR  = { ...emptyArea, farmer_count: 0 };
-        const emptyRC = { ...emptyArea, sub_plot_count: 0, farmer_count: 0 };
+        const data = Object.values(editorMap).sort((a, b) => b.total_rai - a.total_rai);
+        const deed_types = [...deedTypeSet].sort((a, b) => a.localeCompare(b, 'th'));
 
-        const data = [...allEditors].map(editor => ({
-            editor,
-            photo: photoMap[editor] || null,
-            reshape:        reshapeMap[editor]      || emptyR,
-            reclass_all:    reclassAllMap[editor]   || emptyRC,
-            reclass_rubber: reclassRubberMap[editor] || emptyRC
-        })).sort((a, b) => b.reclass_rubber.total_sqm - a.reclass_rubber.total_sqm);
+        // ── รายละเอียดรายแปลง: ไอดีที่ทำงาน (id) เป็นประเภทเอกสารอะไร ──
+        const detailsRes = await pool.query(`
+            SELECT id,
+                COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
+                editor,
+                ROUND(COALESCE("Rubr_total", 0)::numeric, 4) AS total_rai
+            FROM ${tb}
+            WHERE editor IS NOT NULL AND editor != ''
+                AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
+            ORDER BY editor, COALESCE("Deed_Type", 'ไม่ระบุ'), id
+        `);
+        const details = detailsRes.rows.map(r => ({
+            id: r.id,
+            deed_type: r.deed_type,
+            editor: r.editor,
+            total_rai: parseFloat(r.total_rai) || 0
+        }));
 
-        res.json({ success: true, data });
+        res.json({ success: true, data, deed_types, details });
     } catch (err) {
         console.error('[WORKER-SUMMARY]', err);
         res.status(500).json({ success: false, error: err.message });

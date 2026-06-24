@@ -1156,6 +1156,40 @@ a:hover {
     font-size: 1.05rem;
 }
 
+/* ── Deed_Type / worker ID group cards (payment detail breakdown) ── */
+.pay-group-item .btn {
+    background: #f9fbf7;
+    border: none;
+    border-radius: 8px;
+    color: inherit;
+}
+.pay-group-item .btn:hover {
+    background: #eef6e9;
+}
+.pay-group-chevron {
+    color: #78909c;
+    transition: transform 0.2s ease;
+}
+.pay-group-item .btn[aria-expanded="false"] .pay-group-chevron {
+    transform: rotate(-90deg);
+}
+.pay-id-chip-wrap {
+    border-top: 1px dashed #e0e0e0;
+}
+.pay-id-range {
+    font-family: "Consolas", "SFMono-Regular", monospace;
+    font-size: 0.8rem;
+    color: #2e7d32;
+    word-break: break-all;
+}
+.pay-id-subline {
+    padding: 4px 0;
+    border-bottom: 1px dashed #eee;
+}
+.pay-id-subline:last-child {
+    border-bottom: none;
+}
+
 /* ── Area column highlight (selected basis) ── */
 .area-col-selected {
     background: rgba(255, 248, 225, 0.7) !important;
