@@ -1429,29 +1429,52 @@ function buildGroupCardsHtml(rows, groupKey, rate, idPrefix) {
         let bodyHtml;
         if (groupKey === 'deed_type') {
             const ids = items.map(d => d.id);
-            bodyHtml = `<div class="pay-id-range">ID: ${compressIdRanges(ids)}</div>`;
+            const idText = compressIdRanges(ids);
+            const isLong = ids.length > 10;
+            bodyHtml = isLong
+                ? `<div class="pay-id-cell">
+                        <div class="pay-id-clamp"><div class="pay-id-range">ID: ${idText}</div></div>
+                        <button type="button" class="pay-id-toggle-btn" onclick="toggleIdCell(this)">ดูทั้งหมด</button>
+                   </div>`
+                : `<div class="pay-id-range">ID: ${idText}</div>`;
         } else {
             const byType = {};
             items.forEach(d => (byType[d.deed_type] = byType[d.deed_type] || []).push(d.id));
-            bodyHtml = Object.entries(byType).map(([type, ids]) => `
-                <div class="pay-id-subline">
-                    <span class="badge bg-light text-dark border me-1">${type}</span>
-                    <span class="pay-id-range">${compressIdRanges(ids)}</span>
-                    <span class="text-muted small">(${ids.length.toLocaleString('th-TH')} แปลง)</span>
-                </div>`).join('');
+            bodyHtml = Object.entries(byType).map(([type, ids]) => {
+                const idText = compressIdRanges(ids);
+                const isLong = ids.length > 10;
+                const countHtml = `<span class="text-muted small">(${ids.length.toLocaleString('th-TH')} แปลง)</span>`;
+                if (!isLong) {
+                    return `
+                    <div class="pay-id-subline">
+                        <span class="badge bg-light text-dark border me-1">${type}</span>
+                        <span class="pay-id-range">${idText}</span>
+                        ${countHtml}
+                    </div>`;
+                }
+                return `
+                <div class="pay-id-subline pay-id-cell">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge bg-light text-dark border">${type}</span>
+                        ${countHtml}
+                        <button type="button" class="pay-id-toggle-btn" onclick="toggleIdCell(this)">ดูทั้งหมด</button>
+                    </div>
+                    <div class="pay-id-clamp"><span class="pay-id-range">ID: ${idText}</span></div>
+                </div>`;
+            }).join('');
         }
 
         return `
         <div class="pay-group-item border rounded mb-2">
             <button class="btn w-100 text-start d-flex justify-content-between align-items-center flex-wrap gap-1 py-2 px-3"
-                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="true">
+                type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false">
                 <span><i class="bi bi-chevron-down pay-group-chevron me-2"></i>${titleHtml}</span>
                 <span class="small text-muted">
                     ${g.plot_count.toLocaleString('th-TH')} แปลง &nbsp;·&nbsp; ${g.total_rai.toFixed(2)} ไร่ &nbsp;·&nbsp;
                     <span class="fw-bold pay-amount">${pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</span>
                 </span>
             </button>
-            <div class="collapse show" id="${collapseId}">
+            <div class="collapse" id="${collapseId}">
                 <div class="px-3 pb-2 pt-1 pay-id-chip-wrap">${bodyHtml}</div>
             </div>
         </div>`;
@@ -1670,6 +1693,8 @@ document.getElementById('btnPrintPayment').addEventListener('click', () => {
   .pay-amount { color:#2e7d32; }
   .pay-total-amount { color:#1b5e20; font-size:1.1rem; }
   .payment-total-row { background:#e8f5e9; }
+  .collapse { display:block !important; }
+  .pay-id-clamp { max-height:none !important; }
   @media print { button { display:none; } }
 </style>
 </head>
@@ -1749,11 +1774,14 @@ function renderCheckerPaymentTable() {
                     <span class="fw-bold">${r.reviewer}</span>
                 </div>
             </td>
-            <td class="align-middle pay-id-cell">
+            <td class="align-middle${(r.ids || []).length > 10 ? ' pay-id-cell' : ''}">
                 ${(() => {
                     const idText = compressIdRanges(r.ids || []);
                     const isLong = (r.ids || []).length > 10;
-                    return `<div class="pay-id-clamp"><div class="pay-id-range">ID: ${idText}</div></div>
+                    const idHtml = isLong
+                        ? `<div class="pay-id-clamp"><div class="pay-id-range">ID: ${idText}</div></div>`
+                        : `<div class="pay-id-range">ID: ${idText}</div>`;
+                    return `${idHtml}
                         <div class="text-muted small">(${(r.farmer_count || 0).toLocaleString()} แปลง)
                         ${isLong ? '<button type="button" class="pay-id-toggle-btn ms-1" onclick="toggleIdCell(this)">ดูทั้งหมด</button>' : ''}
                         </div>`;
@@ -1817,6 +1845,7 @@ document.getElementById('btnPrintChecker').addEventListener('click', () => {
   .pay-amount { color:#01579b; }
   .pay-total-amount { color:#006064; font-size:1.1rem; }
   .payment-total-row { background:#e1f5fe !important; }
+  .pay-id-clamp { max-height:none !important; }
   @media print { button { display:none; } }
 </style>
 </head>

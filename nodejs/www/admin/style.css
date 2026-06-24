@@ -1190,11 +1190,12 @@ a:hover {
     border-bottom: none;
 }
 .pay-id-cell .pay-id-clamp {
-    max-height: 2.4em;
+    max-height: 0;
     overflow: hidden;
 }
 .pay-id-cell.expanded .pay-id-clamp {
     max-height: none;
+    margin-top: 4px;
 }
 .pay-id-toggle-btn {
     border: none;
