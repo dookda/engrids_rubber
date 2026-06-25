@@ -1038,6 +1038,41 @@ app.get('/api/shpall/:tb', async (req, res) => {
     }
 });
 
+// GET shpall background polygons by farm_name search (ค้นหาแปลงยางเดิมจากชื่อ ไม่จำกัด bbox)
+app.get('/api/shpall/:tb/search', async (req, res) => {
+    try {
+        const name = (req.query.name || '').trim();
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'name query param required: ?name=...' });
+        }
+
+        const sql = `
+            SELECT ST_AsGeoJSON(geom) AS geom_json, farm_name, grow_rai, land_rai
+            FROM public.shpall
+            WHERE farm_name ILIKE $1
+            ORDER BY farm_name
+            LIMIT 50
+        `;
+        const result = await pool.query(sql, [`%${name}%`]);
+        const features = result.rows
+            .filter(row => row.geom_json)
+            .map(row => ({
+                type: 'Feature',
+                geometry: JSON.parse(row.geom_json),
+                properties: {
+                    farm_name: row.farm_name,
+                    grow_rai: row.grow_rai,
+                    land_rai: row.land_rai
+                }
+            }));
+
+        res.status(200).json({ success: true, type: 'FeatureCollection', features });
+    } catch (err) {
+        console.error('Error in /api/shpall/search:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET reshape polygon data for reclassdash map overlay
 app.get('/api/getreshapefeatures/:tb', async (req, res) => {
     try {

@@ -193,6 +193,110 @@ const shpallLabelToggle = L.layerGroup();
 shpallLabelToggle.on('add', () => document.getElementById('map').classList.add('shpall-labels-on'));
 shpallLabelToggle.on('remove', () => document.getElementById('map').classList.remove('shpall-labels-on'));
 
+// ===== ค้นหาแปลงยางเดิม (shpall) จากชื่อเกษตรกร =====
+const shpallSearchHighlightGroup = L.featureGroup().addTo(map);
+
+function _shpallSearchStyle() {
+    return { color: '#ff3d00', weight: 3, opacity: 0.95, fillColor: '#ff6e40', fillOpacity: 0.25, dashArray: '6,4' };
+}
+
+function _shpallSearchPopup(props) {
+    const growSqm = _shpallRaiToSqm(props.grow_rai);
+    const landSqm = _shpallRaiToSqm(props.land_rai);
+    return `<strong>${props.farm_name || '-'}</strong><br>` +
+        `ยางพาราที่ลงทะเบียน: ${props.grow_rai || '-'} ไร่ (${growSqm !== null ? growSqm.toLocaleString('th-TH') : '-'} ตร.ม.)<br>` +
+        `พื้นที่โฉนด: ${props.land_rai || '-'} ไร่ (${landSqm !== null ? landSqm.toLocaleString('th-TH') : '-'} ตร.ม.)`;
+}
+
+function renderShpallSearchResults(features) {
+    const box = document.getElementById('shpallSearchResults');
+    box.innerHTML = '';
+
+    if (!features.length) {
+        box.classList.add('has-results');
+        box.innerHTML = '<div class="shpall-search-empty">ไม่พบแปลงที่ตรงกับชื่อนี้</div>';
+        return;
+    }
+
+    box.classList.add('has-results');
+    features.forEach((f) => {
+        const props = f.properties || {};
+        const item = document.createElement('div');
+        item.className = 'shpall-search-item';
+        item.innerHTML = `
+            <span class="name">${props.farm_name || '-'}</span>
+            <span class="meta">${props.land_rai || '-'} ไร่</span>
+        `;
+        item.addEventListener('click', () => zoomToShpallFeature(f));
+        box.appendChild(item);
+    });
+}
+
+function zoomToShpallFeature(feature) {
+    shpallSearchHighlightGroup.clearLayers();
+    const layer = L.geoJson(feature, {
+        style: _shpallSearchStyle
+    }).addTo(shpallSearchHighlightGroup);
+
+    layer.bindPopup(_shpallSearchPopup(feature.properties || {}));
+
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+    }
+    setTimeout(() => layer.openPopup(), 350);
+}
+
+async function searchShpallByName(name) {
+    const resultsBox = document.getElementById('shpallSearchResults');
+    if (!name) {
+        resultsBox.classList.remove('has-results');
+        resultsBox.innerHTML = '';
+        shpallSearchHighlightGroup.clearLayers();
+        return;
+    }
+    try {
+        const tb = document.getElementById('tb').value || 'shpall';
+        const res = await fetch(`/rub/api/shpall/${tb}/search?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        if (data.success) {
+            renderShpallSearchResults(data.features || []);
+        } else {
+            console.error('shpall search error:', data.error);
+        }
+    } catch (err) {
+        console.error('shpall search error:', err);
+    }
+}
+
+let _shpallSearchTimer = null;
+document.getElementById('shpallSearchInput').addEventListener('input', (e) => {
+    clearTimeout(_shpallSearchTimer);
+    const value = e.target.value.trim();
+    _shpallSearchTimer = setTimeout(() => searchShpallByName(value), 350);
+});
+document.getElementById('shpallSearchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(_shpallSearchTimer);
+        searchShpallByName(e.target.value.trim());
+    }
+});
+document.getElementById('shpallSearchBtn').addEventListener('click', () => {
+    clearTimeout(_shpallSearchTimer);
+    searchShpallByName(document.getElementById('shpallSearchInput').value.trim());
+});
+document.getElementById('shpallSearchCollapse').addEventListener('shown.bs.collapse', () => {
+    document.getElementById('shpallSearchInput').focus();
+});
+document.getElementById('shpallSearchClearBtn').addEventListener('click', () => {
+    clearTimeout(_shpallSearchTimer);
+    document.getElementById('shpallSearchInput').value = '';
+    document.getElementById('shpallSearchResults').classList.remove('has-results');
+    document.getElementById('shpallSearchResults').innerHTML = '';
+    shpallSearchHighlightGroup.clearLayers();
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),

@@ -297,6 +297,75 @@ body {
     transform: translateY(-1px);
 }
 
+/* ===== Search แปลงยางเดิม ===== */
+.shpall-search-toggle {
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0;
+}
+
+.shpall-search-chevron {
+    font-size: 0.85rem;
+    transition: transform 0.25s ease;
+}
+
+.shpall-search-toggle[aria-expanded="true"] .shpall-search-chevron {
+    transform: rotate(180deg);
+}
+
+.shpall-search-results {
+    margin-top: 0.5rem;
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+}
+
+.shpall-search-results.has-results {
+    display: block;
+}
+
+.shpall-search-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0.45rem 0.65rem;
+    margin-bottom: 4px;
+    background: #f9fdf9;
+    border: 1px solid rgba(76, 175, 80, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.shpall-search-item:hover {
+    background: #e8f5e9;
+    border-color: #66bb6a;
+    transform: translateX(2px);
+}
+
+.shpall-search-item .name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #2e3a2e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shpall-search-item .meta {
+    font-size: 0.72rem;
+    color: #689f63;
+    white-space: nowrap;
+}
+
+.shpall-search-empty {
+    font-size: 0.8rem;
+    color: #9aa99a;
+    text-align: center;
+    padding: 0.5rem;
+}
+
 /* ===== Merge Panel ===== */
 #mergePanel .alert-info {
     background: #e8f5e9;
