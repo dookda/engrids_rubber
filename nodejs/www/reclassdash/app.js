@@ -53,6 +53,15 @@ const _sumRubberAndExcluded = (id) => {
     return { rubberSqm, exSqm, total: rubberSqm + exSqm };
 };
 
+// ส่วนต่างเทียบกับเป้าหมาย — เขียว ±100 m² ถือว่าตรง, แดงถ้าเกิน (ใช้ร่วมกันทั้งตารางและแผงตรวจ)
+const _areaDiffHtml = (cur, target) => {
+    if (!target || target <= 0) return '';
+    const diff = Math.round(cur - target);
+    const sign = diff >= 0 ? '+' : '';
+    const color = Math.abs(diff) <= 100 ? 'green' : 'red';
+    return ` <small style="color:${color}">(${sign}${diff.toLocaleString('th-TH')})</small>`;
+};
+
 const _resetHighlights = () => {
     _highlightedLayers.forEach(({ layer, style }) => {
         try { layer.setStyle(style); } catch (_) { }
@@ -730,6 +739,7 @@ const showFeaturePanel = (feature, layer) => {
     $('#display-id').text(`ID: ${props.id || '-'}`);
     $('#id').val(props.id || '');
     $('#display-farmer-id').text(props.id_farmer || '-');
+    $('#display-farmer-name').html(`<i class="bi bi-person-fill"></i> ${props.farm_name || '-'}`);
     $('#panel-sub-id').val(props.sub_id || '');
 
     // Area land
@@ -842,6 +852,32 @@ const showFeaturePanel = (feature, layer) => {
             // Deed-level check_area — one value for entire deed
             const deedCa = allSubs.find(r => r.check_area)?.check_area || '';
 
+            // เนื้อที่ขณะนี้ (โฉนด + ยางพารารวมกันออก) แสดงประกอบการตรวจสอบโฉนด
+            const deedTargetSqm = Number(allSubs[0]?.deed_sqm || 0);
+            const deedCurrentSqm = Number(allSubs[0]?.current_sqm || 0);
+            const rubrTargetSqm = Number(allSubs[0]?.rubr_sqm || 0);
+            const { rubberSqm, exSqm, total: rubrCurrentSqm } = _sumRubberAndExcluded(parentId);
+            const hasRubber = allSubs.some(r => r.classtype === 'rubber') || rubrTargetSqm > 0;
+            const rubberLabel = exSqm > 0 ? 'ยางพาราลงทะเบียน + พื้นที่กันออก' : 'ยางพาราลงทะเบียน';
+
+            const areaRecapHtml = `
+                <div class="check-section area-recap-section mb-2">
+                    <div class="check-section-title">เนื้อที่ขณะนี้ (ประกอบการตรวจสอบ)</div>
+                    <div class="area-recap-row">
+                        <span class="area-recap-label"><i class="bi bi-geo-alt-fill"></i> โฉนด</span>
+                        <span class="area-num">${deedCurrentSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²${_areaDiffHtml(deedCurrentSqm, deedTargetSqm)}</span>
+                    </div>
+                    <div class="area-recap-target">เป้าหมาย: ${deedTargetSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²</div>
+                    ${hasRubber ? `
+                    <div class="area-recap-row mt-2">
+                        <span class="area-recap-label"><i class="bi bi-tree-fill"></i> ${rubberLabel}</span>
+                        <span class="area-num">${rubrCurrentSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²${_areaDiffHtml(rubrCurrentSqm, rubrTargetSqm)}</span>
+                    </div>
+                    <div class="area-recap-target">เป้าหมาย: ${rubrTargetSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²${exSqm > 0 ? ` <span class="area-recap-breakdown">(${rubberSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} ยาง + ${exSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} กันออก)</span>` : ''}</div>
+                    ` : ''}
+                </div>
+            `;
+
             // Per-sub check_shape rows
             const shapeRowsHtml = allSubs.map(r => {
                 const label = labelMap[r.classtype] || r.classtype || '?';
@@ -858,6 +894,7 @@ const showFeaturePanel = (feature, layer) => {
             }).join('');
 
             $('#id-sub-list').html(allSubs.length ? `
+                ${areaRecapHtml}
                 <div class="check-section mb-2">
                     <div class="check-section-title">ตรวจสอบโฉนด</div>
                     <select class="form-select deed-check-area">${mkOpts(deedCa)}</select>
@@ -1203,13 +1240,7 @@ const loadGeoData = async () => {
                         const deedSqm = Number(row.deed_sqm || 0);
                         const rubrSqm = Number(row.rubr_sqm || 0);
                         const target = deedSqm > 0 ? deedSqm : rubrSqm;
-                        const diff = Math.round(cur - target);
-                        const sign = diff >= 0 ? '+' : '';
-                        const diffColor = Math.abs(diff) <= 100 ? 'green' : 'red';
-                        const diffHtml = target > 0
-                            ? ` <small style="color:${diffColor}">(${sign}${diff.toLocaleString('th-TH')})</small>`
-                            : '';
-                        return `<span class="area-num">${cur.toLocaleString('th-TH', { maximumFractionDigits: 0 })}${diffHtml}</span>`;
+                        return `<span class="area-num">${cur.toLocaleString('th-TH', { maximumFractionDigits: 0 })}${_areaDiffHtml(cur, target)}</span>`;
                     }
                 },
                 {
@@ -1232,12 +1263,7 @@ const loadGeoData = async () => {
                             const total = agg.rubberSqm + agg.exSqm;
                             const totalStr = total.toLocaleString('th-TH', { maximumFractionDigits: 0 });
                             const rubrSqm = Number(row.rubr_sqm || 0);
-                            const diff = Math.round(total - rubrSqm);
-                            const sign = diff >= 0 ? '+' : '';
-                            const diffColor = Math.abs(diff) <= 100 ? 'green' : 'red';
-                            const diffHtml = rubrSqm > 0
-                                ? ` <small style="color:${diffColor}">(${sign}${diff.toLocaleString('th-TH')})</small>`
-                                : '';
+                            const diffHtml = _areaDiffHtml(total, rubrSqm);
                             const breakdownHtml = agg.exSqm > 0
                                 ? `<div class="text-muted" style="font-size:0.68rem; line-height:1.2;">${valStr} ยาง + ${agg.exSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} กันออก</div>`
                                 : '';
