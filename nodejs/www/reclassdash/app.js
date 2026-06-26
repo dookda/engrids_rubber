@@ -741,6 +741,8 @@ const showFeaturePanel = (feature, layer) => {
     $('#display-farmer-id').text(props.id_farmer || '-');
     $('#display-farmer-name').html(`<i class="bi bi-person-fill"></i> ${props.farm_name || '-'}`);
     $('#panel-sub-id').val(props.sub_id || '');
+    $('#display-regis-no').text(props.regis_no || '-');
+    $('#display-age').text(props.age ? `${Number(props.age).toFixed(0)} ปี` : '-');
 
     // Area land
     const targetLandSqm = Number(props.deed_sqm || 0);
