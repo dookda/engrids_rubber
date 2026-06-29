@@ -1283,6 +1283,7 @@ table.dataTable tbody tr.selected > * {
 .worker-group-badge-pass    { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
 .worker-group-badge-fail    { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
 .worker-group-badge-pending { background: #fef9c3; color: #854d0e; border: 1.5px solid #fde047; }
+.worker-group-badge-unclassified { background: #f1f5f9; color: #64748b; border: 1.5px solid #cbd5e1; }
 
 .worker-verdict-badge {
     display: inline-flex;
@@ -1297,6 +1298,7 @@ table.dataTable tbody tr.selected > * {
 .worker-verdict-pass    { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
 .worker-verdict-fail    { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
 .worker-verdict-pending { background: #fef9c3; color: #854d0e; border: 1.5px solid #fde047; }
+.worker-verdict-unclassified { background: #f1f5f9; color: #64748b; border: 1.5px solid #cbd5e1; }
 
 .worker-class-dot {
     width: 10px;

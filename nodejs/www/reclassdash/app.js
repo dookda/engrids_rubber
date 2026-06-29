@@ -16,15 +16,18 @@ let _focusedSubId = null;
 const _getWorkerNavIds = (allRows) => {
     const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
+    const _isClassified = r => !!(r.classtype && String(r.classtype).trim());
     const grouped = {};
     allRows.forEach(r => {
         const key = String(r.id);
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(r);
     });
+    // กลุ่มที่ยังไม่มีแปลงไหนจำแนกประเภทเลย ยังไม่ถือว่า "unchecked" (รอตรวจ)
     const getGroupStatus = rows => {
         if (rows.some(_isFail)) return 'fail';
         if (rows.every(_isPass)) return 'pass';
+        if (!rows.some(_isClassified)) return 'unclassified';
         return 'unchecked';
     };
     return Object.keys(grouped).filter(id => {
@@ -105,8 +108,10 @@ $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
         if (!rowData) return true;
         const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
         const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
+        const _isClassified = r => !!(r.classtype && String(r.classtype).trim());
         switch (_activeFilter) {
-            case 'none': return !_isPass(rowData) && !_isFail(rowData);
+            // แปลงที่ยังไม่ได้จำแนกประเภท (classtype ว่าง) ยังไม่ต้องขึ้นในรายการ "ยังไม่ตรวจ"
+            case 'none': return _isClassified(rowData) && !_isPass(rowData) && !_isFail(rowData);
             case 'pass': return _isPass(rowData);
             case 'fail': return _isFail(rowData);
             case 'remark': return !!(rowData.remark || rowData.user_remark);
@@ -526,6 +531,7 @@ const buildWorkerPlotList = (filterId = null) => {
     }
     const _wIsPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
     const _wIsFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
+    const _wIsClassified = r => !!(r.classtype && String(r.classtype).trim());
 
     // Group ALL rows by parent ID first
     const allGrouped = {};
@@ -536,9 +542,11 @@ const buildWorkerPlotList = (filterId = null) => {
     });
 
     // Compute group-level status: fail > unchecked > pass
+    // กลุ่มที่ยังไม่มีแปลงไหนจำแนกประเภทเลย ยังไม่ถือว่า "unchecked" (รอตรวจ)
     const getGroupStatus = rows => {
         if (rows.some(_wIsFail)) return 'fail';
         if (rows.every(_wIsPass)) return 'pass';
+        if (!rows.some(_wIsClassified)) return 'unclassified';
         return 'unchecked';
     };
 
@@ -576,6 +584,8 @@ const buildWorkerPlotList = (filterId = null) => {
             verdictHtml = `<span class="worker-verdict-badge worker-verdict-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
         } else if (ca === 'ไม่ผ่าน' || cs === 'ไม่ผ่าน') {
             verdictHtml = `<span class="worker-verdict-badge worker-verdict-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+        } else if (!_wIsClassified(row)) {
+            verdictHtml = `<span class="worker-verdict-badge worker-verdict-unclassified"><i class="bi bi-dash-circle"></i> ยังไม่จำแนกประเภท</span>`;
         } else {
             verdictHtml = `<span class="worker-verdict-badge worker-verdict-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
         }
@@ -596,8 +606,9 @@ const buildWorkerPlotList = (filterId = null) => {
 
     // Build group header badge
     const getGroupBadge = status => {
-        if (status === 'pass')      return `<span class="worker-group-badge worker-group-badge-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
-        if (status === 'fail')      return `<span class="worker-group-badge worker-group-badge-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+        if (status === 'pass')         return `<span class="worker-group-badge worker-group-badge-pass"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
+        if (status === 'fail')         return `<span class="worker-group-badge worker-group-badge-fail"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+        if (status === 'unclassified') return `<span class="worker-group-badge worker-group-badge-unclassified"><i class="bi bi-dash-circle"></i> ยังไม่จำแนกประเภท</span>`;
         return `<span class="worker-group-badge worker-group-badge-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
     };
 
@@ -681,6 +692,9 @@ const getIdStatus = (allRows, id) => {
     if (hasFail) return 'fail';
     const allPass = subs.every(r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน');
     if (allPass) return 'pass';
+    // ยังไม่มีแปลงไหนในกลุ่มนี้ถูกจำแนกประเภทเลย ยังไม่ต้องขึ้นใน "ยังไม่ตรวจ"
+    const hasClassified = subs.some(r => r.classtype && String(r.classtype).trim());
+    if (!hasClassified) return 'unclassified';
     return 'none';
 };
 
@@ -1313,6 +1327,7 @@ const loadGeoData = async () => {
                         if (_userRole === 'worker') {
                             if (data === 'ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.82rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
                             if (data === 'ไม่ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.82rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+                            if (!row.classtype) return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f1f5f9;color:#64748b;font-size:0.82rem;font-weight:700;border:1.5px solid #cbd5e1;white-space:nowrap;"><i class="bi bi-dash-circle"></i> ยังไม่จำแนกประเภท</span>`;
                             return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fffbeb;color:#b45309;font-size:0.82rem;font-weight:700;border:1.5px solid #fde68a;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
                         }
                         const passSelected = data === 'ผ่าน' ? 'selected' : '';
@@ -1332,6 +1347,7 @@ const loadGeoData = async () => {
                         if (_userRole === 'worker') {
                             if (data === 'ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#d1fae5;color:#065f46;font-size:0.82rem;font-weight:700;border:1.5px solid #6ee7b7;white-space:nowrap;"><i class="bi bi-check-circle-fill"></i> ผ่าน</span>`;
                             if (data === 'ไม่ผ่าน') return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fee2e2;color:#991b1b;font-size:0.82rem;font-weight:700;border:1.5px solid #fca5a5;white-space:nowrap;"><i class="bi bi-x-circle-fill"></i> ไม่ผ่าน</span>`;
+                            if (!row.classtype) return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f1f5f9;color:#64748b;font-size:0.82rem;font-weight:700;border:1.5px solid #cbd5e1;white-space:nowrap;"><i class="bi bi-dash-circle"></i> ยังไม่จำแนกประเภท</span>`;
                             return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#fffbeb;color:#b45309;font-size:0.82rem;font-weight:700;border:1.5px solid #fde68a;white-space:nowrap;"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
                         }
                         const passSelected = data === 'ผ่าน' ? 'selected' : '';
