@@ -850,10 +850,12 @@ const showFeaturePanel = (feature, layer) => {
 
             // Build sub_id rows
             const labelMap = {
-                'rubber': 'ยางพารา', 'not-rubber': 'ไม่ลงทะเบียน', 'Other': 'ไม่ใช่ยาง',
-                'ex_age_rubber': 'กันออก(อายุ)', 'ex_building': 'กันออก(สิ่งปลูก)',
-                'ex_pond': 'กันออก(บ่อ)', 'ex_cr_area': 'กันออก(คสล.)',
-                'ex_ar_area': 'กันออก(ลาดยาง)', 'ex_other': 'กันออก(อื่นๆ)'
+                'rubber': 'ยางพาราที่ลงทะเบียน', 'not-rubber': 'ยางพาราที่ไม่ได้ลงทะเบียน',
+                'Other': 'ไม่ใช่ยางพารา', 'ex_age_rubber': 'พื้นที่กันออก (ยางพาราต่างอายุ)',
+                'ex_building': 'พื้นที่กันออก (สิ่งปลูกสร้าง)', 'ex_pond': 'พื้นที่กันออก (บ่อน้ำ)',
+                'ex_cr_area': 'พื้นที่กันออก (ถนนคอนกรีต)',
+                'ex_ar_area': 'พื้นที่กันออก (ถนนลาดยาง)',
+                'ex_other': 'พื้นที่กันออก (เพิ่มเติม)'
             };
             const colorMap = {
                 'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
