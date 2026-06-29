@@ -1799,7 +1799,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                     m."Regis_No" AS regis_no
                     FROM reclass_${baseTb} r
                     JOIN ${baseTb} m ON r.id = m.id
-                    WHERE r.geom IS NOT NULL ${extraTypeCondition}
+                    WHERE r.geom IS NOT NULL AND r.classtype IS NOT NULL AND TRIM(r.classtype) <> '' ${extraTypeCondition}
                 ) f;
             `;
         }
