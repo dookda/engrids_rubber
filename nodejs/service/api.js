@@ -1733,6 +1733,7 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
                     ELSE geom_point
                 END,
                 shpsplit_sqm = ST_Area(ST_Transform(g.geom_wgs, 32647)),
+                "class_Area" = ROUND((ST_Area(ST_Transform(g.geom_wgs, 32647))::numeric / 1600.0), 2),
                 editor = g.editor
             FROM geom_input g
             WHERE reclass_${tb}.sub_id = g.sub_id
