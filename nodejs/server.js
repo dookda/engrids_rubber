@@ -106,6 +106,7 @@ app.set('trust proxy', 1);
 app.use('/rub', require('./service/authen'));
 app.use('/rub', require('./service/api'));
 app.use('/rub', express.static('www'));
+app.use('/rub/uploads', express.static('uploads'));
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 const port = process.env.PORT || 3400;

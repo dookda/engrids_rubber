@@ -15,7 +15,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.css" />
     <link rel="stylesheet" href="./../assets/bootstrap.min.css">
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="./style.css?v=11">
 </head>
 
 <body>
@@ -346,6 +346,15 @@
                                             <textarea class="form-control form-control-sm" id="id-checker-remark"
                                                 rows="2"
                                                 placeholder="พิมพ์ความเห็น (ใช้กับทุก sub_id ของ ID นี้)..."></textarea>
+                                            <input type="hidden" id="id-remark-image-url" value="">
+                                            <div class="d-flex justify-content-end mt-1">
+                                                <button type="button" class="btn btn-outline-success btn-sm" id="btn-attach-remark-image">
+                                                    <i class="bi bi-camera-fill me-1"></i> แคปภาพ + วาดมาร์คจุดที่ต้องแก้ (เพิ่มได้หลายรูป)
+                                                </button>
+                                            </div>
+                                            <div id="remark-image-thumb-wrap" class="remark-image-thumb-wrap mt-2" style="display:none;">
+                                                <div id="remark-image-thumb-list" class="remark-image-thumb-list"></div>
+                                            </div>
                                         </div>
 
                                         <!-- Last saved info -->
@@ -495,6 +504,60 @@
         </div>
     </div>
 
+    <!-- Image Lightbox — เด้งดูรูปขนาดเต็มในหน้าเดิม (ใช้ทั้งฝั่งแอดมินและ worker) -->
+    <div id="imageLightbox" class="image-lightbox">
+        <button type="button" id="imageLightboxClose" class="image-lightbox-close" title="ปิด (Esc)" aria-label="ปิด">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <img id="imageLightboxImg" class="image-lightbox-img" src="" alt="ภาพขนาดเต็ม">
+    </div>
+
+    <!-- Annotate Image Modal — แคปภาพ + วาดมาร์คจุดที่ต้องแก้ -->
+    <div class="modal fade" id="annotateImageModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-xl">
+            <div class="modal-content">
+                <div class="modal-header py-2" style="background:#2e7d32; color:#fff;">
+                    <h6 class="modal-title"><i class="bi bi-camera-fill me-2"></i>แคปภาพ + วาดมาร์คจุดที่ต้องแก้</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <div id="annotateEmptyState" class="annotate-empty-state">
+                        <i class="bi bi-images"></i>
+                        <p class="mb-2">วางรูปที่แคปไว้ <b>(Ctrl+V)</b> หรือเลือกไฟล์รูปภาพ</p>
+                        <input type="file" id="annotateFileInput" accept="image/*" class="form-control form-control-sm w-auto mx-auto">
+                    </div>
+                    <div id="annotateEditArea" style="display:none;">
+                        <div class="annotate-toolbar mb-2">
+                            <div class="annotate-color-group">
+                                <button type="button" class="annotate-color active" data-color="#ff1744" style="background:#ff1744;" title="แดง"></button>
+                                <button type="button" class="annotate-color" data-color="#ffea00" style="background:#ffea00;" title="เหลือง"></button>
+                                <button type="button" class="annotate-color" data-color="#2979ff" style="background:#2979ff;" title="น้ำเงิน"></button>
+                                <button type="button" class="annotate-color" data-color="#00e676" style="background:#00e676;" title="เขียว"></button>
+                                <button type="button" class="annotate-color" data-color="#000000" style="background:#000000;" title="ดำ"></button>
+                            </div>
+                            <span class="annotate-slider-group" title="ขนาดเส้น"><i class="bi bi-pencil-fill"></i><input type="range" id="annotateBrushSize" min="2" max="14" value="4" class="annotate-brush-range"></span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-annotate-add-text" title="เพิ่มข้อความ (ลากย้ายตำแหน่งได้)"><i class="bi bi-fonts"></i> ข้อความ</button>
+                            <span class="annotate-slider-group" title="ขนาดตัวอักษร"><i class="bi bi-type"></i><input type="range" id="annotateTextSize" min="14" max="48" value="26" class="annotate-brush-range"></span>
+                            <div class="annotate-toolbar-actions">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-annotate-undo" title="ย้อนกลับ"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-annotate-clear" title="ล้างเส้นทั้งหมด"><i class="bi bi-eraser-fill"></i></button>
+                                <button type="button" class="btn btn-outline-danger btn-sm" id="btn-annotate-remove-image" title="ลบรูปนี้ เลือกใหม่"><i class="bi bi-trash3-fill"></i></button>
+                            </div>
+                        </div>
+                        <div class="annotate-canvas-wrap">
+                            <canvas id="annotateCanvas"></canvas>
+                        </div>
+                        <small class="text-muted d-block mt-1">ลากข้อความเพื่อย้ายตำแหน่ง • ดับเบิลคลิกที่ข้อความเพื่อแก้ไข/ลบ</small>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">ยกเลิก</button>
+                    <button type="button" class="btn btn-success btn-sm" id="btn-annotate-save"><i class="bi bi-check-circle-fill me-1"></i> บันทึกรูป</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
@@ -503,7 +566,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.min.js"></script> -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
-    <script src="./app.js?v=4"></script>
+    <script src="./app.js?v=11"></script>
 </body>
 
 </html>

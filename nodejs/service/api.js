@@ -36,38 +36,51 @@ async function ensureReviewHistoryTable() {
             check_area  TEXT,
             check_shape TEXT,
             remark      TEXT,
+            remark_image TEXT,
             reviewer    TEXT,
             review_ts   TIMESTAMP WITHOUT TIME ZONE,
             reset_reason TEXT,
             reset_ts    TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
         )
     `);
+    await pool.query(`
+        DO $$ BEGIN
+            ALTER TABLE review_history ADD COLUMN remark_image TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$;
+    `).catch(() => {});
     _reviewHistoryReady = true;
 }
 
 async function _saveHistoryRows(tb, rows, reason) {
-    // ตรวจสอบว่า remark column มีอยู่หรือไม่
-    let hasRemark = false;
-    try {
-        const colCheck = await pool.query(
-            `SELECT 1 FROM information_schema.columns
-             WHERE table_schema='public' AND table_name=$1 AND column_name='remark'`,
-            [`reclass_${tb}`]
-        );
-        hasRemark = colCheck.rowCount > 0;
-    } catch (_) {}
+    // ตรวจสอบว่า remark / remark_image column มีอยู่หรือไม่
+    const colCheck = await pool.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema='public' AND table_name=$1 AND column_name IN ('remark','remark_image')`,
+        [`reclass_${tb}`]
+    ).catch(() => ({ rows: [] }));
+    const presentCols = colCheck.rows.map(r => r.column_name);
+    const hasRemark = presentCols.includes('remark');
+    const hasRemarkImage = presentCols.includes('remark_image');
 
     let remarkMap = {};
-    if (hasRemark && rows.length > 0) {
+    let remarkImageMap = {};
+    if ((hasRemark || hasRemarkImage) && rows.length > 0) {
         try {
             const subIds = rows.map(r => r.sub_id).filter(Boolean);
             if (subIds.length > 0) {
                 const placeholders = subIds.map((_, i) => `$${i + 1}`).join(',');
+                const selectCols = ['sub_id'];
+                if (hasRemark) selectCols.push('remark');
+                if (hasRemarkImage) selectCols.push('remark_image');
                 const remarkRows = await pool.query(
-                    `SELECT sub_id, remark FROM reclass_${tb} WHERE sub_id IN (${placeholders})`,
+                    `SELECT ${selectCols.join(', ')} FROM reclass_${tb} WHERE sub_id IN (${placeholders})`,
                     subIds
                 );
-                remarkRows.rows.forEach(r => { remarkMap[r.sub_id] = r.remark; });
+                remarkRows.rows.forEach(r => {
+                    remarkMap[r.sub_id] = r.remark;
+                    remarkImageMap[r.sub_id] = r.remark_image;
+                });
             }
         } catch (_) {}
     }
@@ -75,10 +88,10 @@ async function _saveHistoryRows(tb, rows, reason) {
     for (const row of rows) {
         await pool.query(
             `INSERT INTO review_history
-             (tb_name, parent_id, sub_id, check_area, check_shape, remark, reviewer, review_ts, reset_reason)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+             (tb_name, parent_id, sub_id, check_area, check_shape, remark, remark_image, reviewer, review_ts, reset_reason)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
             [tb, row.id, row.sub_id, row.check_area, row.check_shape,
-             remarkMap[row.sub_id] || null, row.reviewer, row.review_ts, reason]
+             remarkMap[row.sub_id] || null, remarkImageMap[row.sub_id] || null, row.reviewer, row.review_ts, reason]
         );
     }
 }
@@ -93,6 +106,7 @@ async function ensureReclassReviewColumns(tb) {
         { name: 'user_remark',    type: 'text' },
         { name: 'user_remark_ts', type: 'timestamp without time zone' },
         { name: '"class_Area"',    type: 'numeric' },
+        { name: 'remark_image',   type: 'text' },
     ];
     for (const col of cols) {
         await pool.query(`
@@ -782,7 +796,7 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
         `).catch(() => {});
 
         // Auto-add review columns if they don't exist (for older tables)
-        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'class_Area'];
+        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'class_Area', 'remark_image'];
         for (const col of alterCols) {
             let colType = 'text';
             if (col === 'review_ts' || col === 'user_remark_ts') colType = 'timestamp without time zone';
@@ -835,6 +849,7 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.check_area,
                     a.check_shape,
                     a.remark,
+                    a.remark_image,
                     a.reviewer,
                     a.user_remark,
                     a.user_remark_ts,
@@ -860,7 +875,7 @@ app.put('/api/update_review/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { sub_id, check_area, check_shape, remark, reviewer, user_remark } = req.body;
+        const { sub_id, check_area, check_shape, remark, reviewer, user_remark, remark_image } = req.body;
         if (!sub_id) {
             return res.status(400).json({ error: 'sub_id is required' });
         }
@@ -871,11 +886,12 @@ app.put('/api/update_review/:tb', async (req, res) => {
                 check_shape = $2,
                 remark = $3,
                 reviewer = $4,
-                review_ts = NOW()
-            WHERE sub_id = $5
+                review_ts = NOW(),
+                remark_image = $5
+            WHERE sub_id = $6
             RETURNING *`;
 
-        const values = [check_area || null, check_shape || null, remark || null, reviewer || null, sub_id];
+        const values = [check_area || null, check_shape || null, remark || null, reviewer || null, remark_image || null, sub_id];
         const result = await pool.query(sql, values);
 
         if (result.rowCount === 0) {
@@ -905,6 +921,7 @@ app.put('/api/clear_review/:tb', async (req, res) => {
             SET check_area = NULL,
                 check_shape = NULL,
                 remark = NULL,
+                remark_image = NULL,
                 reviewer = NULL,
                 review_ts = NULL
             WHERE sub_id = $1
@@ -974,6 +991,30 @@ app.put('/api/update_user_remark/:tb', async (req, res) => {
         }
 
         res.status(200).json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Upload an annotated remark image (admin marks up a screenshot to show what needs fixing)
+app.post('/api/upload_remark_image', async (req, res) => {
+    try {
+        const { image } = req.body;
+        const matches = typeof image === 'string' && image.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/);
+        if (!matches) {
+            return res.status(400).json({ success: false, error: 'Invalid image data' });
+        }
+        const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+
+        const dir = path.join(__dirname, '..', 'uploads', 'remark_images');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        const fileName = `remark_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        fs.writeFileSync(path.join(dir, fileName), buffer);
+
+        res.status(200).json({ success: true, url: `/rub/uploads/remark_images/${fileName}` });
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, error: err.message });
