@@ -1167,8 +1167,8 @@ table.dataTable tbody tr.selected > * {
 
 .worker-plot-item {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 6px;
     padding: 7px 10px;
     border-radius: 10px;
     cursor: pointer;
@@ -1176,6 +1176,12 @@ table.dataTable tbody tr.selected > * {
     border: 1.5px solid transparent;
     margin-bottom: 3px;
     background: rgba(255,255,255,0.6);
+}
+.worker-plot-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
 }
 .worker-plot-item:hover {
     background: rgba(76, 175, 80, 0.08);
@@ -1334,6 +1340,49 @@ table.dataTable tbody tr.selected > * {
     text-overflow: ellipsis;
     line-height: 1.3;
     margin-top: 1px;
+}
+.worker-plot-checker-note {
+    width: 100%;
+    box-sizing: border-box;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 6px 8px;
+}
+.worker-plot-checker-note-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #b45309;
+    margin-bottom: 5px;
+}
+.worker-plot-checker-note-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.btn-checker-note-view {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #92400e;
+    background: #fff;
+    border: 1px solid #fcd34d;
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+.btn-checker-note-view:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+.btn-checker-note-view:active {
+    transform: scale(0.96);
 }
 
 /* Worker selected plot banner */
@@ -1521,4 +1570,192 @@ table.dataTable tbody tr.selected > * {
     font-size: 0.65rem;
     color: #0dcaf0;
     opacity: 0.7;
+}
+.history-image-thumb {
+    max-width: 56px;
+    max-height: 44px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.12);
+    object-fit: cover;
+    cursor: zoom-in;
+}
+
+/* ===== Remark image attachments (checker box) — รองรับหลายรูป ===== */
+.remark-image-thumb-wrap {
+    background: #fff;
+    border: 1px solid #c8e6c9;
+    border-radius: 10px;
+    padding: 8px;
+}
+.remark-image-thumb-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+}
+.remark-image-thumb-item {
+    position: relative;
+    display: inline-block;
+}
+.remark-image-thumb {
+    max-width: 90px;
+    max-height: 70px;
+    display: block;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.1);
+    object-fit: cover;
+    cursor: pointer;
+}
+.remark-image-remove-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.1);
+    background: #fff;
+    color: #dc3545;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.remark-image-remove-btn:hover {
+    background: #dc3545;
+    color: #fff;
+}
+
+/* ===== Note popup image (worker view) — รองรับหลายรูป ===== */
+.note-popup-img {
+    max-width: 280px;
+    max-height: 60vh;
+    border-radius: 10px;
+    border: 1px solid rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    cursor: zoom-in;
+    object-fit: contain;
+}
+
+/* ===== Image Lightbox (เด้งดูรูปขนาดเต็มในหน้าเดิม) ===== */
+.image-lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.85);
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    animation: imageLightboxFadeIn 0.15s ease-out;
+}
+.image-lightbox.show {
+    display: flex;
+}
+@keyframes imageLightboxFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.image-lightbox-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+    object-fit: contain;
+    background: #fff;
+}
+.image-lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.95);
+    color: #212529;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    transition: background 0.15s, transform 0.15s;
+}
+.image-lightbox-close:hover {
+    background: #fff;
+    transform: scale(1.08);
+}
+
+/* ===== Annotate Image Modal ===== */
+.annotate-empty-state {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: #6c757d;
+}
+.annotate-empty-state i {
+    font-size: 2.5rem;
+    color: #a5d6a7;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+.annotate-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+.annotate-color-group {
+    display: flex;
+    gap: 6px;
+}
+.annotate-color {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+    cursor: pointer;
+    padding: 0;
+}
+.annotate-color.active {
+    box-shadow: 0 0 0 2px #2e7d32;
+    transform: scale(1.1);
+}
+.annotate-brush-range {
+    width: 90px;
+}
+.annotate-slider-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #5f6b7a;
+    font-size: 0.85rem;
+}
+.annotate-toolbar-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+.annotate-canvas-wrap {
+    text-align: center;
+    background: #eceff1;
+    border: 1px dashed #b0bec5;
+    border-radius: 10px;
+    padding: 6px;
+    max-height: 80vh;
+    overflow: auto;
+}
+#annotateCanvas {
+    max-width: 100%;
+    border-radius: 6px;
+    cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDE2IDE2IiBmaWxsPSIjMjEyNTI5Ij48cGF0aCBkPSJNMTIuODU0LjE0NmEuNS41IDAgMCAwLS43MDcgMEwxMC41IDEuNzkzIDE0LjIwNyA1LjVsMS42NDctMS42NDZhLjUuNSAwIDAgMCAwLS43MDh6bS42NDYgNi4wNjFMOS43OTMgMi41IDMuMjkzIDlIMy41YS41LjUgMCAwIDEgLjUuNXYuNWguNWEuNS41IDAgMCAxIC41LjV2LjVoLjVhLjUuNSAwIDAgMSAuNS41di41aC41YS41LjUgMCAwIDEgLjUuNXYuMjA3bDYuNS02LjV6bS03LjQ2OCA3LjQ2OEEuNS41IDAgMCAxIDYgMTMuNVYxM2gtLjVhLjUuNSAwIDAgMS0uNS0uNVYxMmgtLjVhLjUuNSAwIDAgMS0uNS0uNVYxMWgtLjVhLjUuNSAwIDAgMS0uNS0uNVYxMGgtLjVhLjQ5OS40OTkgMCAwIDEtLjE3NS0uMDMybC0uMTc5LjE3OGEuNS41IDAgMCAwLS4xMS4xNjhsLTIgNWEuNS41IDAgMCAwIC42NS42NWw1LTJhLjUuNSAwIDAgMCAuMTY4LS4xMWwuMTc4LS4xNzh6Ii8+PC9zdmc+') 2 22, crosshair;
+    touch-action: none;
 }

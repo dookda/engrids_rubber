@@ -12,6 +12,21 @@ let _currentReviewId = null;
 let _focusedLayer = null;      // { layer, originalStyle } — currently zoomed-to polygon
 let _focusedSubId = null;
 
+// ── Annotate image modal state (checker: capture + mark up a screenshot) ──
+let _annotateBaseImage = null;   // HTMLImageElement currently loaded into the canvas
+let _annotateStrokes = [];       // [{ color, width, points:[{x,y}] }]
+let _annotateCurrentStroke = null;
+let _annotateDrawing = false;
+let _annotateColor = '#ff1744';
+let _annotateBrushSize = 4;
+let _annotateTexts = [];         // [{ text, x, y, color, fontSize }] — ลากย้ายตำแหน่งได้, ยาวเกินจะตัดบรรทัดอัตโนมัติ
+let _annotateActions = [];       // ลำดับการสร้าง stroke/text ใหม่ ใช้สำหรับปุ่มย้อนกลับ
+let _annotateDraggingText = null;
+let _annotateDragOffset = { x: 0, y: 0 };
+let _annotateTextSize = 26;      // ขนาดตัวอักษรปัจจุบัน ปรับได้จากแถบเลื่อน
+const ANNOTATE_TEXT_PADDING = 6;
+const ANNOTATE_TEXT_LINE_HEIGHT_RATIO = 1.25;
+
 // Returns unique parent IDs filtered by current _workerStatusFilter (group-level status)
 const _getWorkerNavIds = (allRows) => {
     const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
@@ -140,6 +155,397 @@ function formatRemarkPopup(text) {
     }
     return lines.map(l => esc(l)).join('<br>');
 }
+
+// เปิด modal แสดงข้อความ/รูปภาพแบบเต็ม — ใช้ร่วมกันทั้งตารางแอดมินและรายการแปลงฝั่ง worker
+function _showNotePopup(text, images, title) {
+    $('#notePopupTitle').html(title);
+    let bodyHtml = text ? formatRemarkPopup(text) : '';
+    if (images && images.length) {
+        bodyHtml += `<div class="mt-2 text-center d-flex flex-wrap gap-2 justify-content-center">${images.map(img =>
+            `<img src="${img}" class="note-popup-img" alt="ภาพประกอบ" title="คลิกเพื่อดูภาพขนาดเต็ม">`).join('')}</div>`;
+    }
+    $('#notePopupBody').html(bodyHtml || '<span class="text-muted">ไม่มีข้อมูล</span>');
+    // Widen the modal when there's an image attached so the markup is actually visible
+    $('#notePopupModal .modal-dialog').toggleClass('modal-md', !(images && images.length)).toggleClass('modal-xl', !!(images && images.length));
+    const modal = new bootstrap.Modal(document.getElementById('notePopupModal'));
+    modal.show();
+}
+
+// ── Annotate Image Modal — แคปภาพ + วาดมาร์คจุดที่ต้องแก้ (ใช้กับหมายเหตุของ checker) ──
+function _annotateResetModal() {
+    _annotateBaseImage = null;
+    _annotateStrokes = [];
+    _annotateTexts = [];
+    _annotateActions = [];
+    _annotateCurrentStroke = null;
+    _annotateDraggingText = null;
+    _annotateDrawing = false;
+    _annotateTextSize = 26;
+    $('#annotateFileInput').val('');
+    $('#annotateTextSize').val(26);
+    $('#annotateEditArea').hide();
+    $('#annotateEmptyState').show();
+}
+
+// ความกว้างสูงสุดของข้อความก่อนจะตัดบรรทัด — กันไม่ให้ข้อความยาวล้นออกนอกภาพ
+function _annotateTextMaxWidth(canvas) {
+    return Math.max(120, Math.min(canvas.width - ANNOTATE_TEXT_PADDING * 4, canvas.width * 0.75));
+}
+
+// ตัดข้อความเป็นหลายบรรทัดให้พอดีกับ maxWidth (ตัดทีละตัวอักษร เผื่อภาษาไทยที่ไม่มีช่องว่างคั่นคำ)
+function _annotateWrapLines(ctx, text, maxWidth) {
+    const lines = [];
+    let current = '';
+    for (const ch of text) {
+        const test = current + ch;
+        if (current && ctx.measureText(test).width > maxWidth) {
+            lines.push(current);
+            current = ch;
+        } else {
+            current = test;
+        }
+    }
+    if (current) lines.push(current);
+    return lines;
+}
+
+// กรอบขนาดข้อความ (สำหรับวาดและทดสอบจุดที่คลิก/ลาก) —ยึดจุด (x,y) เป็นจุดกึ่งกลางของกรอบ
+function _annotateTextBounds(ctx, t, canvas) {
+    ctx.font = `bold ${t.fontSize}px sans-serif`;
+    const maxWidth = _annotateTextMaxWidth(canvas);
+    const lines = _annotateWrapLines(ctx, t.text, maxWidth);
+    const lineHeight = t.fontSize * ANNOTATE_TEXT_LINE_HEIGHT_RATIO;
+    const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+    const height = lines.length * lineHeight;
+    return {
+        x: t.x - widest / 2 - ANNOTATE_TEXT_PADDING,
+        y: t.y - height / 2 - ANNOTATE_TEXT_PADDING,
+        width: widest + ANNOTATE_TEXT_PADDING * 2,
+        height: height + ANNOTATE_TEXT_PADDING * 2,
+        lines,
+        lineHeight
+    };
+}
+
+// หาข้อความบนสุดที่อยู่ตรงจุดที่คลิก (ไล่จากบนลงล่างเพื่อให้ของที่วางทับล่าสุดถูกเลือกก่อน)
+function _annotateHitTestText(pt) {
+    const canvas = document.getElementById('annotateCanvas');
+    const ctx = canvas.getContext('2d');
+    for (let i = _annotateTexts.length - 1; i >= 0; i--) {
+        const b = _annotateTextBounds(ctx, _annotateTexts[i], canvas);
+        if (pt.x >= b.x && pt.x <= b.x + b.width && pt.y >= b.y && pt.y <= b.y + b.height) {
+            return _annotateTexts[i];
+        }
+    }
+    return null;
+}
+
+function _annotateRender() {
+    const canvas = document.getElementById('annotateCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (_annotateBaseImage) ctx.drawImage(_annotateBaseImage, 0, 0, canvas.width, canvas.height);
+    _annotateStrokes.forEach(s => {
+        if (!s.points.length) return;
+        ctx.strokeStyle = s.color;
+        ctx.fillStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (s.points.length < 2) {
+            ctx.beginPath();
+            ctx.arc(s.points[0].x, s.points[0].y, s.width / 2, 0, Math.PI * 2);
+            ctx.fill();
+            return;
+        }
+        ctx.beginPath();
+        ctx.moveTo(s.points[0].x, s.points[0].y);
+        for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+        ctx.stroke();
+    });
+    _annotateTexts.forEach(t => {
+        ctx.font = `bold ${t.fontSize}px sans-serif`;
+        ctx.fillStyle = t.color;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const b = _annotateTextBounds(ctx, t, canvas);
+        const startY = t.y - b.lineHeight * (b.lines.length - 1) / 2;
+        b.lines.forEach((line, i) => ctx.fillText(line, t.x, startY + i * b.lineHeight));
+        if (t === _annotateDraggingText) {
+            ctx.save();
+            ctx.setLineDash([4, 3]);
+            ctx.strokeStyle = '#2e7d32';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(b.x, b.y, b.width, b.height);
+            ctx.restore();
+        }
+    });
+}
+
+function _annotateLoadImage(dataUrl) {
+    const img = new Image();
+    img.onload = () => {
+        const maxDim = 1600;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w > maxDim || h > maxDim) {
+            const scale = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+        }
+        const canvas = document.getElementById('annotateCanvas');
+        canvas.width = w;
+        canvas.height = h;
+        _annotateBaseImage = img;
+        _annotateStrokes = [];
+        $('#annotateEmptyState').hide();
+        $('#annotateEditArea').show();
+        _annotateRender();
+    };
+    img.src = dataUrl;
+}
+
+function _annotateGetCanvasPoint(evt) {
+    const canvas = document.getElementById('annotateCanvas');
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (evt.clientX - rect.left) * scaleX, y: (evt.clientY - rect.top) * scaleY };
+}
+
+function _annotateHandlePastedFile(file) {
+    if (!file || file.type.indexOf('image') === -1) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => _annotateLoadImage(ev.target.result);
+    reader.readAsDataURL(file);
+}
+
+// Open the modal from the checker remark box
+$(document).on('click', '#btn-attach-remark-image', function () {
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('annotateImageModal'));
+    modal.show();
+});
+
+// ── Remark images (หลายรูป) — เก็บเป็น JSON array string ใน hidden field เดิม (#id-remark-image-url) ──
+// รองรับข้อมูลเก่าที่เคยเก็บเป็น URL เดี่ยว (ไม่ใช่ JSON) ด้วย
+function _parseRemarkImagesValue(raw) {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    } catch (_) { /* ข้อมูลเก่า: เป็น URL เดี่ยวธรรมดา ไม่ใช่ JSON */ }
+    return [raw];
+}
+function _getRemarkImages() {
+    return _parseRemarkImagesValue($('#id-remark-image-url').val());
+}
+function _renderRemarkImageThumbs(urls) {
+    const list = $('#remark-image-thumb-list').empty();
+    urls.forEach((url, idx) => {
+        list.append(
+            $('<div class="remark-image-thumb-item">').append(
+                $('<img class="remark-image-thumb" alt="ภาพประกอบหมายเหตุ" title="คลิกเพื่อดูภาพขนาดเต็ม">').attr('src', url),
+                $('<button type="button" class="remark-image-remove-btn" title="ลบภาพนี้"><i class="bi bi-x-lg"></i></button>').attr('data-idx', idx)
+            )
+        );
+    });
+    $('#remark-image-thumb-wrap').toggle(urls.length > 0);
+}
+function _setRemarkImages(urls) {
+    $('#id-remark-image-url').val(urls.length ? JSON.stringify(urls) : '');
+    _renderRemarkImageThumbs(urls);
+}
+
+// Remove one attached image from the current remark (cleared on next save)
+$(document).on('click', '.remark-image-remove-btn', function () {
+    if (!confirm('ลบภาพนี้ออกจากหมายเหตุ?')) return;
+    const idx = parseInt($(this).attr('data-idx'), 10);
+    const urls = _getRemarkImages();
+    urls.splice(idx, 1);
+    _setRemarkImages(urls);
+});
+
+// View images full-size in a lightbox overlay on the same page
+function _openImageLightbox(url) {
+    if (!url) return;
+    $('#imageLightboxImg').attr('src', url);
+    $('#imageLightbox').addClass('show');
+}
+function _closeImageLightbox() {
+    $('#imageLightbox').removeClass('show');
+    $('#imageLightboxImg').attr('src', '');
+}
+$(document).on('click', '.remark-image-thumb, .note-popup-img', function () {
+    _openImageLightbox($(this).attr('src'));
+});
+$(document).on('click', '#imageLightboxClose', _closeImageLightbox);
+$(document).on('click', '#imageLightbox', function (e) {
+    if (e.target.id === 'imageLightbox') _closeImageLightbox();
+});
+$(document).on('keydown', function (e) {
+    if (e.key === 'Escape' && $('#imageLightbox').hasClass('show')) _closeImageLightbox();
+});
+
+$('#annotateImageModal').on('shown.bs.modal', function () {
+    document.addEventListener('paste', _annotatePasteListener);
+});
+$('#annotateImageModal').on('hidden.bs.modal', function () {
+    document.removeEventListener('paste', _annotatePasteListener);
+    _annotateResetModal();
+});
+
+function _annotatePasteListener(e) {
+    const items = (e.clipboardData || window.clipboardData)?.items;
+    if (!items) return;
+    for (const item of items) {
+        if (item.type.indexOf('image') !== -1) {
+            _annotateHandlePastedFile(item.getAsFile());
+            e.preventDefault();
+            break;
+        }
+    }
+}
+
+$('#annotateFileInput').on('change', function (e) {
+    _annotateHandlePastedFile(e.target.files[0]);
+});
+
+$(document).on('click', '.annotate-color', function () {
+    $('.annotate-color').removeClass('active');
+    $(this).addClass('active');
+    _annotateColor = $(this).data('color');
+});
+
+$('#annotateBrushSize').on('input', function () {
+    _annotateBrushSize = parseInt(this.value, 10);
+});
+
+$(document).on('pointerdown', '#annotateCanvas', function (e) {
+    if (!_annotateBaseImage) return;
+    const pt = _annotateGetCanvasPoint(e.originalEvent);
+    const hitText = _annotateHitTestText(pt);
+    if (hitText) {
+        _annotateDraggingText = hitText;
+        _annotateDragOffset = { x: pt.x - hitText.x, y: pt.y - hitText.y };
+        this.style.cursor = 'grabbing';
+        _annotateRender();
+        return;
+    }
+    _annotateDrawing = true;
+    _annotateCurrentStroke = { color: _annotateColor, width: _annotateBrushSize, points: [pt] };
+    _annotateStrokes.push(_annotateCurrentStroke);
+    _annotateActions.push({ type: 'stroke', ref: _annotateCurrentStroke });
+});
+$(document).on('pointermove', '#annotateCanvas', function (e) {
+    const pt = _annotateGetCanvasPoint(e.originalEvent);
+    if (_annotateDraggingText) {
+        _annotateDraggingText.x = pt.x - _annotateDragOffset.x;
+        _annotateDraggingText.y = pt.y - _annotateDragOffset.y;
+        _annotateRender();
+        return;
+    }
+    if (_annotateDrawing && _annotateCurrentStroke) {
+        _annotateCurrentStroke.points.push(pt);
+        _annotateRender();
+        return;
+    }
+    // ไม่ได้ลากอยู่ — เปลี่ยนเคอร์เซอร์เป็นมือจับเมื่อชี้อยู่บนข้อความ เพื่อบอกว่าย้ายตำแหน่งได้
+    this.style.cursor = _annotateHitTestText(pt) ? 'grab' : '';
+});
+$(document).on('pointerup pointerleave', '#annotateCanvas', function () {
+    _annotateDrawing = false;
+    _annotateCurrentStroke = null;
+    if (_annotateDraggingText) {
+        _annotateDraggingText = null;
+        this.style.cursor = '';
+        _annotateRender();
+    }
+});
+
+// ดับเบิลคลิกที่ข้อความ: แก้ไขข้อความ (ปล่อยว่างเพื่อลบ)
+$(document).on('dblclick', '#annotateCanvas', function (e) {
+    const pt = _annotateGetCanvasPoint(e.originalEvent);
+    const hitText = _annotateHitTestText(pt);
+    if (!hitText) return;
+    const next = prompt('แก้ไขข้อความ (เว้นว่างเพื่อลบ)', hitText.text);
+    if (next === null) return;
+    if (!next.trim()) {
+        _annotateTexts.splice(_annotateTexts.indexOf(hitText), 1);
+        const actionIdx = _annotateActions.findIndex(a => a.ref === hitText);
+        if (actionIdx !== -1) _annotateActions.splice(actionIdx, 1);
+    } else {
+        hitText.text = next.trim();
+        hitText.fontSize = _annotateTextSize; // ปรับขนาดตามแถบเลื่อนปัจจุบันไปด้วยตอนแก้ไข
+    }
+    _annotateRender();
+});
+
+$('#annotateTextSize').on('input', function () {
+    _annotateTextSize = parseInt(this.value, 10);
+});
+
+$('#btn-annotate-add-text').on('click', function () {
+    if (!_annotateBaseImage) { alert('กรุณาวางหรือเลือกรูปก่อน'); return; }
+    const text = prompt('ข้อความที่ต้องการเพิ่ม (ลากย้ายตำแหน่งได้หลังเพิ่ม, ยาวเกินไปจะตัดบรรทัดอัตโนมัติ)');
+    if (!text || !text.trim()) return;
+    const canvas = document.getElementById('annotateCanvas');
+    const newText = {
+        text: text.trim(),
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        color: _annotateColor,
+        fontSize: _annotateTextSize
+    };
+    _annotateTexts.push(newText);
+    _annotateActions.push({ type: 'text', ref: newText });
+    _annotateRender();
+});
+
+$('#btn-annotate-undo').on('click', function () {
+    const last = _annotateActions.pop();
+    if (!last) return;
+    if (last.type === 'stroke') _annotateStrokes.splice(_annotateStrokes.indexOf(last.ref), 1);
+    else _annotateTexts.splice(_annotateTexts.indexOf(last.ref), 1);
+    _annotateRender();
+});
+$('#btn-annotate-clear').on('click', function () {
+    _annotateStrokes = [];
+    _annotateTexts = [];
+    _annotateActions = [];
+    _annotateRender();
+});
+$('#btn-annotate-remove-image').on('click', function () {
+    _annotateResetModal();
+});
+
+$('#btn-annotate-save').on('click', async function () {
+    if (!_annotateBaseImage) { alert('กรุณาวางหรือเลือกรูปก่อน'); return; }
+    const canvas = document.getElementById('annotateCanvas');
+    const dataUrl = canvas.toDataURL('image/png');
+    const btn = $(this);
+    btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> กำลังบันทึก...');
+    try {
+        const res = await fetch('/rub/api/upload_remark_image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: dataUrl })
+        });
+        const data = await res.json();
+        if (data.success) {
+            const urls = _getRemarkImages();
+            urls.push(data.url);
+            _setRemarkImages(urls);
+            bootstrap.Modal.getInstance(document.getElementById('annotateImageModal'))?.hide();
+        } else {
+            alert('อัปโหลดรูปไม่สำเร็จ: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        console.error('Upload remark image error:', err);
+        alert('เกิดข้อผิดพลาดในการอัปโหลดรูป');
+    } finally {
+        btn.prop('disabled', false).html('<i class="bi bi-check-circle-fill me-1"></i> บันทึกรูป');
+    }
+});
 
 // Initialize map and feature group
 const map = L.map('map', { maxZoom: 22 }).setView([18.819620993471577, 100.8784385963758], 13);
@@ -432,10 +838,10 @@ const _workerColorMap = {
 };
 const _workerLabelMap = {
     'rubber': 'ยางพาราที่ลงทะเบียน', 'not-rubber': 'ยางพาราที่ไม่ได้ลงทะเบียน',
-    'Other': 'ไม่ใช่ยางพารา', 'ex_age_rubber': 'กันออก (อายุ)',
-    'ex_building': 'กันออก (สิ่งปลูกสร้าง)', 'ex_pond': 'กันออก (บ่อน้ำ)',
-    'ex_cr_area': 'กันออก (คสล.)', 'ex_ar_area': 'กันออก (ลาดยาง)',
-    'ex_other': 'กันออก (อื่นๆ)'
+    'Other': 'ไม่ใช่ยางพารา', 'ex_age_rubber': 'พื้นที่กันออก (ยางพาราต่างอายุ)',
+    'ex_building': 'พื้นที่กันออก (สิ่งปลูกสร้าง)', 'ex_pond': 'พื้นที่กันออก (บ่อน้ำ)',
+    'ex_cr_area': 'พื้นที่กันออก (ถนนคอนกรีต)', 'ex_ar_area': 'พื้นที่กันออก (ถนนลาดยาง)',
+    'ex_other': 'พื้นที่กันออก (เพิ่มเติม)'
 };
 
 // Update the selected-plot banner in the worker quick panel
@@ -589,18 +995,35 @@ const buildWorkerPlotList = (filterId = null) => {
         } else {
             verdictHtml = `<span class="worker-verdict-badge worker-verdict-pending"><i class="bi bi-hourglass-split"></i> รอตรวจ</span>`;
         }
+        const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const noteTag = row.user_remark ? `<span style="font-size:0.65rem;color:#1d4ed8;"><i class="bi bi-chat-dots-fill"></i></span>` : '';
         const notePreview = row.user_remark
-            ? `<div class="worker-plot-note"><i class="bi bi-chat-dots-fill" style="font-size:0.65rem;"></i> ${row.user_remark.substring(0, 20)}${row.user_remark.length > 20 ? '…' : ''}</div>`
+            ? `<div class="worker-plot-note"><i class="bi bi-chat-dots-fill" style="font-size:0.65rem;"></i> ${esc(row.user_remark.substring(0, 20))}${row.user_remark.length > 20 ? '…' : ''}</div>`
+            : '';
+        // หมายเหตุผู้เช็ก — สิ่งที่ต้องแก้ไขสำหรับแปลงนี้ แสดงเป็นแถบปุ่มกดดู แทนการพิมพ์ข้อความยาวๆ inline (อ่านไม่ได้ถ้ายาวเกิน)
+        // ต้องแสดงแม้ผู้เช็กแนบ "แค่รูป" โดยไม่ได้พิมพ์ข้อความเลยก็ตาม (ไม่ใช่เช็คแค่ row.remark เพียวๆ)
+        const checkerImages = _parseRemarkImagesValue(row.remark_image);
+        const hasCheckerNote = !!(row.remark || checkerImages.length);
+        const checkerNoteBanner = hasCheckerNote
+            ? `<div class="worker-plot-checker-note">
+                <div class="worker-plot-checker-note-label"><i class="bi bi-exclamation-circle-fill"></i> ผู้เช็คแจ้ง</div>
+                <div class="worker-plot-checker-note-actions">
+                    ${row.remark ? `<button type="button" class="btn-checker-note-view" data-subid="${row.sub_id}" data-kind="text"><i class="bi bi-chat-square-text-fill"></i> ดูข้อความ</button>` : ''}
+                    ${checkerImages.length ? `<button type="button" class="btn-checker-note-view" data-subid="${row.sub_id}" data-kind="img"><i class="bi bi-camera-fill"></i> ดูรูปภาพ (${checkerImages.length})</button>` : ''}
+                </div>
+            </div>`
             : '';
         return `<div class="worker-plot-item" data-subid="${row.sub_id}" data-id="${row.id}">
-            <div class="worker-class-dot" style="background:${color};"></div>
-            <div class="worker-plot-info">
-                <div class="worker-plot-ids"><span class="text-primary fw-bold">#${row.sub_id}</span> ${noteTag}</div>
-                <div class="worker-plot-class">${label}</div>
-                ${notePreview}
+            <div class="worker-plot-row">
+                <div class="worker-class-dot" style="background:${color};"></div>
+                <div class="worker-plot-info">
+                    <div class="worker-plot-ids"><span class="text-primary fw-bold">#${row.sub_id}</span> ${noteTag}</div>
+                    <div class="worker-plot-class">${label}</div>
+                    ${notePreview}
+                </div>
+                <div class="ms-auto ps-2">${verdictHtml}</div>
             </div>
-            <div class="ms-auto ps-2">${verdictHtml}</div>
+            ${checkerNoteBanner}
         </div>`;
     };
 
@@ -944,6 +1367,9 @@ const showFeaturePanel = (feature, layer) => {
             // Keep remark from clicked sub (shared field)
             $('#id-checker-remark').val(props.remark || '');
 
+            // Keep attached remark image previews in sync (shared field, like remark text)
+            _setRemarkImages(_parseRemarkImagesValue(props.remark_image));
+
             $('#id-batch-actions').css('display', 'flex');
             $('#id-remark-section').show();
             $('#btn-save-id-review').show();
@@ -1178,6 +1604,7 @@ const loadGeoData = async () => {
             check_area: item.check_area || '',
             check_shape: item.check_shape || '',
             remark: item.remark || '',
+            remark_image: item.remark_image || '',
             reviewer: item.reviewer || '',
             user_remark: item.user_remark || '',
 
@@ -1367,11 +1794,13 @@ const loadGeoData = async () => {
                     title: 'หมายเหตุผู้เช็ค',
                     render: (data, type, row) => {
                         if (type === 'sort' || type === 'filter' || type === 'type') return data || '';
-                        const hasData = !!(data && data.trim());
+                        const hasImg = !!row.remark_image;
+                        const hasData = !!(data && data.trim()) || hasImg;
+                        const imgIcon = hasImg ? ' <i class="bi bi-camera-fill"></i>' : '';
                         const eyeBtn = hasData
                             ? `<button class="btn btn-outline-secondary btn-note-popup" type="button"
                                 data-subid="${row.sub_id}" data-type="checker" title="ดูข้อมูลเต็ม">
-                                <i class="bi bi-eye"></i></button>`
+                                <i class="bi bi-eye"></i>${imgIcon}</button>`
                             : '';
                         if (_userRole === 'worker') {
                             if (hasData) {
@@ -1379,7 +1808,7 @@ const loadGeoData = async () => {
                                     data-subid="${row.sub_id}" data-type="checker"
                                     title="${(data || '').replace(/"/g, '&quot;')}"
                                     style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f0fdf4;color:#166534;font-size:0.82rem;font-weight:600;border:1.5px solid #86efac;white-space:nowrap;cursor:pointer;">
-                                    <i class="bi bi-eye-fill"></i> ดูหมายเหตุ
+                                    <i class="bi bi-eye-fill"></i> ดูหมายเหตุ${imgIcon}
                                 </button>`;
                             }
                             return `<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:#f1f5f9;color:#94a3b8;font-size:0.82rem;border:1.5px solid #e2e8f0;white-space:nowrap;">
@@ -1594,6 +2023,7 @@ const loadGeoData = async () => {
         $('#btn-save-id-review').on('click', async function () {
             const tb = $('#tb').val();
             const remark = $('#id-checker-remark').val();
+            const remarkImage = $('#id-remark-image-url').val() || null;
             const displayName = document.getElementById('display-name')?.textContent || '';
             const rows = $('#id-sub-list .sub-review-row');
             if (!rows.length) { alert('กรุณาเลือกแปลงก่อน'); return; }
@@ -1612,7 +2042,7 @@ const loadGeoData = async () => {
                 saves.push(fetch(`/rub/api/update_review/${tb}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sub_id: subId, check_area: checkArea, check_shape: checkShape, remark, reviewer: displayName })
+                    body: JSON.stringify({ sub_id: subId, check_area: checkArea, check_shape: checkShape, remark, remark_image: remarkImage, reviewer: displayName })
                 }).then(r => r.json()).then(data => ({ subId, checkArea, checkShape, data })));
             });
 
@@ -1645,7 +2075,7 @@ const loadGeoData = async () => {
                     if (tableRow.any()) {
                         const rd = tableRow.data();
                         rd.check_area = checkArea; rd.check_shape = checkShape;
-                        rd.remark = remark; rd.reviewer = displayName;
+                        rd.remark = remark; rd.remark_image = remarkImage; rd.reviewer = displayName;
                         rd.review_ts = data.data?.[0]?.review_ts || new Date().toISOString();
                         if (isRejected) {
                             rd.user_remark = '';
@@ -1971,6 +2401,9 @@ const loadGeoData = async () => {
                                     <i class="bi bi-arrows-angle-expand history-remark-icon"></i>
                                </span>`
                             : '<span class="text-muted">-</span>'}</td>
+                        <td class="small text-center">${h.remark_image
+                            ? _parseRemarkImagesValue(h.remark_image).map(u => `<img src="${u}" class="history-image-thumb" alt="ภาพประกอบ" title="คลิกเพื่อดูภาพขนาดเต็ม">`).join('')
+                            : '<span class="text-muted">-</span>'}</td>
                         <td class="small">${h.reviewer || '<span class="text-muted">-</span>'}</td>
                         <td class="small text-muted text-nowrap">${reviewTs}</td>
                     </tr>`;
@@ -1987,6 +2420,7 @@ const loadGeoData = async () => {
                                     <th>ตรวจโฉนด</th>
                                     <th>ตรวจประเภท</th>
                                     <th>หมายเหตุ</th>
+                                    <th>ภาพ</th>
                                     <th>ผู้ตรวจ</th>
                                     <th>เวลาตรวจ</th>
                                 </tr>
@@ -2002,6 +2436,11 @@ const loadGeoData = async () => {
 
         // History remark cell → popup (delegated on the modal body)
         document.getElementById('history-modal-body').addEventListener('click', function (e) {
+            const imgEl = e.target.closest('.history-image-thumb');
+            if (imgEl) {
+                _openImageLightbox(imgEl.getAttribute('src'));
+                return;
+            }
             const cell = e.target.closest('.history-remark-cell');
             if (!cell) return;
             const raw = cell.getAttribute('data-remark')
@@ -2009,6 +2448,7 @@ const loadGeoData = async () => {
             document.getElementById('notePopupTitle').innerHTML =
                 '<i class="bi bi-chat-text me-1"></i>หมายเหตุ — ประวัติการตรวจสอบ';
             document.getElementById('notePopupBody').innerHTML = formatRemarkPopup(raw);
+            $('#notePopupModal .modal-dialog').addClass('modal-md').removeClass('modal-xl');
             // raise z-index so popup sits above the history modal
             const noteEl = document.getElementById('notePopupModal');
             noteEl.style.zIndex = 1065;
@@ -2024,11 +2464,9 @@ const loadGeoData = async () => {
             const rowData = dt.rows().data().toArray().find(r => String(r.sub_id) === String(subId));
             if (!rowData) return;
             const text = type === 'checker' ? rowData.remark : rowData.user_remark;
+            const images = type === 'checker' ? _parseRemarkImagesValue(rowData.remark_image) : [];
             const title = type === 'checker' ? '<i class="bi bi-shield-check me-1"></i>หมายเหตุผู้เช็ค' : '<i class="bi bi-chat-dots-fill me-1"></i>หมายเหตุผู้ใช้';
-            $('#notePopupTitle').html(title);
-            $('#notePopupBody').html(formatRemarkPopup(text));
-            const modal = new bootstrap.Modal(document.getElementById('notePopupModal'));
-            modal.show();
+            _showNotePopup(text, images, title);
         });
 
         // Save user remark handler
@@ -2681,6 +3119,22 @@ $(document).on('input', '#worker-id-search', function () {
     const searchVal = $(this).val().trim();
     // ค้นหาข้ามทุก ID เมื่อพิมพ์, กลับ ID ปัจจุบันเมื่อล้าง
     buildWorkerPlotList(searchVal ? null : (_currentReviewId || null));
+});
+
+// ── Worker quick panel: ปุ่ม "ดูข้อความ" / "ดูรูปภาพ" ในแถบหมายเหตุผู้เช็ก ──
+$(document).on('click', '.btn-checker-note-view', function (e) {
+    e.stopPropagation();
+    const subId = String($(this).data('subid'));
+    const kind = $(this).data('kind');
+    if (!$.fn.DataTable.isDataTable('#featureTable')) return;
+    const dt = $('#featureTable').DataTable();
+    const rowData = dt.rows().data().toArray().find(r => String(r.sub_id) === subId);
+    if (!rowData) return;
+    if (kind === 'img') {
+        _showNotePopup('', _parseRemarkImagesValue(rowData.remark_image), '<i class="bi bi-camera-fill me-1"></i>รูปภาพจากผู้เช็ค');
+    } else {
+        _showNotePopup(rowData.remark, [], '<i class="bi bi-shield-check me-1"></i>หมายเหตุผู้เช็ค');
+    }
 });
 
 // ── Worker quick panel: click plot item → zoom + highlight + load banner ──
