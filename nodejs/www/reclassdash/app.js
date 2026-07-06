@@ -54,6 +54,11 @@ const _getWorkerNavIds = (allRows) => {
     });
 };
 
+// เนื้อที่ "ขณะนี้คลาส" (shpsplit_sqm) หลังปัดเศษแบบ "largest remainder" ต่อแปลง (id)
+// คำนวณครั้งเดียวตอนสร้างตาราง (#featureTable) แล้วใช้ร่วมกันทุกที่ที่ต้องรวมเนื้อที่คลาส
+// เพื่อให้ผลรวมเท่ากับ "เนื้อที่ขณะนี้โฉนด" ที่ปัดเศษแล้วเป๊ะเสมอ (ดู build ที่ shpsplitRoundedById)
+let _shpsplitRoundedById = {};
+
 // เนื้อที่ "กันออก" (ex_*) ยังถือเป็นส่วนหนึ่งของแปลงยางเดิม ต้องรวมกับ "ยาง"
 // เพื่อเทียบกับเป้าหมายยางพารา (rubr_sqm) — ไม่ใช่เทียบจากเนื้อที่ยางอย่างเดียว
 const _sumRubberAndExcluded = (id) => {
@@ -62,8 +67,7 @@ const _sumRubberAndExcluded = (id) => {
         const rows = $('#featureTable').DataTable().rows().data().toArray()
             .filter(r => String(r.id) === String(id));
         rows.forEach(r => {
-            // ปัดเศษรายแถวก่อนรวม ให้ตรงกับตัวเลขที่แสดงต่อแถวในตาราง (กันผลรวมคลาดเคลื่อน ±1 จาก rounding)
-            const val = Math.round(Number(r.shpsplit_sqm || 0));
+            const val = _shpsplitRoundedById[`${r.id}::${r.sub_id}`] ?? Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) exSqm += val;
         });
@@ -1612,14 +1616,43 @@ const loadGeoData = async () => {
             review_ts: item.review_ts || ''
         }));
 
+        // ปัดเศษเนื้อที่ต่อคลาส (shpsplit_sqm) ด้วยวิธี "largest remainder" ต่อแปลง (id) เดียวกัน
+        // เพื่อให้ผลรวมเนื้อที่ของทุกคลาสในแปลงนั้นเท่ากับ "เนื้อที่ขณะนี้โฉนด" ที่ปัดเศษแล้วเป๊ะ
+        // (ปัดแยกแต่ละแถวอิสระจากกันแล้วบวก จะคลาดเคลื่อน ±1 ตร.ม. ได้ตามหลัก apportionment)
+        const shpsplitRoundedById = {};
+        const idRowsForRounding = {};
+        tableData.forEach(r => {
+            (idRowsForRounding[r.id] || (idRowsForRounding[r.id] = [])).push(r);
+        });
+        Object.keys(idRowsForRounding).forEach(id => {
+            const rows = idRowsForRounding[id];
+            const currentSqms = rows.map(r => Number(r.current_sqm || 0));
+            const sameDeedForAll = rows.length > 1 && currentSqms.every(v => Math.abs(v - currentSqms[0]) < 0.5);
+
+            if (!sameDeedForAll) {
+                rows.forEach(r => { shpsplitRoundedById[`${r.id}::${r.sub_id}`] = Math.round(Number(r.shpsplit_sqm || 0)); });
+                return;
+            }
+
+            const deedTotal = Math.round(currentSqms[0]);
+            const raws = rows.map(r => Number(r.shpsplit_sqm || 0));
+            const floors = raws.map(v => Math.floor(v));
+            const sumFloors = floors.reduce((a, b) => a + b, 0);
+            const remainder = Math.max(0, Math.min(deedTotal - sumFloors, rows.length));
+            const byFracDesc = raws.map((v, i) => ({ i, frac: v - Math.floor(v) })).sort((a, b) => b.frac - a.frac);
+            const rounded = [...floors];
+            for (let k = 0; k < remainder; k++) rounded[byFracDesc[k].i] += 1;
+            rows.forEach((r, idx) => { shpsplitRoundedById[`${r.id}::${r.sub_id}`] = rounded[idx]; });
+        });
+        _shpsplitRoundedById = shpsplitRoundedById;
+
         // รวมเนื้อที่ "ยางพารา" + "กันออกทุกชนิด (ex_*)" ต่อ ID เดียวกัน
         // เพราะพื้นที่กันออก (เช่น ถนน, บ่อน้ำ, สิ่งปลูกสร้าง) ยังถือเป็นส่วนหนึ่งของ
         // แปลงยางเดิม ต้องนับรวมเข้าเป้าหมายยางพารา ไม่ใช่หักออกไปเฉยๆ
         const idAreaAgg = {};
         tableData.forEach(r => {
             const agg = idAreaAgg[r.id] || (idAreaAgg[r.id] = { rubberSqm: 0, exSqm: 0 });
-            // ปัดเศษรายแถวก่อนรวม ให้ตรงกับตัวเลขที่แสดงต่อแถวในตาราง (กันผลรวมคลาดเคลื่อน ±1 จาก rounding)
-            const val = Math.round(Number(r.shpsplit_sqm || 0));
+            const val = shpsplitRoundedById[`${r.id}::${r.sub_id}`] ?? Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') agg.rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) agg.exSqm += val;
         });
@@ -1701,8 +1734,8 @@ const loadGeoData = async () => {
                     data: 'shpsplit_sqm',
                     title: 'เนื้อที่ขณะนี้คลาส (m²)',
                     render: (data, type, row) => {
-                        const val = Number(data || 0);
-                        const valStr = val.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+                        const roundedVal = shpsplitRoundedById[`${row.id}::${row.sub_id}`] ?? Math.round(Number(data || 0));
+                        const valStr = roundedVal.toLocaleString('th-TH', { maximumFractionDigits: 0 });
                         const agg = idAreaAgg[row.id] || { rubberSqm: 0, exSqm: 0 };
 
                         if (row.classtype === 'rubber') {
