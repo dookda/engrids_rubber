@@ -838,7 +838,7 @@ const focusPlot = (rowData) => {
 const _workerColorMap = {
     'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
     'ex_age_rubber': '#00c853', 'ex_building': '#ff00d4', 'ex_pond': '#00bcd4',
-    'ex_cr_area': '#f9a825', 'ex_ar_area': '#00008b', 'ex_other': '#ff9800'
+    'ex_cr_area': '#f9a825', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
 };
 const _workerLabelMap = {
     'rubber': 'ยางพาราที่ลงทะเบียน', 'not-rubber': 'ยางพาราที่ไม่ได้ลงทะเบียน',
@@ -887,7 +887,7 @@ const _updateAreaCards = (rowData) => {
     const colorMapFull = {
         'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
         'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
-        'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b', 'ex_other': '#ff9800'
+        'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
     };
     const rdLabel = labelMapFull[rowData.classtype] || 'อื่นๆ';
     const rdColor = colorMapFull[rowData.classtype] || '#6c757d';
@@ -1213,7 +1213,7 @@ const showFeaturePanel = (feature, layer) => {
         'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
         'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
         'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
-        'ex_other': '#ff9800'
+        'ex_other': '#AACDDC'
     };
     const label = labelMap[props.classtype] || 'อื่นๆ';
     const color = colorMap[props.classtype] || '#6c757d';
@@ -1289,7 +1289,7 @@ const showFeaturePanel = (feature, layer) => {
             const colorMap = {
                 'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
                 'ex_age_rubber': '#00c853', 'ex_building': '#ff00d4', 'ex_pond': '#00bcd4',
-                'ex_cr_area': '#f9a825', 'ex_ar_area': '#00008b', 'ex_other': '#ff9800'
+                'ex_cr_area': '#f9a825', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
             };
 
             const mkOpts = (val) => ['', 'ผ่าน', 'ไม่ผ่าน'].map(v =>
@@ -1449,7 +1449,7 @@ const getFeatureStyle = (feature) => {
                                 : feature.properties.classtype === 'ex_ar_area'
                                     ? '#00008bff'
                                     : feature.properties.classtype === 'ex_other'
-                                        ? '#ff9800ff'
+                                        ? '#AACDDCff'
                                         : '#fdae61';
     return {
         fillColor: color,
@@ -1776,7 +1776,7 @@ const loadGeoData = async () => {
                             'rubber': '#006d2c', 'not-rubber': '#9900ff', 'Other': '#ff0004',
                             'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
                             'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
-                            'ex_other': '#ff9800'
+                            'ex_other': '#AACDDC'
                         };
                         const label = labelMap[data] || 'อื่นๆ';
                         const c = colorMap[data] || '#90a4ae';

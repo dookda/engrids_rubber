@@ -263,7 +263,7 @@ const CLASS_COLORS = {
     'ex_pond': '#00fff2',
     'ex_cr_area': '#ffff00',
     'ex_ar_area': '#00008b',
-    'ex_other': '#ff9900',
+    'ex_other': '#AACDDC',
 };
 const DEFAULT_COLOR = '#fdae61';
 
