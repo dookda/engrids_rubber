@@ -908,7 +908,8 @@ const _updateAreaCards = (rowData) => {
             $('#rubber-excluded-note').hide();
         }
     } else {
-        $('#curr-area-sqm').text(Number(rowData.shpsplit_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
+        const roundedVal = _shpsplitRoundedById[`${rowData.id}::${rowData.sub_id}`] ?? Math.round(Number(rowData.shpsplit_sqm || 0));
+        $('#curr-area-sqm').text(roundedVal.toLocaleString('th-TH', { maximumFractionDigits: 0 }));
         $('#rubber-current-label').text('เนื้อที่ขณะนี้:');
         $('#rubber-excluded-note').hide();
     }
@@ -1194,7 +1195,7 @@ const showFeaturePanel = (feature, layer) => {
 
     // Area rubber (Reclass)
     const targetRubberSqm = Number(props.rubr_sqm || 0);
-    const currAreaSqm = Number(props.shpsplit_sqm || 0); // shpsplit_sqm
+    const currAreaSqm = _shpsplitRoundedById[`${props.id}::${props.sub_id}`] ?? Math.round(Number(props.shpsplit_sqm || 0)); // shpsplit_sqm
     // เมื่อเป็นแถวยาง ให้นับรวมกับพื้นที่กันออก (ex_*) ของ ID เดียวกันด้วย
     const rubberAgg = props.classtype === 'rubber' ? _sumRubberAndExcluded(props.id) : null;
     $('#curr-area-sqm').text((rubberAgg ? rubberAgg.total : currAreaSqm).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
