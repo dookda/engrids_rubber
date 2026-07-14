@@ -107,6 +107,9 @@ async function ensureReclassReviewColumns(tb) {
         { name: 'user_remark_ts', type: 'timestamp without time zone' },
         { name: '"class_Area"',    type: 'numeric' },
         { name: 'remark_image',   type: 'text' },
+        { name: 'topology_status',     type: 'text' },
+        { name: 'topology_detail',     type: 'json' },
+        { name: 'topology_checked_ts', type: 'timestamp without time zone' },
     ];
     for (const col of cols) {
         await pool.query(`
@@ -150,6 +153,89 @@ async function saveReviewHistoryBySubId(_, tb, sub_id, reason) {
     } catch (e) {
         console.error('saveReviewHistoryBySubId error:', e.message);
     }
+}
+// ───────────────────────────────────────────────────────────────────────────
+
+// ── Topology QA (overlap between neighboring plots) ─────────────────────────
+// เทียบเฉพาะแปลงอื่นในตารางเดียวกัน (reclass_{tb}) ไม่รวม shpall — ไม่เช็คระหว่าง
+// sub_id พี่น้องของ id เดียวกัน (มาจากการ split เดียวกัน ซึ่งถูกการันตีให้ติดกันสนิทอยู่แล้ว)
+//   subIds = null  → เช็คทั้งตาราง (ปุ่ม "เช็ค Topology ทั้งหมด" ในหน้า reclassdash)
+//   subIds = [...] → เช็คเฉพาะ sub_id ที่ระบุ (auto-trigger ทันทีที่ worker save เรขาคณิต/split)
+async function recomputeTopologyStatus(tb, subIds = null) {
+    await ensureReclassReviewColumns(tb);
+
+    let scope = subIds;
+    if (scope) {
+        // ขยาย scope ให้ครอบคลุมแปลงที่เกี่ยวข้องด้วยทั้งสองทาง เพื่อไม่ให้ overlay ทับ topology_detail
+        // ของเพื่อนบ้านแบบไม่ครบถ้วน (recompute เฉพาะ sub_id ที่แก้ไข จะเห็นแค่ความสัมพันธ์ฝั่งเดียว):
+        //  1) เพื่อนบ้านเดิมจาก topology_detail ที่บันทึกไว้ก่อนหน้า (เผื่อย้ายออกห่างแล้วต้องเคลียร์ flag เก่า)
+        //  2) เพื่อนบ้านใหม่ที่พึ่งมาซ้อนทับจากตำแหน่งปัจจุบัน (ยังไม่เคยถูกบันทึกไว้)
+        // sub_id ทุกตัวใน scope สุดท้ายจะถูก recompute แบบเต็ม (เทียบกับทั้งตาราง) ไม่ใช่แค่เทียบกับ subIds เดิม
+        // จึงได้ topology_detail ที่ถูกต้องครบถ้วนของตัวเอง ไม่สูญหายความสัมพันธ์อื่นที่ไม่เกี่ยวกับการแก้ไขครั้งนี้
+        const { rows: oldRows } = await pool.query(
+            `SELECT topology_detail FROM reclass_${tb} WHERE sub_id = ANY($1::text[]) AND topology_detail IS NOT NULL`,
+            [scope]
+        );
+        const relatedIds = new Set(scope);
+        oldRows.forEach(r => (r.topology_detail || []).forEach(d => { if (d && d.sub_id) relatedIds.add(d.sub_id); }));
+
+        const { rows: newNeighborRows } = await pool.query(
+            `SELECT DISTINCT b.sub_id
+             FROM reclass_${tb} a
+             JOIN reclass_${tb} b
+               ON a.sub_id <> b.sub_id
+              AND a.id IS DISTINCT FROM b.id
+              AND a.geom && b.geom
+              AND ST_Intersects(a.geom, b.geom)
+              AND NOT ST_Touches(a.geom, b.geom)
+             WHERE a.sub_id = ANY($1::text[])`,
+            [scope]
+        );
+        newNeighborRows.forEach(r => relatedIds.add(r.sub_id));
+
+        scope = Array.from(relatedIds);
+    }
+
+    const resetSql = scope
+        ? `UPDATE reclass_${tb} SET topology_status = 'ok', topology_detail = NULL, topology_checked_ts = NOW() WHERE sub_id = ANY($1::text[])`
+        : `UPDATE reclass_${tb} SET topology_status = 'ok', topology_detail = NULL, topology_checked_ts = NOW()`;
+    await pool.query(resetSql, scope ? [scope] : []);
+
+    const scopeFilter = scope ? 'AND a.sub_id = ANY($1::text[])' : '';
+    const params = scope ? [scope] : [];
+    await pool.query(`
+        WITH ranked AS (
+            SELECT
+                a.sub_id AS a_sub,
+                b.sub_id AS b_sub,
+                b.id AS b_id,
+                ROUND(ST_Area(ST_Transform(ST_Intersection(a.geom, b.geom), 32647))::numeric, 2) AS overlap_sqm
+            FROM reclass_${tb} a
+            JOIN reclass_${tb} b
+              ON a.sub_id <> b.sub_id
+             AND a.id IS DISTINCT FROM b.id
+             AND a.geom && b.geom
+             AND ST_Intersects(a.geom, b.geom)
+             AND NOT ST_Touches(a.geom, b.geom)
+            WHERE TRUE ${scopeFilter}
+        ),
+        agg AS (
+            SELECT
+                a_sub,
+                json_agg(json_build_object('sub_id', b_sub, 'id', b_id, 'type', 'overlap', 'overlap_sqm', overlap_sqm)
+                         ORDER BY overlap_sqm DESC NULLS LAST) AS detail
+            FROM ranked
+            GROUP BY a_sub
+        )
+        UPDATE reclass_${tb} r
+        SET topology_status = 'overlap',
+            topology_detail = agg.detail,
+            topology_checked_ts = NOW()
+        FROM agg
+        WHERE r.sub_id = agg.a_sub
+    `, params);
+
+    return scope; // null = ทั้งตารางถูกประมวลผล
 }
 // ───────────────────────────────────────────────────────────────────────────
 
@@ -796,11 +882,12 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
         `).catch(() => {});
 
         // Auto-add review columns if they don't exist (for older tables)
-        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'class_Area', 'remark_image'];
+        const alterCols = ['check_area', 'check_shape', 'remark', 'reviewer', 'user_remark', 'review_ts', 'user_remark_ts', 'class_Area', 'remark_image', 'topology_status', 'topology_detail', 'topology_checked_ts'];
         for (const col of alterCols) {
             let colType = 'text';
-            if (col === 'review_ts' || col === 'user_remark_ts') colType = 'timestamp without time zone';
+            if (col === 'review_ts' || col === 'user_remark_ts' || col === 'topology_checked_ts') colType = 'timestamp without time zone';
             if (col === 'class_Area') colType = 'numeric';
+            if (col === 'topology_detail') colType = 'json';
             let colName = col === 'class_Area' ? '"class_Area"' : col;
             await pool.query(`
                 DO $$ BEGIN
@@ -855,6 +942,9 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.user_remark_ts,
                     a.review_ts,
                     a.ts,
+                    a.topology_status,
+                    a.topology_detail,
+                    a.topology_checked_ts,
                     ST_ASGeoJSON(a.geom) AS geom,
                     ${geomPointSelect} FROM reclass_${tb} a
                 LEFT JOIN ${tb} b
@@ -935,6 +1025,32 @@ app.put('/api/clear_review/:tb', async (req, res) => {
         res.status(200).json({ success: true, data: result.rows });
     } catch (err) {
         console.error(err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Topology QA — เช็คแปลงซ้อนทับทั้งตาราง (ปุ่ม "เช็ค Topology ทั้งหมด" ใน reclassdash)
+app.post('/api/check_topology/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!tb) {
+            return res.status(400).json({ error: 'Table name is required' });
+        }
+
+        await recomputeTopologyStatus(tb, null);
+
+        const { rows } = await pool.query(
+            `SELECT sub_id, topology_status, topology_detail, topology_checked_ts FROM reclass_${tb}`
+        );
+        const counts = rows.reduce((acc, r) => {
+            const k = r.topology_status || 'ok';
+            acc[k] = (acc[k] || 0) + 1;
+            return acc;
+        }, { overlap: 0, ok: 0 });
+
+        res.status(200).json({ success: true, data: rows, counts });
+    } catch (err) {
+        console.error('check_topology error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -1481,7 +1597,15 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
             return res.status(400).json({ error: 'No split results — ตรวจสอบว่าเส้นตัดข้ามแปลงจริงหรือไม่' });
         }
 
-        res.status(200).json({ success: true, data: result.rows });
+        const newSubIds = result.rows.map(r => r.sub_id);
+        await recomputeTopologyStatus(tb, newSubIds);
+        const { rows: topoRows } = await pool.query(
+            `SELECT sub_id, topology_status, topology_detail, topology_checked_ts
+             FROM reclass_${tb} WHERE sub_id = ANY($1::text[])`,
+            [newSubIds]
+        );
+
+        res.status(200).json({ success: true, data: result.rows, topology: topoRows });
 
     } catch (err) {
         console.error('Split error:', err);
@@ -1756,7 +1880,13 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
             return res.status(404).json({ error: 'ไม่พบข้อมูล sub_id นี้' });
         }
 
-        res.status(200).json({ success: true, data: result.rows });
+        await recomputeTopologyStatus(tb, [sub_id]);
+        const { rows: topoRows } = await pool.query(
+            `SELECT topology_status, topology_detail, topology_checked_ts FROM reclass_${tb} WHERE sub_id = $1`,
+            [sub_id]
+        );
+
+        res.status(200).json({ success: true, data: result.rows, topology: topoRows[0] || null });
 
     } catch (err) {
         console.error(err);
@@ -2217,6 +2347,44 @@ app.post('/api/area', async (req, res) => {
     } catch (err) {
         console.error('Error in /api/area:', err);
         return res.status(500).json({ error: err.message });
+    }
+});
+
+// Transient topology check (ไม่บันทึกลง DB) — ใช้โดยหน้า reshape ระหว่างวาด/ลากจุด
+// เพื่อเตือนสดๆ ว่าแปลงที่กำลังแก้ไขซ้อนทับแปลงอื่นในตารางหลักหรือไม่ (ไม่รวม shpall)
+app.post('/api/check_topology_live/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!tb) return res.status(400).json({ error: 'Table name is required' });
+        const { geometry, excludeId } = req.body;
+        if (!geometry || !geometry.type || !geometry.coordinates) {
+            return res.status(400).json({ error: 'Missing or invalid GeoJSON geometry' });
+        }
+
+        const sql = `
+            WITH input AS (
+                SELECT ST_SetSRID(ST_GeomFromGeoJSON($1), 4326) AS geom
+            )
+            SELECT
+                b.id AS b_id,
+                ROUND(ST_Area(ST_Transform(ST_Intersection(i.geom, b.geom), 32647))::numeric, 2) AS overlap_sqm
+            FROM input i
+            JOIN ${tb} b
+              ON b.id IS DISTINCT FROM $2::integer
+             AND b.geom IS NOT NULL
+             AND i.geom && b.geom
+             AND ST_Intersects(i.geom, b.geom)
+             AND NOT ST_Touches(i.geom, b.geom)
+            ORDER BY overlap_sqm DESC NULLS LAST
+        `;
+        const result = await pool.query(sql, [JSON.stringify(geometry), excludeId || null]);
+
+        const status = result.rows.length ? 'overlap' : 'ok';
+
+        res.status(200).json({ success: true, status, overlaps: result.rows });
+    } catch (err) {
+        console.error('check_topology_live error:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

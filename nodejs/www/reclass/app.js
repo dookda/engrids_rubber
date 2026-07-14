@@ -1142,6 +1142,11 @@ async function executeSplit() {
                 if (tbEdit) { tbEdit.classList.remove('map-tool-disabled'); tbEdit.disabled = false; }
             }
             showToast('ตัดแปลงสำเร็จ!', 'success');
+            const topoLines = _topologyWarningLines(data.topology);
+            if (topoLines.length) {
+                const hasOverlap = (data.topology || []).some(t => t && t.topology_status === 'overlap');
+                showToast(topoLines.join(' | '), hasOverlap ? 'error' : 'warning');
+            }
         } else {
             alert('Split failed: ' + (data.error || ''));
         }
@@ -1578,13 +1583,27 @@ document.getElementById('cancelEdit').addEventListener('click', () => {
     loadGeoData(id, false);
 });
 
-// ── 14. Save geometry ────────────────────────────────────
-document.getElementById('save').addEventListener('click', async () => {
-    if (!selectedFeature) {
-        alert('กรุณาเลือก polygon ที่ต้องการบันทึก');
-        return;
-    }
+// Topology QA — สร้างข้อความเตือนซ้อนทับจากผล topology ที่ backend ส่งกลับมาหลัง save
+// (topoList: array ของ { topology_status, topology_detail } — เผื่อมีหลายแปลงพร้อมกันตอน split)
+function _topologyWarningLines(topoList) {
+    const overlaps = [];
+    (topoList || []).forEach(t => {
+        if (!t) return;
+        if (t.topology_status === 'overlap') {
+            const names = (t.topology_detail || []).filter(d => d.type === 'overlap')
+                .map(d => `${d.sub_id} (${d.overlap_sqm} ตร.ม.)`).join(', ');
+            if (names) overlaps.push(names);
+        }
+    });
+    const lines = [];
+    if (overlaps.length) lines.push(`⚠️ ทับซ้อนกับแปลง: ${overlaps.join(', ')}`);
+    return lines;
+}
 
+// ── 14. Save geometry ────────────────────────────────────
+// Shared by the "Save" button and the "Dashboard" button (which saves before navigating away),
+// so both buttons persist the same in-progress polygon edit — whichever one the user prefers to click.
+async function saveSelectedGeometry() {
     // Finalize any in-progress vertex edits
     stopEditMode();
 
@@ -1594,13 +1613,22 @@ document.getElementById('save').addEventListener('click', async () => {
     const tb = document.getElementById('tb').value;
     const displayName = document.getElementById('displayName').value;
 
+    const res = await fetch('/rub/api/update_geometry/' + tb, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sub_id, geometry: geom, displayName })
+    });
+    return res.json();
+}
+
+document.getElementById('save').addEventListener('click', async () => {
+    if (!selectedFeature) {
+        alert('กรุณาเลือก polygon ที่ต้องการบันทึก');
+        return;
+    }
+
     try {
-        const res = await fetch('/rub/api/update_geometry/' + tb, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sub_id, geometry: geom, displayName })
-        });
-        const data = await res.json();
+        const data = await saveSelectedGeometry();
         if (data.success) {
             alert('บันทึก polygon เรียบร้อยแล้ว');
             window.location.reload();
@@ -1677,8 +1705,23 @@ document.getElementById('reshapeBottom').addEventListener('click', (e) => {
     }
     window.location.href = url;
 });
-document.getElementById('dashboard').addEventListener('click', (e) => {
+document.getElementById('dashboard').addEventListener('click', async (e) => {
     e.preventDefault();
+
+    // แปลงที่กำลังเลือกอยู่อาจมีการแก้ไขรูปแปลงที่ยังไม่ได้กด Save — บันทึกให้ก่อนออกจากหน้า
+    if (selectedFeature) {
+        try {
+            const data = await saveSelectedGeometry();
+            if (!data.success) {
+                alert('เกิดข้อผิดพลาดขณะบันทึก — ยังไม่ไปหน้า Dashboard');
+                return;
+            }
+        } catch (err) {
+            alert('เกิดข้อผิดพลาด: ' + err.message);
+            return;
+        }
+    }
+
     const tb = document.getElementById('tb').value;
     const urlParams = new URLSearchParams(window.location.search);
     const id_from = urlParams.get('id_from');

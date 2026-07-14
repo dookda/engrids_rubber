@@ -390,10 +390,19 @@ const highlightSelectedLayer = (layerToHighlight) => {
             });
             layerToHighlight.bringToFront();
             layerToHighlight.openPopup();
+
+            // เช็คสดทันทีที่เลือกแปลง ไม่ต้องรอแก้ไขก่อน — ผู้ใช้จะได้รู้ทันทีว่าแปลงนี้มีปัญหาซ้อนทับอยู่แล้วหรือไม่
+            const geom = layerToHighlight.feature?.geometry;
+            if (geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon')) {
+                _debounceTopologyCheck(geom, layerToHighlight.feature?.properties?.id ?? null);
+            }
         } else if (layerToHighlight instanceof L.Marker) {
             layerToHighlight.setIcon(rubberTreeIconHighlight);
             layerToHighlight.openPopup();
+            document.getElementById('topologyWarning').innerHTML = '';
         }
+    } else {
+        document.getElementById('topologyWarning').innerHTML = '';
     }
 };
 
@@ -613,10 +622,53 @@ const updateAreaLabel = async () => {
         } else {
             document.getElementById('message').innerHTML = '<h5><span class="badge bg-success">เนื้อที่ใกล้เคียงกัน</span></h5>';
         }
+
+        // เช็คสดว่าแปลงที่กำลังวาด/ลากจุดอยู่ ซ้อนทับกับแปลงอื่นในตารางหรือไม่ (ไม่บล็อกการ save)
+        if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') {
+            const excludeId = selectedLayer.feature?.properties?.id ?? null;
+            _debounceTopologyCheck(geometry, excludeId);
+        }
     } catch (error) {
         console.error('Error updating label:', error);
     }
 };
+
+// ── Live topology warning (ซ้อนทับกับแปลงข้างเคียง) ───────────────────────────
+let _topoCheckTimer = null;
+let _topoCheckSeq = 0; // กัน response เก่ามาทับผลใหม่กรณี request ก่อนหน้ายังไม่ตอบกลับ
+
+function _debounceTopologyCheck(geometry, excludeId) {
+    clearTimeout(_topoCheckTimer);
+    _topoCheckTimer = setTimeout(() => _runTopologyCheck(geometry, excludeId), 350);
+}
+
+async function _runTopologyCheck(geometry, excludeId) {
+    const mySeq = ++_topoCheckSeq;
+    const box = document.getElementById('topologyWarning');
+    try {
+        const tb = document.getElementById('tb').value;
+        const res = await fetch(`/rub/api/check_topology_live/${tb}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geometry, excludeId })
+        });
+        const data = await res.json();
+        if (mySeq !== _topoCheckSeq) return; // มี request ใหม่กว่ายิงมาระหว่างนี้ ทิ้งผลเก่า
+        if (!data.success) { box.innerHTML = ''; return; }
+
+        // ใช้ inline style สีตายตัวแทน bg-danger/bg-warning ของ Bootstrap เพราะธีมของโปรเจกต์นี้
+        // (assets/bootstrap.min.css) ปรับโทนสีตัวแปร --bs-danger/--bs-warning ใหม่จนไม่แดง/เหลืองชัดพอ
+        const pillStyle = 'display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;font-size:0.85rem;font-weight:700;white-space:normal;';
+        if (data.status === 'overlap') {
+            const names = data.overlaps.map(o => `ID ${o.b_id} (${o.overlap_sqm} ตร.ม.)`).join(', ');
+            box.innerHTML = `<span style="${pillStyle}background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;" title="${names}"><i class="bi bi-exclamation-octagon-fill"></i> ซ้อนทับกับแปลง: ${names}</span>`;
+        } else {
+            box.innerHTML = '';
+        }
+    } catch (error) {
+        console.error('Error checking topology:', error);
+    }
+}
 
 function showFeaturePanel(feature, layer) {
     const id = document.getElementById('id');
