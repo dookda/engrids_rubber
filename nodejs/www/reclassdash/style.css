@@ -489,6 +489,25 @@ table.dataTable tbody tr.even {
     margin-bottom: 16px;
 }
 
+/* DataTables' default length+search row spans the full card width as two
+   50/50 Bootstrap columns, leaving a large empty gap between them on wide
+   screens. Collapse it to a compact flex row instead. */
+.dataTables_wrapper > .row:first-child {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+}
+
+.dataTables_wrapper > .row:first-child > div {
+    width: auto;
+    max-width: none;
+    flex: 0 0 auto;
+    padding-left: 0;
+    padding-right: 0;
+}
+
 .dataTables_wrapper .dataTables_paginate .paginate_button.current {
     background: linear-gradient(135deg, #66bb6a, #43a047) !important;
     color: #fff !important;
@@ -1058,6 +1077,9 @@ table.dataTable tbody tr.selected > * {
     grid-template-columns: repeat(3, 1fr);
     gap: 6px;
 }
+#topologyStatusBar .admin-status-grid {
+    grid-template-columns: repeat(2, 1fr);
+}
 .admin-status-card {
     display: flex;
     flex-direction: column;
@@ -1080,14 +1102,12 @@ table.dataTable tbody tr.selected > * {
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0,0,0,0.07);
 }
+/* การ์ดที่ถูกเลือก (ไม่ว่าจะสถานะไหน) ไฮไลต์เหลืองเหมือนกันหมด — สีของไอคอนบอกความหมายอยู่แล้ว */
 .admin-status-card.active {
-    background: #fff;
-    border-color: currentColor;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    background: #fffbeb;
+    border-color: #f59e0b;
+    box-shadow: 0 2px 10px rgba(245,158,11,0.25);
 }
-.admin-status-card[data-status="none"].active   { border-color: #f59e0b; background: #fffbeb; }
-.admin-status-card[data-status="pass"].active   { border-color: #22c55e; background: #f0fdf4; }
-.admin-status-card[data-status="fail"].active   { border-color: #ef4444; background: #fef2f2; }
 
 .admin-status-icon {
     font-size: 1.25rem;

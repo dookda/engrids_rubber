@@ -2,11 +2,14 @@
 let _panelUserDirty = false;
 let _autoSavingUserRemark = false;
 let _activeFilter = '';
+let _activeTopoFilter = '';
 let _panelCheckerDirty = false;
 const _checkerDraft = {};   // { [sub_id]: { check_area, check_shape, remark } }
 let _userRole = null;
 let _workerStatusFilter = 'unchecked';
 let _adminNavFilter = 'all';
+let _idStatusCache = {};      // id -> 'none'|'pass'|'fail'|'unclassified' (refreshed by updateAdminStatusCounts)
+let _idTopoStatusCache = {};  // id -> 'overlap'|'ok' (refreshed by updateTopologyStatusCounts)
 let _highlightedLayers = [];
 let _currentReviewId = null;
 let _focusedLayer = null;      // { layer, originalStyle } — currently zoomed-to polygon
@@ -121,21 +124,37 @@ const _applyAdminVisibility = () => {
 // Custom DataTable search filter for status buttons
 $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
     if (settings.nTable.id !== 'featureTable') return true;
-    if (!_activeFilter) return true;
+    if (!_activeFilter && !_activeTopoFilter && _adminNavFilter === 'all') return true;
     try {
         const rowData = settings.aoData[dataIndex]._aData;
         if (!rowData) return true;
         const _isPass = r => r.check_area === 'ผ่าน' && r.check_shape === 'ผ่าน';
         const _isFail = r => r.check_area === 'ไม่ผ่าน' || r.check_shape === 'ไม่ผ่าน';
         const _isClassified = r => !!(r.classtype && String(r.classtype).trim());
+
+        let matchesStatus = true;
         switch (_activeFilter) {
             // แปลงที่ยังไม่ได้จำแนกประเภท (classtype ว่าง) ยังไม่ต้องขึ้นในรายการ "ยังไม่ตรวจ"
-            case 'none': return _isClassified(rowData) && !_isPass(rowData) && !_isFail(rowData);
-            case 'pass': return _isPass(rowData);
-            case 'fail': return _isFail(rowData);
-            case 'remark': return !!(rowData.remark || rowData.user_remark);
-            default: return true;
+            case 'none': matchesStatus = _isClassified(rowData) && !_isPass(rowData) && !_isFail(rowData); break;
+            case 'pass': matchesStatus = _isPass(rowData); break;
+            case 'fail': matchesStatus = _isFail(rowData); break;
+            case 'remark': matchesStatus = !!(rowData.remark || rowData.user_remark); break;
+            default: matchesStatus = true;
         }
+        if (!matchesStatus) return false;
+
+        // การ์ดสถานะ "ข้อมูลแปลง" (ยังไม่ตรวจ/ผ่าน/ไม่ผ่าน) นับ+กรองต่อ "id" (โฉนดรวม) ไม่ใช่ต่อแถวย่อย
+        // เพื่อให้ตรงกับตัวเลขที่การ์ดแสดง — คลิกแล้วต้องเห็นแปลงย่อยทุกแถวของ id ที่ตรงเงื่อนไข
+        if (_adminNavFilter !== 'all') {
+            const idStatus = _idStatusCache[String(rowData.id)];
+            if (idStatus !== _adminNavFilter) return false;
+        }
+
+        if (_activeTopoFilter) {
+            const idTopoStatus = _idTopoStatusCache[String(rowData.id)];
+            if (idTopoStatus !== _activeTopoFilter) return false;
+        }
+        return true;
     } catch (e) { return true; }
 });
 
@@ -1002,6 +1021,9 @@ const buildWorkerPlotList = (filterId = null) => {
         }
         const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const noteTag = row.user_remark ? `<span style="font-size:0.65rem;color:#1d4ed8;"><i class="bi bi-chat-dots-fill"></i></span>` : '';
+        const topoTag = row.topology_status === 'overlap'
+            ? `<span style="font-size:0.65rem;color:#991b1b;" title="ซ้อนทับกับแปลงอื่น"><i class="bi bi-exclamation-octagon-fill"></i></span>`
+            : '';
         const notePreview = row.user_remark
             ? `<div class="worker-plot-note"><i class="bi bi-chat-dots-fill" style="font-size:0.65rem;"></i> ${esc(row.user_remark.substring(0, 20))}${row.user_remark.length > 20 ? '…' : ''}</div>`
             : '';
@@ -1022,7 +1044,7 @@ const buildWorkerPlotList = (filterId = null) => {
             <div class="worker-plot-row">
                 <div class="worker-class-dot" style="background:${color};"></div>
                 <div class="worker-plot-info">
-                    <div class="worker-plot-ids"><span class="text-primary fw-bold">#${row.sub_id}</span> ${noteTag}</div>
+                    <div class="worker-plot-ids"><span class="text-primary fw-bold">#${row.sub_id}</span> ${noteTag} ${topoTag}</div>
                     <div class="worker-plot-class">${label}</div>
                     ${notePreview}
                 </div>
@@ -1131,8 +1153,10 @@ const updateAdminStatusCounts = () => {
     const allRows = $('#featureTable').DataTable().rows().data().toArray();
     const uniqueIds = [...new Set(allRows.map(r => String(r.id)))];
     let cntNone = 0, cntPass = 0, cntFail = 0;
+    _idStatusCache = {};
     uniqueIds.forEach(id => {
         const s = getIdStatus(allRows, id);
+        _idStatusCache[id] = s;
         if (s === 'none') cntNone++;
         else if (s === 'pass') cntPass++;
         else if (s === 'fail') cntFail++;
@@ -1140,6 +1164,30 @@ const updateAdminStatusCounts = () => {
     $('#asc-none').text(cntNone);
     $('#asc-pass').text(cntPass);
     $('#asc-fail').text(cntFail);
+    updateTopologyStatusCounts();
+};
+
+// นับ+cache ตาม "id" (โฉนดรวม) — ถ้ามีแปลงย่อยใดในกลุ่มซ้อนทับ ให้ทั้งกลุ่มนับเป็น "ซ้อนทับ"
+// เพื่อให้ตัวเลขตรงกับการ์ดสถานะแถวบน (ยังไม่ตรวจ/ผ่าน/ไม่ผ่าน) ที่นับต่อ id เหมือนกัน
+const getIdTopologyStatus = (allRows, id) => {
+    const subs = allRows.filter(r => String(r.id) === String(id));
+    return subs.some(r => (r.topology_status || 'ok') === 'overlap') ? 'overlap' : 'ok';
+};
+
+const updateTopologyStatusCounts = () => {
+    if (!$.fn.DataTable.isDataTable('#featureTable')) return;
+    const allRows = $('#featureTable').DataTable().rows().data().toArray();
+    const uniqueIds = [...new Set(allRows.map(r => String(r.id)))];
+    let cntOverlap = 0, cntOk = 0;
+    _idTopoStatusCache = {};
+    uniqueIds.forEach(id => {
+        const s = getIdTopologyStatus(allRows, id);
+        _idTopoStatusCache[id] = s;
+        if (s === 'overlap') cntOverlap++;
+        else cntOk++;
+    });
+    $('#tsc-overlap').text(cntOverlap);
+    $('#tsc-ok').text(cntOk);
 };
 
 // Helper to navigate between plots (Prev/Next) — by unique parent ID
@@ -1614,7 +1662,9 @@ const loadGeoData = async () => {
             user_remark: item.user_remark || '',
 
             user_remark_ts: item.user_remark_ts || '',
-            review_ts: item.review_ts || ''
+            review_ts: item.review_ts || '',
+            topology_status: item.topology_status || '',
+            topology_detail: item.topology_detail || null
         }));
 
         // ปัดเศษเนื้อที่ต่อคลาส (shpsplit_sqm) ด้วยวิธี "largest remainder" ต่อแปลง (id) เดียวกัน
@@ -1824,6 +1874,30 @@ const loadGeoData = async () => {
                     }
                 },
                 {
+                    data: 'topology_status',
+                    title: 'ซ้อนทับ',
+                    render: (data, type, row) => {
+                        if (type === 'sort' || type === 'type' || type === 'filter') return data || '';
+                        const detail = row.topology_detail || [];
+                        const esc = s => String(s).replace(/"/g, '&quot;');
+                        const pill = (bg, color, border, icon, label, subid, tip) => {
+                            const tag = subid ? 'button' : 'span';
+                            const cls = subid ? 'topo-goto' : '';
+                            const subidAttr = subid ? `data-subid="${esc(subid)}"` : '';
+                            const style = `display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;background:${bg};color:${color};font-size:0.82rem;font-weight:700;border:1.5px solid ${border};white-space:nowrap;${subid ? 'cursor:pointer;' : ''}`;
+                            return `<${tag} class="${cls}" ${subidAttr} title="${esc(tip)}" style="${style}"><i class="bi ${icon}"></i> ${label}</${tag}>`;
+                        };
+                        if (data === 'overlap') {
+                            const names = detail.filter(d => d.type === 'overlap').map(d => `${d.id} (${d.overlap_sqm} ตร.ม.)`).join(', ');
+                            return pill('#fee2e2', '#991b1b', '#fca5a5', 'bi-exclamation-octagon-fill', 'ซ้อนทับ', detail[0]?.sub_id, names || 'ซ้อนทับกับแปลงอื่น');
+                        }
+                        if (data === 'ok') {
+                            return pill('#d1fae5', '#065f46', '#6ee7b7', 'bi-check-circle-fill', 'ปกติ', null, 'ไม่พบปัญหาซ้อนทับ');
+                        }
+                        return pill('#f1f5f9', '#64748b', '#cbd5e1', 'bi-dash-circle', 'ยังไม่เช็ค', null, 'ยังไม่เคยเช็ค topology');
+                    }
+                },
+                {
                     data: 'remark',
                     title: 'หมายเหตุผู้เช็ค',
                     render: (data, type, row) => {
@@ -1969,13 +2043,32 @@ const loadGeoData = async () => {
             }
         });
 
-        // ── Filter status buttons ──
-        $(document).off('click.filterBtn').on('click.filterBtn', '.btn-filter-status', function () {
+        // ── Filter status buttons (check_area/check_shape ผ่าน/ไม่ผ่าน) ──
+        $(document).off('click.filterBtn').on('click.filterBtn', '.btn-filter-status[data-filter]', function () {
             const clickedFilter = $(this).data('filter') || '';
             _activeFilter = clickedFilter;
-            $('.btn-filter-status').removeClass('active');
+            $('.btn-filter-status[data-filter]').removeClass('active');
             $(this).addClass('active');
             dataTable.draw();
+        });
+
+        // ── Filter topology buttons (ซ้อนทับ/ปกติ) — independent axis from _activeFilter ──
+        $(document).off('click.filterTopoBtn').on('click.filterTopoBtn', '.btn-filter-status[data-topofilter]', function () {
+            _activeTopoFilter = $(this).data('topofilter') || '';
+            $('.btn-filter-status[data-topofilter]').removeClass('active');
+            $(this).addClass('active');
+            $('#topologyStatusBar .admin-status-card').removeClass('active');
+            if (_activeTopoFilter) $(`#topologyStatusBar .admin-status-card[data-topostatus="${_activeTopoFilter}"]`).addClass('active');
+            _refreshNavCounterForFilter();
+        });
+
+        // ── Topology badge click → zoom/focus the first conflicting neighbor plot ──
+        $('#featureTable tbody').on('click', '.topo-goto', function (e) {
+            e.stopPropagation();
+            const subId = $(this).data('subid');
+            const dt = $('#featureTable').DataTable();
+            const neighborRow = dt.rows().data().toArray().find(r => String(r.sub_id) === String(subId));
+            if (neighborRow) focusPlot(neighborRow);
         });
 
         // ── Dirty tracking for user remark textarea ──
@@ -3109,10 +3202,22 @@ $(document).on('click', '#worker-sel-delete', async function () {
 $(document).on('click', '#btn-worker-prev', () => navigatePlots(-1));
 $(document).on('click', '#btn-worker-next', () => navigatePlots(1));
 
+// ── Status cards ("ข้อมูลแปลง" panel) — ทุกการ์ดกรองตาราง+อัปเดต nav counter แบบเดียวกัน
+// คลิกแล้วไฮไลต์เหลือง เเสดงเฉพาะแปลง (ทุกแถวย่อย) ของ id ที่ตรงสถานะที่คลิก คลิกซ้ำ = ล้างตัวกรอง
+const _refreshNavCounterForFilter = () => {
+    if (!$.fn.DataTable.isDataTable('#featureTable')) return;
+    const dt = $('#featureTable').DataTable();
+    dt.draw();
+    const allRows = dt.rows({ search: 'applied' }).data().toArray();
+    const filteredIds = [...new Set(allRows.map(r => String(r.id)))];
+    const currentIdx = _currentReviewId ? filteredIds.indexOf(String(_currentReviewId)) : -1;
+    $('#plot-nav-count').text(`${currentIdx >= 0 ? currentIdx + 1 : '-'} / ${filteredIds.length}`);
+};
+
 // ── Admin status filter cards ──
 $(document).on('click', '#adminStatusBar .admin-status-card', function () {
     const clickedStatus = $(this).data('status');
-    // Toggle: click active button again → clear filter (show all for nav)
+    // Toggle: click active button again → clear filter
     if (_adminNavFilter === clickedStatus) {
         _adminNavFilter = 'all';
         $('#adminStatusBar .admin-status-card').removeClass('active');
@@ -3121,16 +3226,22 @@ $(document).on('click', '#adminStatusBar .admin-status-card', function () {
         $('#adminStatusBar .admin-status-card').removeClass('active');
         $(this).addClass('active');
     }
-    // Update nav counter to reflect filtered IDs
-    if ($.fn.DataTable.isDataTable('#featureTable')) {
-        const allRows = $('#featureTable').DataTable().rows({ search: 'applied' }).data().toArray();
-        const allUniqueIds = [...new Set(allRows.map(r => String(r.id)))];
-        const filtered = _adminNavFilter === 'all'
-            ? allUniqueIds
-            : allUniqueIds.filter(id => getIdStatus(allRows, id) === _adminNavFilter);
-        const currentIdx = _currentReviewId ? filtered.indexOf(String(_currentReviewId)) : -1;
-        $('#plot-nav-count').text(`${currentIdx >= 0 ? currentIdx + 1 : '-'} / ${filtered.length}`);
+    _refreshNavCounterForFilter();
+});
+
+// ── Topology status cards — act as shortcuts for the topology filter buttons ──
+$(document).on('click', '#topologyStatusBar .admin-status-card', function () {
+    const clickedStatus = $(this).data('topostatus');
+    _activeTopoFilter = (_activeTopoFilter === clickedStatus) ? '' : clickedStatus;
+    $('#topologyStatusBar .admin-status-card').removeClass('active');
+    $('.btn-filter-status[data-topofilter]').removeClass('active');
+    if (_activeTopoFilter) {
+        $(this).addClass('active');
+        $(`.btn-filter-status[data-topofilter="${_activeTopoFilter}"]`).addClass('active');
+    } else {
+        $('.btn-filter-status[data-topofilter=""]').addClass('active');
     }
+    _refreshNavCounterForFilter();
 });
 
 // ── Worker status filter tabs ──
