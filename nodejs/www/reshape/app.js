@@ -156,7 +156,7 @@ async function loadShpallLayer() {
         shpallLayer.clearLayers();
         if (data.success && data.features && data.features.length > 0) {
             L.geoJSON({ type: 'FeatureCollection', features: data.features }, {
-                interactive: false, style: _shpallStyle,
+                interactive: false, pmIgnore: true, style: _shpallStyle,
                 onEachFeature: (feature, layer) => {
                     layer.bindTooltip(_shpallLabel(feature.properties || {}), {
                         permanent: true, direction: 'center', className: 'shpall-tooltip'
@@ -235,7 +235,8 @@ function renderShpallSearchResults(features) {
 function zoomToShpallFeature(feature) {
     shpallSearchHighlightGroup.clearLayers();
     const layer = L.geoJson(feature, {
-        style: _shpallSearchStyle
+        style: _shpallSearchStyle,
+        pmIgnore: true
     }).addTo(shpallSearchHighlightGroup);
 
     layer.bindPopup(_shpallSearchPopup(feature.properties || {}));
@@ -331,7 +332,7 @@ map.pm.addControls({
     drawPolygon: true,
     editMode: true,
     dragMode: false,
-    cutPolygon: false,
+    cutPolygon: true,
     removalMode: false,
     rotateMode: false,
     drawText: false,
@@ -342,8 +343,10 @@ map.pm.addControls({
 map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
 
 // Set global Geoman options: right-click removes vertex + สีเส้นขณะวาด (เหลืองสว่าง เห็นชัดบนทุก layer)
+// layerGroup: featureGroup ทำให้รูปที่วาด/ตัดใหม่ถูกเพิ่ม-ลบใน featureGroup โดยอัตโนมัติ (ไม่ใช่ map ตรงๆ)
 map.pm.setGlobalOptions({
     removeVertexOn: 'contextmenu',
+    layerGroup: featureGroup,
     templineStyle:  { color: '#FBBF24', weight: 3, opacity: 1 },
     hintlineStyle:  { color: '#FBBF24', weight: 2, opacity: 0.8, dashArray: '7,5' }
 });
@@ -435,6 +438,73 @@ map.on('pm:create', (e) => {
         updateAreaLabel();
         highlightSelectedLayer(layer);
     }
+});
+
+// ===== ตัดโพลิกอนข้างในแปลง (Cut Polygon) =====
+// จำกัดให้ตัดได้เฉพาะแปลงที่กำลังเลือก/แก้ไขอยู่ ป้องกันไม่ให้ไปตัดโดนแปลงข้างเคียงโดยไม่ตั้งใจ
+map.on('pm:globalcutmodetoggled', (e) => {
+    if (!e.enabled) {
+        featureGroup.eachLayer(l => { if (l.pm) l.pm.options.allowCutting = true; });
+        return;
+    }
+    if (!selectedLayer || !(selectedLayer instanceof L.Path)) {
+        alert('กรุณาเลือกแปลงที่ต้องการตัดก่อน');
+        map.pm.disableDraw('Cut');
+        return;
+    }
+    featureGroup.eachLayer(l => {
+        if (l.pm) l.pm.options.allowCutting = (l === selectedLayer);
+    });
+    // ปุ่ม Toolbar ของ geoman เรียก toggle({allowSelfIntersection:false}) เอง ทำให้เส้นตัดที่มีจุดซ้อนกัน
+    // (มักเกิดจาก snap เข้าขอบแปลงเดิม) ถูกมองว่า self-intersect แล้วปิดรูปไม่ได้แบบเงียบๆ ไม่มี error ใดๆ
+    if (map.pm.Draw.Cut) {
+        map.pm.Draw.Cut.options.allowSelfIntersection = true;
+    }
+    // highlightSelectedLayer() เปิด popup ของแปลงที่เลือกไว้ค้างอยู่กลางรูป — ถ้าไม่ปิดก่อน
+    // คลิกวางจุดตัดที่ตกบน popup นั้นจะโดน popup ดักไว้ ไม่ทะลุไปวางจุดบนแผนที่ (โดยเฉพาะตอนตัดซ้ำครั้งที่ 2)
+    map.closePopup();
+});
+
+map.on('pm:cut', (e) => {
+  try {
+    const newLayer = e.layer;
+    const originalLayer = e.originalLayer;
+    if (!(originalLayer instanceof L.Path)) return;
+
+    // เดิมทีถูกลบออกจาก featureGroup ไปแล้วโดย geoman เอง (เพราะตั้ง layerGroup ไว้เป็น featureGroup)
+    // เรียกซ้ำตรงนี้เผื่อกรณีที่ไม่ถูกลบออก เพื่อกันไม่ให้มี layer ค้างเป็นผี
+    originalLayer.areaLabel?.remove();
+    featureGroup.removeLayer(originalLayer);
+
+    const resultGeojson = newLayer && newLayer.toGeoJSON ? newLayer.toGeoJSON() : null;
+    if (!resultGeojson || !isValidGeometry(resultGeojson.geometry)) {
+        // ตัดจนไม่เหลือพื้นที่ของแปลงเลย — ยกเลิกผล ไม่ให้เหลือรูปร่างว่างค้างอยู่
+        featureGroup.removeLayer(newLayer);
+        if (newLayer && newLayer.remove) newLayer.remove();
+        selectedLayer = null;
+        highlightSelectedLayer(null);
+        alert('ตัดพื้นที่ออกทั้งหมดไม่ได้ กรุณาวาดรูปตัดให้เหลือพื้นที่บางส่วนของแปลงไว้');
+        return;
+    }
+
+    newLayer.feature = { type: 'Feature', properties: { ...(originalLayer.feature && originalLayer.feature.properties || {}) } };
+    if (!featureGroup.hasLayer(newLayer)) featureGroup.addLayer(newLayer);
+    featureGroup.bringToFront();
+
+    onEachFeature(newLayer.feature, newLayer);
+    showFeaturePanel(newLayer.feature, newLayer); // sync ช่อง ID/refinal/เนื้อที่เป้าหมาย ในไซด์บาร์ — ไม่งั้นจะว่างและ save ไม่ได้
+
+    featureGroup.eachLayer(l => l.pm.disable());
+    newLayer.pm.enable({ removeVertexOn: 'contextmenu' });
+    selectedLayer = newLayer;
+    layerEdited = true;
+    updateAreaLabel();
+    highlightSelectedLayer(newLayer);
+  } catch (err) {
+    // กัน exception หลุดขึ้นไปถึง geoman แล้วทำให้ _finishShape() ค้าง (โหมดวาดไม่ปิด)
+    console.error('pm:cut handler error:', err);
+    alert('เกิดข้อผิดพลาดขณะตัดโพลิกอน: ' + err.message);
+  }
 });
 
 // Area calculation utilities
@@ -687,6 +757,7 @@ const loadGeoData = async () => {
                 if (!geom || geom.type === 'Point') return;
                 L.geoJson({ type: 'Feature', geometry: geom, properties: { id: item.id } }, {
                     interactive: false,
+                    pmIgnore: true,
                     style: {
                         color: '#FF2D55',
                         weight: 2,
@@ -887,7 +958,16 @@ const loadGeoData = async () => {
                     L.geoJson(geoJsonData, {
                         style: getFeatureStyle,
                         onEachFeature: onEachFeature,
-                    }).eachLayer(l => featureGroup.addLayer(l));
+                    }).eachLayer(l => {
+                        // Leaflet bleeds the whole L.geoJson() options bag (incl. style/onEachFeature
+                        // functions) onto each created layer's own .options. geoman's Cut tool later does
+                        // `L.geoJSON(diff, l.options)` on the cut result, which re-invokes getFeatureStyle()
+                        // on a bare turf-diff feature that has no .properties — throws and aborts the cut
+                        // mid-flight (draw mode never gets disabled, looks like "won't close").
+                        delete l.options.style;
+                        delete l.options.onEachFeature;
+                        featureGroup.addLayer(l);
+                    });
                 } else {
                     console.warn(`Skipping row ${row.id}: empty/invalid polygon geometry`, row.geom);
                 }
