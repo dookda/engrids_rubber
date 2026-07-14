@@ -118,6 +118,18 @@ const shpallLayer = new ol.layer.Vector({
 });
 
 
+// Other plots (every other id in this tb) — read-only red background, shown as context
+// and as a snap target so the user can tell whether the plot being digitized touches a neighbor
+const othersSource = new ol.source.Vector();
+const othersLayer = new ol.layer.Vector({
+    source: othersSource,
+    zIndex: 7,
+    style: new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: '#FF2D55', width: 2 }),
+        fill: new ol.style.Fill({ color: 'rgba(255, 45, 85, 0.12)' })
+    })
+});
+
 // ── 3. Vector layers ──────────────────────────────────────
 const vectorSource = new ol.source.Vector();
 const vectorLayer = new ol.layer.Vector({
@@ -226,7 +238,7 @@ const pointRefLayer = new ol.layer.Vector({
 const map = new ol.Map({
     target: 'map',
     layers: [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer,
-        ndviWms, shpallLayer, vectorLayer, pointRefLayer, splitLineLayer],
+        ndviWms, shpallLayer, othersLayer, vectorLayer, pointRefLayer, splitLineLayer],
     view: new ol.View({
         center: ol.proj.fromLonLat([100.8784385963758, 18.819620993471577]),
         zoom: 13,
@@ -376,7 +388,25 @@ let selectedFeature = null;   // OL Feature currently selected
 let splitLineCoords = null;   // GeoJSON coords of the drawn split line
 let drawInteraction = null;   // ol.interaction.Draw instance
 let modifyInteraction = null;   // ol.interaction.Modify instance
-let snapInteraction = null;   // ol.interaction.Snap instance
+let snapInteractions = [];    // ol.interaction.Snap[] — own polygons + shpall (blue) + others (red)
+
+// Snap against: own vectorSource, shpall background (blue, existing registered plots) and
+// other plots (red) — lets the user feel when a drawn edge lands on a neighboring boundary.
+function addSnapInteractions() {
+    removeSnapInteractions();
+    snapInteractions = [
+        new ol.interaction.Snap({ source: vectorSource, pixelTolerance: 15 }),
+        new ol.interaction.Snap({ source: shpallSource, pixelTolerance: 15 }),
+        new ol.interaction.Snap({ source: othersSource, pixelTolerance: 15 })
+    ];
+    snapInteractions.forEach(si => map.addInteraction(si));
+}
+
+function removeSnapInteractions() {
+    snapInteractions.forEach(si => map.removeInteraction(si));
+    snapInteractions = [];
+}
+
 let editMode = false;  // polygon edit mode flag
 let editSource = new ol.source.Vector(); // temp source for editing
 let mergeMode = false;
@@ -599,6 +629,27 @@ const loadGeoData = async (id, shouldFit = true) => {
 
         vectorSource.clear();
         vectorSource.addFeatures(features);
+
+        // แปลงของ id อื่นๆ ในตาราง (สีแดง) — แสดงเป็นพื้นหลัง read-only และใช้เป็นเป้า snap
+        // เพื่อให้เห็นว่าแปลงที่กำลัง split/แก้ไขติดกับแปลงข้างเคียงหรือไม่
+        othersSource.clear();
+        (jsonTarget.data || []).forEach(item => {
+            if (String(item.id) === String(id)) return; // ไม่รวมแปลงที่กำลังทำงานอยู่
+            let geom = null;
+            try { if (item.geom) geom = JSON.parse(item.geom); } catch (_) {}
+            if (!geom || geom.type === 'Point') return;
+            try {
+                let olGeom;
+                if (geom.type === 'Polygon') {
+                    olGeom = new ol.geom.Polygon(geom.coordinates).transform(EPSG4326, EPSG3857);
+                } else if (geom.type === 'MultiPolygon') {
+                    olGeom = new ol.geom.MultiPolygon(geom.coordinates).transform(EPSG4326, EPSG3857);
+                } else {
+                    return;
+                }
+                othersSource.addFeature(new ol.Feature({ geometry: olGeom }));
+            } catch (_) {}
+        });
 
         // จุดอ้างอิงเดิม (GPS) ของแปลง — ทุก sub_id ของ id เดียวกันใช้จุดเดิมร่วมกัน เอาแค่จุดแรกที่เจอ
         pointRefSource.clear();
@@ -948,9 +999,7 @@ function startSplitDraw() {
     map.addInteraction(drawInteraction);
     map.getViewport().style.cursor = 'crosshair';
 
-    if (snapInteraction) map.removeInteraction(snapInteraction);
-    snapInteraction = new ol.interaction.Snap({ source: vectorSource, pixelTolerance: 15 });
-    map.addInteraction(snapInteraction);
+    addSnapInteractions();
 
     drawInteraction.on('drawend', async (evt) => {
         const lineFeature = evt.feature;
@@ -993,10 +1042,7 @@ function cancelSplitDrawInternal() {
         map.removeInteraction(drawInteraction);
         drawInteraction = null;
     }
-    if (snapInteraction) {
-        map.removeInteraction(snapInteraction);
-        snapInteraction = null;
-    }
+    removeSnapInteractions();
     splitLineSource.clear();
     splitLineCoords = null;
     map.getViewport().style.cursor = '';
@@ -1012,10 +1058,7 @@ document.getElementById('cancelSplitDraw').addEventListener('click', () => {
         map.removeInteraction(drawInteraction);
         drawInteraction = null;
     }
-    if (snapInteraction) {
-        map.removeInteraction(snapInteraction);
-        snapInteraction = null;
-    }
+    removeSnapInteractions();
     splitLineSource.clear();
     splitLineCoords = null;
     map.getViewport().style.cursor = '';
@@ -1077,10 +1120,7 @@ async function executeSplit() {
         if (data.success) {
             splitLineSource.clear();
             splitLineCoords = null;
-            if (snapInteraction) {
-                map.removeInteraction(snapInteraction);
-                snapInteraction = null;
-            }
+            removeSnapInteractions();
             // Clear selection first
             if (selectedFeature) {
                 selectedFeature.set('selected', false);
@@ -1179,10 +1219,7 @@ document.getElementById('clear').addEventListener('click', () => {
         map.removeInteraction(drawInteraction);
         drawInteraction = null;
     }
-    if (snapInteraction) {
-        map.removeInteraction(snapInteraction);
-        snapInteraction = null;
-    }
+    removeSnapInteractions();
 
     // Clear hint and hide confirm button
     document.getElementById('splitHint').style.display = 'none';
@@ -1398,9 +1435,7 @@ function startEditMode() {
 
     map.addInteraction(modifyInteraction);
 
-    if (snapInteraction) map.removeInteraction(snapInteraction);
-    snapInteraction = new ol.interaction.Snap({ source: vectorSource, pixelTolerance: 15 });
-    map.addInteraction(snapInteraction);
+    addSnapInteractions();
 }
 
 function stopEditMode() {
@@ -1412,10 +1447,7 @@ function stopEditMode() {
         map.removeInteraction(modifyInteraction);
         modifyInteraction = null;
     }
-    if (snapInteraction) {
-        map.removeInteraction(snapInteraction);
-        snapInteraction = null;
-    }
+    removeSnapInteractions();
     editSource.clear();
     map.getViewport().style.cursor = '';
     document.getElementById('editHint').style.display = 'none';
