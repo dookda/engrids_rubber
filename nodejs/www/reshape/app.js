@@ -156,7 +156,7 @@ async function loadShpallLayer() {
         shpallLayer.clearLayers();
         if (data.success && data.features && data.features.length > 0) {
             L.geoJSON({ type: 'FeatureCollection', features: data.features }, {
-                interactive: false, pmIgnore: true, style: _shpallStyle,
+                interactive: false, pmIgnore: true, snapIgnore: false, style: _shpallStyle,
                 onEachFeature: (feature, layer) => {
                     layer.bindTooltip(_shpallLabel(feature.properties || {}), {
                         permanent: true, direction: 'center', className: 'shpall-tooltip'
@@ -758,6 +758,7 @@ const loadGeoData = async () => {
                 L.geoJson({ type: 'Feature', geometry: geom, properties: { id: item.id } }, {
                     interactive: false,
                     pmIgnore: true,
+                    snapIgnore: false,
                     style: {
                         color: '#FF2D55',
                         weight: 2,
