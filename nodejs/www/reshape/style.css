@@ -483,8 +483,8 @@ hr {
     background: #e8f5e9 !important;
 }
 
-/* ===== iPad-only delete-node toggle (tap-to-delete mode) ===== */
-.ipad-delete-node-control .map-tool-btn {
+/* ===== Delete-node toggle (tap/click-to-delete mode) ===== */
+.delete-node-control .map-tool-btn {
     width: 34px;
     height: 34px;
     display: flex;
@@ -497,12 +497,12 @@ hr {
     cursor: pointer;
 }
 
-.ipad-delete-node-control .map-tool-btn:hover {
+.delete-node-control .map-tool-btn:hover {
     background: #e8f5e9;
     color: #2e7d32;
 }
 
-.ipad-delete-node-control .map-tool-btn.map-tool-active {
+.delete-node-control .map-tool-btn.map-tool-active {
     background: #16a34a;
     color: #ffffff;
 }

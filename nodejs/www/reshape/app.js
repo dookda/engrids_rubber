@@ -342,13 +342,12 @@ map.pm.addControls({
 // Disable browser default context menu on map so right-click can delete nodes
 map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
 
-// iPad has no right-click/contextmenu, so node deletion needs a dedicated tap-to-delete mode
-// (Geoman itself supports removeVertexOn: 'click' — we just switch to it for iPad users).
-// Detection kept iPad-only (per request) so mouse users' existing right-click flow is untouched.
-const isIpad = /iPad/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// Touch devices (iPad etc.) have no right-click/contextmenu, so node deletion needs a
+// dedicated tap-to-delete mode (Geoman itself supports removeVertexOn: 'click' — we just
+// switch to it while this mode is on). Available on all devices via the toggle button below;
+// right-click keeps working as before when the mode is off.
 let PM_REMOVE_VERTEX_ON = 'contextmenu';
-let ipadDeleteNodeMode = false;
+let deleteNodeMode = false;
 
 // Set global Geoman options: right-click removes vertex + สีเส้นขณะวาด (เหลืองสว่าง เห็นชัดบนทุก layer)
 // layerGroup: featureGroup ทำให้รูปที่วาด/ตัดใหม่ถูกเพิ่ม-ลบใน featureGroup โดยอัตโนมัติ (ไม่ใช่ map ตรงๆ)
@@ -359,10 +358,9 @@ map.pm.setGlobalOptions({
     hintlineStyle:  { color: '#FBBF24', weight: 2, opacity: 0.8, dashArray: '7,5' }
 });
 
-// iPad-only: toggles vertex removal between 'contextmenu' (desktop default, untouched)
-// and 'click' (so a plain tap on a node deletes it — Geoman handles the removal itself).
-function setIpadDeleteNodeMode(on) {
-    ipadDeleteNodeMode = on;
+// Toggles vertex removal between 'contextmenu' (default) and 'click' (tap-to-delete).
+function setDeleteNodeMode(on) {
+    deleteNodeMode = on;
     PM_REMOVE_VERTEX_ON = on ? 'click' : 'contextmenu';
     map.pm.setGlobalOptions({ removeVertexOn: PM_REMOVE_VERTEX_ON });
     // Re-apply to whichever layer is currently in edit mode so the change takes effect immediately
@@ -374,30 +372,28 @@ function setIpadDeleteNodeMode(on) {
             l.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
         }
     });
-    const btn = document.getElementById('ipadDeleteNodeBtn');
+    const btn = document.getElementById('deleteNodeBtn');
     if (btn) btn.classList.toggle('map-tool-active', on);
 }
 
-if (isIpad) {
-    const DeleteNodeControl = L.Control.extend({
-        options: { position: 'topleft' },
-        onAdd: function () {
-            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control ipad-delete-node-control');
-            const btn = L.DomUtil.create('a', 'map-tool-btn', container);
-            btn.id = 'ipadDeleteNodeBtn';
-            btn.href = '#';
-            btn.title = 'โหมดลบจุด — แตะที่จุดเพื่อลบ';
-            btn.innerHTML = '<i class="bi bi-eraser"></i>';
-            L.DomEvent.disableClickPropagation(container);
-            L.DomEvent.on(btn, 'click', (e) => {
-                L.DomEvent.preventDefault(e);
-                setIpadDeleteNodeMode(!ipadDeleteNodeMode);
-            });
-            return container;
-        }
-    });
-    map.addControl(new DeleteNodeControl());
-}
+const DeleteNodeControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function () {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control delete-node-control');
+        const btn = L.DomUtil.create('a', 'map-tool-btn', container);
+        btn.id = 'deleteNodeBtn';
+        btn.href = '#';
+        btn.title = 'โหมดลบจุด — แตะ/คลิกที่จุดเพื่อลบ';
+        btn.innerHTML = '<i class="bi bi-eraser"></i>';
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(btn, 'click', (e) => {
+            L.DomEvent.preventDefault(e);
+            setDeleteNodeMode(!deleteNodeMode);
+        });
+        return container;
+    }
+});
+map.addControl(new DeleteNodeControl());
 
 const getFeatureStyle = (feature) => {
     let target = Number(feature.properties.deed_sqm || 0);

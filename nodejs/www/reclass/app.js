@@ -413,11 +413,10 @@ let mergeMode = false;
 let selectedForMerge = [];     // array of OL Features
 let skipNextClick = false;    // prevent click handler from deselecting after drawend
 
-// iPad has no right-click/contextmenu, so node deletion needs a dedicated tap-to-delete mode.
-// Detection kept iPad-only (per request) so mouse users' existing right-click-to-delete flow is untouched.
-const isIpad = /iPad/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let deleteNodeMode = false;   // iPad-only: when true, tapping a node deletes it instead of selecting/dragging
+// Touch devices (iPad etc.) have no right-click/contextmenu, so node deletion needs a
+// dedicated tap-to-delete mode. Available on all devices via the toggle button; right-click
+// keeps working as before when the mode is off.
+let deleteNodeMode = false;   // when true, tapping/clicking a node deletes it instead of selecting/dragging
 
 // ── 6b. Auto Farmer_ID for plots with no match ───────────
 // บาง plot ไม่มี Farmer_ID มาจับคู่ (เช่น plot ที่ถูกแบ่ง/รวมใหม่) ทำให้ split ไม่ผ่าน
@@ -804,8 +803,7 @@ function showFeaturePanel(feature) {
 
 // ── 11. Map click → select polygon ───────────────────────
 map.on('click', (evt) => {
-    // iPad-only delete-node mode: a tap deletes the nearest node instead of selecting/dragging.
-    // Guarded by isIpad at the toggle button, so deleteNodeMode is always false on desktop/mouse.
+    // Delete-node mode: a tap/click deletes the nearest node instead of selecting/dragging.
     if (deleteNodeMode && !drawInteraction) {
         deleteNodeAtCoord(evt.coordinate);
         return;
@@ -905,25 +903,24 @@ function buildMapToolbar() {
         },
     ];
 
-    // iPad has no right-click, so node deletion (normally right-click) needs a dedicated
-    // tap-to-delete mode here. Button only exists on iPad — desktop/mouse flow is unchanged.
-    if (isIpad) {
-        tools.push({
-            id: 'mapTool-delete-node',
-            icon: 'bi-eraser',
-            label: 'ลบจุด (แตะที่จุด)',
-            tooltip: 'โหมดลบจุด — แตะที่จุดเพื่อลบ',
-            startEnabled: true,
-            click: () => {
-                if (!editMode && splitLineSource.getFeatures().length === 0) {
-                    alert('กรุณาเข้าโหมดแก้ไขแปลง หรือวาดเส้นตัดก่อน');
-                    return;
-                }
-                setDeleteNodeMode(!deleteNodeMode);
-                showToast(deleteNodeMode ? 'โหมดลบจุด: แตะที่จุดเพื่อลบ' : 'ออกจากโหมดลบจุดแล้ว', 'info');
+    // Touch devices have no right-click, so node deletion (normally right-click) needs a
+    // dedicated tap-to-delete mode. Available on all devices — also works as a click-to-delete
+    // toggle for mouse users who prefer it over right-click.
+    tools.push({
+        id: 'mapTool-delete-node',
+        icon: 'bi-eraser',
+        label: 'ลบจุด (แตะ/คลิกที่จุด)',
+        tooltip: 'โหมดลบจุด — แตะ/คลิกที่จุดเพื่อลบ',
+        startEnabled: true,
+        click: () => {
+            if (!editMode && splitLineSource.getFeatures().length === 0) {
+                alert('กรุณาเข้าโหมดแก้ไขแปลง หรือวาดเส้นตัดก่อน');
+                return;
             }
-        });
-    }
+            setDeleteNodeMode(!deleteNodeMode);
+            showToast(deleteNodeMode ? 'โหมดลบจุด: แตะ/คลิกที่จุดเพื่อลบ' : 'ออกจากโหมดลบจุดแล้ว', 'info');
+        }
+    });
 
     tools.forEach(t => {
         const btn = document.createElement('button');
@@ -938,7 +935,7 @@ function buildMapToolbar() {
     document.getElementById('map').appendChild(toolbar);
 }
 
-// iPad-only: toggles tap-to-delete mode (see mapTool-delete-node above).
+// Toggles tap/click-to-delete mode (see mapTool-delete-node above).
 function setDeleteNodeMode(on) {
     deleteNodeMode = on;
     const btn = document.getElementById('mapTool-delete-node');
