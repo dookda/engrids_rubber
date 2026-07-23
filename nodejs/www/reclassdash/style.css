@@ -1710,6 +1710,65 @@ table.dataTable tbody tr.selected > * {
     transform: scale(1.08);
 }
 
+/* ===== Responsive ===== */
+@media (max-width: 991.98px) {
+    .split-row {
+        height: auto;
+        min-height: 0;
+    }
+    .split-map-col,
+    .split-panel-col {
+        height: auto;
+        overflow: visible;
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .split-panel-col {
+        margin-top: 0.75rem;
+    }
+    #map {
+        height: 60vh;
+        min-height: 340px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    #map {
+        height: 50vh;
+        min-height: 280px;
+    }
+    .card-body {
+        padding: 0.65rem 0.8rem;
+    }
+    .section-title {
+        font-size: 1rem;
+    }
+    .admin-status-grid,
+    .worker-status-grid {
+        gap: 4px;
+    }
+    .admin-status-card {
+        padding: 8px 4px 7px;
+    }
+    .admin-status-count {
+        font-size: 1.05rem;
+    }
+    .plot-nav-bar .d-flex.align-items-center.gap-2 {
+        flex-wrap: wrap;
+    }
+    .plot-nav-bar .input-group {
+        flex: 1 1 100%;
+    }
+    #display-farmer-name,
+    #display-farmer-id {
+        word-break: break-word;
+    }
+    .row.g-2.mb-3 > .col-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
 /* ===== Annotate Image Modal ===== */
 .annotate-empty-state {
     text-align: center;
