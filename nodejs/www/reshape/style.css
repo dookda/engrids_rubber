@@ -483,6 +483,30 @@ hr {
     background: #e8f5e9 !important;
 }
 
+/* ===== iPad-only delete-node toggle (tap-to-delete mode) ===== */
+.ipad-delete-node-control .map-tool-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    color: #2e3a2e;
+    font-size: 1.1rem;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.ipad-delete-node-control .map-tool-btn:hover {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.ipad-delete-node-control .map-tool-btn.map-tool-active {
+    background: #16a34a;
+    color: #ffffff;
+}
+
 /* ===== Responsive ===== */
 @media (max-height: 700px) {
     .card-body {
