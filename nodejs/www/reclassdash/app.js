@@ -2322,10 +2322,13 @@ const loadGeoData = async () => {
         }, 500);
 
         // แก้ปัญหาเวลาขยายลากจอ
+        let resizeDebounce;
         $(window).on('resize', function () {
             if ($.fn.DataTable.isDataTable('#featureTable')) {
                 $('#featureTable').DataTable().columns.adjust();
             }
+            clearTimeout(resizeDebounce);
+            resizeDebounce = setTimeout(() => map.invalidateSize(), 200);
         });
 
 

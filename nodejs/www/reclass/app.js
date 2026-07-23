@@ -413,6 +413,11 @@ let mergeMode = false;
 let selectedForMerge = [];     // array of OL Features
 let skipNextClick = false;    // prevent click handler from deselecting after drawend
 
+// Touch devices (iPad etc.) have no right-click/contextmenu, so node deletion needs a
+// dedicated tap-to-delete mode. Available on all devices via the toggle button; right-click
+// keeps working as before when the mode is off.
+let deleteNodeMode = false;   // when true, tapping/clicking a node deletes it instead of selecting/dragging
+
 // ── 6b. Auto Farmer_ID for plots with no match ───────────
 // บาง plot ไม่มี Farmer_ID มาจับคู่ (เช่น plot ที่ถูกแบ่ง/รวมใหม่) ทำให้ split ไม่ผ่าน
 // เพราะ backend บังคับว่าต้องมี Farmer_ID — จึง "จองเลข" ผ่าน /api/auto-farmer-id/:tb
@@ -798,6 +803,11 @@ function showFeaturePanel(feature) {
 
 // ── 11. Map click → select polygon ───────────────────────
 map.on('click', (evt) => {
+    // Delete-node mode: a tap/click deletes the nearest node instead of selecting/dragging.
+    if (deleteNodeMode && !drawInteraction) {
+        deleteNodeAtCoord(evt.coordinate);
+        return;
+    }
     // Don't intercept during draw or modify
     if (drawInteraction) return;
     if (editMode) return;
@@ -893,10 +903,29 @@ function buildMapToolbar() {
         },
     ];
 
+    // Touch devices have no right-click, so node deletion (normally right-click) needs a
+    // dedicated tap-to-delete mode. Available on all devices — also works as a click-to-delete
+    // toggle for mouse users who prefer it over right-click.
+    tools.push({
+        id: 'mapTool-delete-node',
+        icon: 'bi-eraser',
+        label: 'ลบจุด (แตะ/คลิกที่จุด)',
+        tooltip: 'โหมดลบจุด — แตะ/คลิกที่จุดเพื่อลบ',
+        startEnabled: true,
+        click: () => {
+            if (!editMode && splitLineSource.getFeatures().length === 0) {
+                alert('กรุณาเข้าโหมดแก้ไขแปลง หรือวาดเส้นตัดก่อน');
+                return;
+            }
+            setDeleteNodeMode(!deleteNodeMode);
+            showToast(deleteNodeMode ? 'โหมดลบจุด: แตะ/คลิกที่จุดเพื่อลบ' : 'ออกจากโหมดลบจุดแล้ว', 'info');
+        }
+    });
+
     tools.forEach(t => {
         const btn = document.createElement('button');
         btn.id = t.id;
-        btn.className = 'map-tool-btn map-tool-disabled';
+        btn.className = t.startEnabled ? 'map-tool-btn' : 'map-tool-btn map-tool-disabled';
         btn.title = t.tooltip;
         btn.innerHTML = `<i class="bi ${t.icon}"></i><span class="map-tool-label">${t.label}</span>`;
         btn.addEventListener('click', t.click);
@@ -904,6 +933,14 @@ function buildMapToolbar() {
     });
 
     document.getElementById('map').appendChild(toolbar);
+}
+
+// Toggles tap/click-to-delete mode (see mapTool-delete-node above).
+function setDeleteNodeMode(on) {
+    deleteNodeMode = on;
+    const btn = document.getElementById('mapTool-delete-node');
+    if (btn) btn.classList.toggle('map-tool-active', on);
+    map.getViewport().style.cursor = on ? 'crosshair' : (editMode ? 'grab' : '');
 }
 
 // ── 12b. Split workflow ───────────────────────────────────────
@@ -1050,6 +1087,7 @@ function cancelSplitDrawInternal() {
     // document.getElementById('confirmSplitSidebarBtn').style.display = 'none';
     const tbBtn = document.getElementById('mapTool-split');
     if (tbBtn) tbBtn.classList.remove('map-tool-active');
+    setDeleteNodeMode(false);
 }
 
 // Cancel draw
@@ -1064,6 +1102,7 @@ document.getElementById('cancelSplitDraw').addEventListener('click', () => {
     map.getViewport().style.cursor = '';
     document.getElementById('splitHint').style.display = 'none';
     // document.getElementById('confirmSplitSidebarBtn').style.display = 'none';
+    setDeleteNodeMode(false);
 });
 
 document.getElementById('confirmSplitSidebarBtn').addEventListener('click', async () => {
@@ -1456,6 +1495,7 @@ function stopEditMode() {
     editSource.clear();
     map.getViewport().style.cursor = '';
     document.getElementById('editHint').style.display = 'none';
+    setDeleteNodeMode(false);
 
     const tbBtn = document.getElementById('mapTool-edit');
     if (tbBtn) { tbBtn.classList.remove('map-tool-active'); }
@@ -1478,10 +1518,9 @@ function findNearestVertexIndex(coords, clickCoord, pixelTolerance) {
     return bestIdx;
 }
 
-map.getViewport().addEventListener('contextmenu', (evt) => {
-    evt.preventDefault();
-    const pixel = map.getEventPixel(evt);
-    const coord = map.getCoordinateFromPixel(pixel);
+// Shared by right-click (desktop) and iPad's tap-to-delete mode — deletes the nearest
+// node to `coord` from whichever thing is currently editable (selected polygon or split line).
+function deleteNodeAtCoord(coord) {
     const TOLERANCE = 14; // pixels
 
     // ── Case 1: editMode — delete vertex from polygon ──────
@@ -1574,6 +1613,13 @@ map.getViewport().addEventListener('contextmenu', (evt) => {
         splitLineCoords = gj;
         showToast('ลบจุดเส้นตัดแล้ว', 'info');
     }
+}
+
+map.getViewport().addEventListener('contextmenu', (evt) => {
+    evt.preventDefault();
+    const pixel = map.getEventPixel(evt);
+    const coord = map.getCoordinateFromPixel(pixel);
+    deleteNodeAtCoord(coord);
 });
 
 document.getElementById('cancelEdit').addEventListener('click', () => {

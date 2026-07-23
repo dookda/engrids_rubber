@@ -2508,6 +2508,37 @@ const normalizeProperties = (props) => {
     return normalized;
 };
 
+// อ่าน .prj (WKT) แล้วพยายามหา EPSG/UTM zone ที่แท้จริง แทนการเดา zone 47N คงที่
+function detectSridFromPrjContent(prjContent) {
+    if (!prjContent) return null;
+
+    // 1) กรณี WKT มี AUTHORITY["EPSG","XXXXX"] ระบุตรง ๆ (เอาตัวสุดท้าย = PROJCS code)
+    const authMatches = [...prjContent.matchAll(/AUTHORITY\s*\[\s*"EPSG"\s*,\s*"(\d+)"\s*\]/gi)];
+    if (authMatches.length > 0) {
+        const code = parseInt(authMatches[authMatches.length - 1][1], 10);
+        if (code) return code;
+    }
+
+    // 2) กรณีชื่อ projection ระบุ zone ตรง ๆ เช่น "UTM_Zone_48N" หรือ "UTM zone 48S"
+    const nameMatch = prjContent.match(/UTM[_\s]*Zone[_\s]*(\d{1,2})\s*([NS])?/i);
+    if (nameMatch) {
+        const zone = parseInt(nameMatch[1], 10);
+        const isSouth = (nameMatch[2] || '').toUpperCase() === 'S';
+        if (zone >= 1 && zone <= 60) return isSouth ? 32700 + zone : 32600 + zone;
+    }
+
+    // 3) คำนวณ zone จาก central_meridian ในพารามิเตอร์ projection
+    const cmMatch = prjContent.match(/central_meridian["\s,]+(-?\d+(?:\.\d+)?)/i);
+    if (cmMatch) {
+        const cm = parseFloat(cmMatch[1]);
+        const zone = Math.round((cm + 183) / 6);
+        const isSouth = /south/i.test(prjContent);
+        if (zone >= 1 && zone <= 60) return isSouth ? 32700 + zone : 32600 + zone;
+    }
+
+    return null;
+}
+
 // Upload Shapefile endpoint
 app.post('/api/upload-shapefile', upload.single('shpFile'), async (req, res) => {
     const { tb_name, geom_type, remark } = req.body;
@@ -2546,6 +2577,7 @@ app.post('/api/upload-shapefile', upload.single('shpFile'), async (req, res) => 
         const shpFiles = findFiles(extractDir, '.shp');
         const dbfFiles = findFiles(extractDir, '.dbf');
         const cpgFiles = findFiles(extractDir, '.cpg');
+        const prjFiles = findFiles(extractDir, '.prj');
 
         if (shpFiles.length === 0) throw new Error('No .shp file found in the ZIP');
 
@@ -2651,6 +2683,13 @@ app.post('/api/upload-shapefile', upload.single('shpFile'), async (req, res) => 
 
         // Detect Source SRID (Automatic UTM vs WGS84 detection)
         let sourceSrid = 4326;
+        let prjSrid = null;
+        if (prjFiles.length > 0) {
+            try {
+                const prjContent = fs.readFileSync(prjFiles[0], 'utf8');
+                prjSrid = detectSridFromPrjContent(prjContent);
+            } catch (e) { }
+        }
         if (features.length > 0 && features[0].geometry) {
             const getFirstCoord = (geom) => {
                 if (geom.type === 'Point') return geom.coordinates;
@@ -2660,8 +2699,9 @@ app.post('/api/upload-shapefile', upload.single('shpFile'), async (req, res) => 
             };
             const firstCoord = getFirstCoord(features[0].geometry);
             if (firstCoord && (Math.abs(firstCoord[0]) > 400 || Math.abs(firstCoord[1]) > 400)) {
-                sourceSrid = 32647; // Assume UTM Zone 47N (Common for Thailand)
-                console.log(`Detected Projected Coordinates. Using source SRID: ${sourceSrid}`);
+                // ใช้ zone จากไฟล์ .prj ถ้าอ่านได้ ไม่เช่นนั้น fallback เป็น UTM Zone 47N (ค่าเดิม)
+                sourceSrid = prjSrid || 32647;
+                console.log(`Detected Projected Coordinates. Using source SRID: ${sourceSrid}${prjSrid ? ' (from .prj)' : ' (fallback assumption)'}`);
             }
         }
 
@@ -2976,6 +3016,7 @@ app.post('/api/upload-shapefile-to-table', upload.single('shpFile'), async (req,
         const shpFiles = findFiles(extractDir, '.shp');
         const dbfFiles = findFiles(extractDir, '.dbf');
         const cpgFiles = findFiles(extractDir, '.cpg');
+        const prjFiles = findFiles(extractDir, '.prj');
 
         if (shpFiles.length === 0) throw new Error('No .shp file found in the ZIP');
 
@@ -2998,6 +3039,13 @@ app.post('/api/upload-shapefile-to-table', upload.single('shpFile'), async (req,
 
         // Detect source SRID
         let sourceSrid = 4326;
+        let prjSrid = null;
+        if (prjFiles.length > 0) {
+            try {
+                const prjContent = fs.readFileSync(prjFiles[0], 'utf8');
+                prjSrid = detectSridFromPrjContent(prjContent);
+            } catch (e) { }
+        }
         if (features.length > 0 && features[0].geometry) {
             const getFirstCoord = (geom) => {
                 if (geom.type === 'Point') return geom.coordinates;
@@ -3007,7 +3055,7 @@ app.post('/api/upload-shapefile-to-table', upload.single('shpFile'), async (req,
             };
             const firstCoord = getFirstCoord(features[0].geometry);
             if (firstCoord && (Math.abs(firstCoord[0]) > 400 || Math.abs(firstCoord[1]) > 400)) {
-                sourceSrid = 32647;
+                sourceSrid = prjSrid || 32647;
             }
         }
 

@@ -342,14 +342,58 @@ map.pm.addControls({
 // Disable browser default context menu on map so right-click can delete nodes
 map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
 
+// Touch devices (iPad etc.) have no right-click/contextmenu, so node deletion needs a
+// dedicated tap-to-delete mode (Geoman itself supports removeVertexOn: 'click' — we just
+// switch to it while this mode is on). Available on all devices via the toggle button below;
+// right-click keeps working as before when the mode is off.
+let PM_REMOVE_VERTEX_ON = 'contextmenu';
+let deleteNodeMode = false;
+
 // Set global Geoman options: right-click removes vertex + สีเส้นขณะวาด (เหลืองสว่าง เห็นชัดบนทุก layer)
 // layerGroup: featureGroup ทำให้รูปที่วาด/ตัดใหม่ถูกเพิ่ม-ลบใน featureGroup โดยอัตโนมัติ (ไม่ใช่ map ตรงๆ)
 map.pm.setGlobalOptions({
-    removeVertexOn: 'contextmenu',
+    removeVertexOn: PM_REMOVE_VERTEX_ON,
     layerGroup: featureGroup,
     templineStyle:  { color: '#FBBF24', weight: 3, opacity: 1 },
     hintlineStyle:  { color: '#FBBF24', weight: 2, opacity: 0.8, dashArray: '7,5' }
 });
+
+// Toggles vertex removal between 'contextmenu' (default) and 'click' (tap-to-delete).
+function setDeleteNodeMode(on) {
+    deleteNodeMode = on;
+    PM_REMOVE_VERTEX_ON = on ? 'click' : 'contextmenu';
+    map.pm.setGlobalOptions({ removeVertexOn: PM_REMOVE_VERTEX_ON });
+    // Re-apply to whichever layer is currently in edit mode so the change takes effect immediately
+    // (disable+re-enable rather than calling enable() again, since geoman may not otherwise
+    // pick up changed options on an already-enabled layer)
+    featureGroup.eachLayer(l => {
+        if (l.pm && l.pm.enabled && l.pm.enabled()) {
+            l.pm.disable();
+            l.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
+        }
+    });
+    const btn = document.getElementById('deleteNodeBtn');
+    if (btn) btn.classList.toggle('map-tool-active', on);
+}
+
+const DeleteNodeControl = L.Control.extend({
+    options: { position: 'topleft' },
+    onAdd: function () {
+        const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control delete-node-control');
+        const btn = L.DomUtil.create('a', 'map-tool-btn', container);
+        btn.id = 'deleteNodeBtn';
+        btn.href = '#';
+        btn.title = 'โหมดลบจุด — แตะ/คลิกที่จุดเพื่อลบ';
+        btn.innerHTML = '<i class="bi bi-eraser"></i>';
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(btn, 'click', (e) => {
+            L.DomEvent.preventDefault(e);
+            setDeleteNodeMode(!deleteNodeMode);
+        });
+        return container;
+    }
+});
+map.addControl(new DeleteNodeControl());
 
 const getFeatureStyle = (feature) => {
     let target = Number(feature.properties.deed_sqm || 0);
@@ -410,7 +454,7 @@ map.on('pm:create', (e) => {
     const layer = e.layer;
     featureGroup.addLayer(layer);
     featureGroup.bringToFront(); // ดึงทุกแปลงใน featureGroup ขึ้นบนเส้น shpall เสมอ
-    layer.pm.enable({ removeVertexOn: 'contextmenu' });
+    layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
 
     // If a point is selected, replace it with this new polygon
     if (selectedLayer && selectedLayer instanceof L.Marker) {
@@ -427,7 +471,7 @@ map.on('pm:create', (e) => {
             if (isDrawing) return;
             showFeaturePanel(layer.feature, layer);
             featureGroup.eachLayer(l => l.pm.disable());
-            layer.pm.enable({ removeVertexOn: 'contextmenu' });
+            layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
             highlightSelectedLayer(layer);
             layerEdited = false;
             selectedLayer = layer;
@@ -504,7 +548,7 @@ map.on('pm:cut', (e) => {
     showFeaturePanel(newLayer.feature, newLayer); // sync ช่อง ID/refinal/เนื้อที่เป้าหมาย ในไซด์บาร์ — ไม่งั้นจะว่างและ save ไม่ได้
 
     featureGroup.eachLayer(l => l.pm.disable());
-    newLayer.pm.enable({ removeVertexOn: 'contextmenu' });
+    newLayer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
     selectedLayer = newLayer;
     layerEdited = true;
     updateAreaLabel();
@@ -730,7 +774,7 @@ const onEachFeature = (feature, layer) => {
         if (isDrawing) return;
         showFeaturePanel(feature, layer);
         featureGroup.eachLayer(l => l.pm.disable());
-        layer.pm.enable({ removeVertexOn: 'contextmenu' });
+        layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
         highlightSelectedLayer(layer);
         layerEdited = false; // reset on new selection
         selectedLayer = layer;
@@ -1064,7 +1108,7 @@ const loadGeoData = async () => {
                         if (layer.feature.properties.id === refid) {
                             selectedLayer = layer;
                             showFeaturePanel(layer.feature, layer);
-                            layer.pm.enable({ removeVertexOn: 'contextmenu' });
+                            layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
                             highlightSelectedLayer(layer);
                         }
                     }
@@ -1219,7 +1263,7 @@ document.getElementById('save').addEventListener('click', async () => {
                 if (layer.feature && layer.feature.properties.id === savedId) {
                     selectedLayer = layer;
                     showFeaturePanel(layer.feature, layer);
-                    layer.pm.enable({ removeVertexOn: 'contextmenu' });
+                    layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
                     highlightSelectedLayer(layer);
                 }
             });
