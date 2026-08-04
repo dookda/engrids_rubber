@@ -590,7 +590,7 @@ async function updateAreaDisplay(feature) {
 
         const sqmYang = parseFloat(document.getElementById('rubr_sqm').value.replace(/,/g, '')) || 0;
         const el = document.getElementById('checkarea');
-        if (Math.abs(sqmYang - area) <= 400) {
+        if (Math.abs(sqmYang - area) <= 600) {
             el.innerHTML = '<span style="color:green">* พื้นที่ตรงกับข้อมูลเป้าหมาย</span>';
         } else {
             el.innerHTML = '<span style="color:red">* พื้นที่ไม่ตรงกับข้อมูลเป้าหมาย</span>';
@@ -807,7 +807,7 @@ function showFeaturePanel(feature) {
     const sqmYang = parseFloat(document.getElementById('rubr_sqm').value.replace(/,/g, '')) || 0;
     const el = document.getElementById('checkarea');
     if (sqmYang > 0 && currentArea) {
-        if (Math.abs(sqmYang - currentArea) <= 400) {
+        if (Math.abs(sqmYang - currentArea) <= 600) {
             el.innerHTML = '<span style="color:green">* พื้นที่ตรงกับข้อมูลเป้าหมาย</span>';
         } else {
             el.innerHTML = '<span style="color:red">* พื้นที่ไม่ตรงกับข้อมูลเป้าหมาย</span>';
@@ -1502,7 +1502,7 @@ function startEditMode() {
 
             const sqmYang = parseFloat(document.getElementById('rubr_sqm').value.replace(/,/g, '')) || 0;
             const el = document.getElementById('checkarea');
-            if (Math.abs(sqmYang - area) <= 400) {
+            if (Math.abs(sqmYang - area) <= 600) {
                 el.innerHTML = '<span style="color:green">* พื้นที่ตรงกับข้อมูลเป้าหมาย</span>';
             } else {
                 el.innerHTML = '<span style="color:red">* พื้นที่ไม่ตรงกับข้อมูลเป้าหมาย</span>';
