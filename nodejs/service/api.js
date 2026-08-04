@@ -22,6 +22,29 @@ const pool = new Pool({
     port: process.env.DB_PORT,
 });
 
+// ── UTM zone helper ──────────────────────────────────────────────────────────
+// ประเทศไทยคาบเกี่ยว 2 โซน UTM (47N ~96-102°E, 48N ~102-108°E) ห้าม hardcode 32647
+// อย่างเดียว — ต้องเลือกโซนจาก centroid ของ geometry ทุกครั้งที่คำนวณ/บันทึกพื้นที่จริง
+function _utmCentroidLonLat(coords, type) {
+    let x = 0, y = 0, total = 0;
+    const addRing = (ring) => { for (const [lon, lat] of ring) { x += lon; y += lat; total++; } };
+    if (type === 'Polygon') {
+        for (const ring of coords) addRing(ring);
+    } else if (type === 'MultiPolygon') {
+        for (const polygon of coords) for (const ring of polygon) addRing(ring);
+    }
+    return total > 0 ? [x / total, y / total] : [null, null];
+}
+
+function getUtmSridFromGeoJSON(geometry) {
+    if (!geometry || !geometry.coordinates) return 32647;
+    const [lon, lat] = _utmCentroidLonLat(geometry.coordinates, geometry.type);
+    if (lon === null || lat === null || isNaN(lon) || isNaN(lat)) return 32647; // fallback
+    const zone = Math.floor((lon + 180) / 6) + 1;
+    const isNorthern = lat >= 0;
+    return isNorthern ? 32600 + zone : 32700 + zone;
+}
+
 // ── Review history helpers ──────────────────────────────────────────────────
 // ใช้ pool เสมอ (ไม่ใช้ transaction client) เพื่อไม่ให้ history หายไปถ้า rollback
 let _reviewHistoryReady = false;
@@ -1461,14 +1484,16 @@ app.post('/api/splitfeature/:tb', async (req, res) => {
         if (!tb) {
             return res.status(400).json({ error: 'Table name is required' });
         }
-        const { polygon_fc, line_fc, srid, displayName } = req.body;
+        const { polygon_fc, line_fc, displayName } = req.body;
         const polygon = polygon_fc.geometry;
         const line = line_fc.geometry;
         const properties = polygon_fc.properties;
         const id = polygon_fc.properties.id;
         const sub_id = polygon_fc.properties.sub_id;
+        // เลือกโซน UTM จาก centroid ของแปลงจริงเสมอ (ไม่รับ srid จาก client) — ไทยมีทั้งโซน 47N/48N
+        const srid = getUtmSridFromGeoJSON(polygon);
 
-        console.log(`Splitting feature in table ${tb} with ID ${id} and sub_id ${sub_id}`);
+        console.log(`Splitting feature in table ${tb} with ID ${id} and sub_id ${sub_id}, UTM SRID ${srid}`);
 
         // Save review history before deleting the existing sub_id row
         await saveReviewHistoryBySubId(null, tb, sub_id, 'split');
@@ -1837,6 +1862,8 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
             return res.status(400).json({ error: 'sub_id และ geometry จำเป็นต้องมี' });
         }
 
+        const utmSrid = getUtmSridFromGeoJSON(geometry); // 32647 หรือ 32648 ตามตำแหน่งจริงของแปลง
+
         const query = `
             WITH geom_input AS (
                 SELECT
@@ -1846,18 +1873,18 @@ app.put('/api/update_geometry/:tb', async (req, res) => {
             )
             UPDATE reclass_${tb}
             SET
-                geom = CASE 
-                    WHEN ST_GeometryType(g.geom_wgs) IN ('ST_Polygon', 'ST_MultiPolygon') 
+                geom = CASE
+                    WHEN ST_GeometryType(g.geom_wgs) IN ('ST_Polygon', 'ST_MultiPolygon')
                     THEN ST_Multi(g.geom_wgs)
-                    ELSE geom 
+                    ELSE geom
                 END,
                 geom_point = CASE
                     WHEN ST_GeometryType(g.geom_wgs) = 'ST_Point'
                     THEN g.geom_wgs
                     ELSE geom_point
                 END,
-                shpsplit_sqm = ST_Area(ST_Transform(g.geom_wgs, 32647)),
-                "class_Area" = ROUND((ST_Area(ST_Transform(g.geom_wgs, 32647))::numeric / 1600.0), 2),
+                shpsplit_sqm = ST_Area(ST_Transform(g.geom_wgs, ${utmSrid})),
+                "class_Area" = ROUND((ST_Area(ST_Transform(g.geom_wgs, ${utmSrid}))::numeric / 1600.0), 2),
                 editor = g.editor
             FROM geom_input g
             WHERE reclass_${tb}.sub_id = g.sub_id

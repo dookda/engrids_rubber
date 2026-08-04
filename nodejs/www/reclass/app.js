@@ -13,6 +13,54 @@
 const EPSG4326 = 'EPSG:4326';
 const EPSG3857 = 'EPSG:3857';
 
+// ประเทศไทยคาบเกี่ยว 2 โซน UTM (47N ~96-102°E, 48N ~102-108°E) — เลือกโซนจาก centroid ของ
+// แปลงจริงเสมอ (เดียวกับที่ backend ทำตอนบันทึก) ห้าม hardcode โซนใดโซนหนึ่งตายตัว
+proj4.defs('EPSG:32647', '+proj=utm +zone=47 +datum=WGS84 +units=m +no_defs +type=crs');
+proj4.defs('EPSG:32648', '+proj=utm +zone=48 +datum=WGS84 +units=m +no_defs +type=crs');
+
+function _shoelaceAreaSqm(ring) {
+    let area = 0;
+    for (let i = 0; i < ring.length; i++) {
+        const [x1, y1] = ring[i];
+        const [x2, y2] = ring[(i + 1) % ring.length];
+        area += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(area) / 2;
+}
+
+function _utmEpsgForLonLat(lon, lat) {
+    const zone = Math.floor((lon + 180) / 6) + 1;
+    const isNorthern = lat >= 0;
+    return `EPSG:${isNorthern ? 32600 + zone : 32700 + zone}`;
+}
+
+// centroid หยาบๆ ของ ring แรก (พอสำหรับเลือกโซน UTM ไม่ต้องแม่นยำระดับ area)
+function _ringCentroidLonLat(ring) {
+    let x = 0, y = 0;
+    for (const [lon, lat] of ring) { x += lon; y += lat; }
+    return [x / ring.length, y / ring.length];
+}
+
+function _polygonAreaSqm(ringsLonLat) {
+    const outer = ringsLonLat[0] || [];
+    const [clon, clat] = _ringCentroidLonLat(outer);
+    const utmEpsg = _utmEpsgForLonLat(clon, clat);
+    const ringsUtm = ringsLonLat.map(ring => ring.map(([lon, lat]) => proj4('EPSG:4326', utmEpsg, [lon, lat])));
+    let area = _shoelaceAreaSqm(ringsUtm[0] || []);
+    for (let i = 1; i < ringsUtm.length; i++) area -= _shoelaceAreaSqm(ringsUtm[i]);
+    return area;
+}
+
+// คำนวณพื้นที่จริงแบบเดียวกับที่ backend บันทึกลง DB (ST_Area หลัง ST_Transform เป็น UTM โซนที่ตรงกับตำแหน่งแปลง)
+// ทำฝั่ง client ตรงๆ ไม่ต้องยิง API เพื่อให้เลข "ระหว่างลาก" และ "ตอนปล่อย" เป็นค่าเดียวกันเป๊ะ ไม่กระโดด
+function calculateAreaSqmLocal(geometry) {
+    const clone = geometry.clone().transform(EPSG3857, EPSG4326);
+    const type = clone.getType();
+    if (type === 'Polygon') return _polygonAreaSqm(clone.getCoordinates());
+    if (type === 'MultiPolygon') return clone.getCoordinates().reduce((sum, poly) => sum + _polygonAreaSqm(poly), 0);
+    return 0;
+}
+
 // ── 2. Base tile sources ──────────────────────────────────
 function googleSource(lyrs) {
     return new ol.source.XYZ({
@@ -385,6 +433,7 @@ function hexToRgba(hex, alpha) {
 
 // ── 6. State ─────────────────────────────────────────────
 let selectedFeature = null;   // OL Feature currently selected
+let _areaCalcGen = 0;         // race guard: incrementing token so a slower/older /api/area response can never overwrite a newer one
 let splitLineCoords = null;   // GeoJSON coords of the drawn split line
 let drawInteraction = null;   // ol.interaction.Draw instance
 let modifyInteraction = null;   // ol.interaction.Modify instance
@@ -530,20 +579,12 @@ async function ensureFarmerId(feature) {
 }
 
 // ── 7. Area helpers ──────────────────────────────────────
-async function calculateArea(geometry) {
-    const res = await fetch('/rub/api/area', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ geometry })
-    });
-    if (!res.ok) throw new Error('Failed to calculate area');
-    return (await res.json()).area;
-}
-
 async function updateAreaDisplay(feature) {
+    const gen = ++_areaCalcGen;
     try {
-        const geomGeoJSON = featureToGeoJSON(feature);
-        const area = await calculateArea(geomGeoJSON.geometry);
+        const area = calculateAreaSqmLocal(feature.getGeometry());
+        // เผื่อโค้ดอื่นแทรกเข้ามาระหว่างนี้ (เผื่ออนาคตมีงาน async อื่นแทรก) กัน overwrite ผิดแปลง/ผิดรอบ
+        if (gen !== _areaCalcGen || feature !== selectedFeature) return;
         const round = Math.round(area);
         document.getElementById('current_sqm').value = round.toLocaleString('th-TH');
 
@@ -1144,7 +1185,7 @@ async function executeSplit() {
     const payload = {
         polygon_fc: polygon,
         line_fc: line_fc,
-        srid: 32647,
+        // srid ไม่ต้องส่งแล้ว — backend เลือกโซน UTM (47N/48N) เองจาก centroid ของแปลงจริง
         displayName: displayName,
     };
 
@@ -1456,7 +1497,7 @@ function startEditMode() {
         const geomSel = selectedFeature.getGeometry();
         const listener = geomSel.on('change', () => {
             if (isReverting) return;
-            const area = ol.sphere.getArea(geomSel, { projection: 'EPSG:3857' });
+            const area = calculateAreaSqmLocal(geomSel);
             document.getElementById('current_sqm').value = Math.round(area).toLocaleString('th-TH');
 
             const sqmYang = parseFloat(document.getElementById('rubr_sqm').value.replace(/,/g, '')) || 0;

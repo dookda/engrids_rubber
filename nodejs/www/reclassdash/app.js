@@ -69,8 +69,13 @@ const _sumRubberAndExcluded = (id) => {
     if ($.fn.DataTable.isDataTable('#featureTable')) {
         const rows = $('#featureTable').DataTable().rows().data().toArray()
             .filter(r => String(r.id) === String(id));
+        // กันแถวซ้ำ (sub_id ซ้ำกันจากข้อมูลที่ split ซ้อน) ไม่ให้บวกพื้นที่ซ้ำสองรอบ
+        const seenSubIds = new Set();
         rows.forEach(r => {
-            const val = _shpsplitRoundedById[`${r.id}::${r.sub_id}`] ?? Math.round(Number(r.shpsplit_sqm || 0));
+            const key = `${r.id}::${r.sub_id}`;
+            if (seenSubIds.has(key)) return;
+            seenSubIds.add(key);
+            const val = _shpsplitRoundedById[key] ?? Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) exSqm += val;
         });
@@ -1701,9 +1706,13 @@ const loadGeoData = async () => {
         // เพราะพื้นที่กันออก (เช่น ถนน, บ่อน้ำ, สิ่งปลูกสร้าง) ยังถือเป็นส่วนหนึ่งของ
         // แปลงยางเดิม ต้องนับรวมเข้าเป้าหมายยางพารา ไม่ใช่หักออกไปเฉยๆ
         const idAreaAgg = {};
+        const _seenIdAreaSubIds = new Set(); // กันแถวซ้ำ (sub_id ซ้ำ) ไม่ให้บวกพื้นที่ซ้ำสองรอบ
         tableData.forEach(r => {
+            const key = `${r.id}::${r.sub_id}`;
+            if (_seenIdAreaSubIds.has(key)) return;
+            _seenIdAreaSubIds.add(key);
             const agg = idAreaAgg[r.id] || (idAreaAgg[r.id] = { rubberSqm: 0, exSqm: 0 });
-            const val = shpsplitRoundedById[`${r.id}::${r.sub_id}`] ?? Math.round(Number(r.shpsplit_sqm || 0));
+            const val = shpsplitRoundedById[key] ?? Math.round(Number(r.shpsplit_sqm || 0));
             if (r.classtype === 'rubber') agg.rubberSqm += val;
             else if (String(r.classtype || '').startsWith('ex_')) agg.exSqm += val;
         });
