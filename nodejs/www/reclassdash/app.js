@@ -83,12 +83,12 @@ const _sumRubberAndExcluded = (id) => {
     return { rubberSqm, exSqm, total: rubberSqm + exSqm };
 };
 
-// ส่วนต่างเทียบกับเป้าหมาย — เขียว ±400 m² ถือว่าตรง, แดงถ้าเกิน (ใช้ร่วมกันทั้งตารางและแผงตรวจ)
+// ส่วนต่างเทียบกับเป้าหมาย — เขียว ±600 m² ถือว่าตรง, แดงถ้าเกิน (ใช้ร่วมกันทั้งตารางและแผงตรวจ)
 const _areaDiffHtml = (cur, target) => {
     if (!target || target <= 0) return '';
     const diff = Math.round(cur - target);
     const sign = diff >= 0 ? '+' : '';
-    const color = Math.abs(diff) <= 400 ? 'green' : 'red';
+    const color = Math.abs(diff) <= 600 ? 'green' : 'red';
     return ` <small style="color:${color}">(${sign}${diff.toLocaleString('th-TH')})</small>`;
 };
 
