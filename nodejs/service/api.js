@@ -45,6 +45,12 @@ function getUtmSridFromGeoJSON(geometry) {
     return isNorthern ? 32600 + zone : 32700 + zone;
 }
 
+// SQL expression (ไม่ใช่ JS) สำหรับคำนวณ UTM SRID จาก centroid ของ geometry ที่ระบุ ใช้ตอนที่
+// query ทำงานข้ามหลายแถวในตาราง (join/overlap) ซึ่งไม่มี geometry เดี่ยวจาก client ให้คำนวณใน JS ได้
+// ประเทศไทยอยู่ซีกโลกเหนือทั้งหมดจึงไม่ต้องเช็ค lat >= 0
+const UTM_SRID_SQL = (geomExpr) =>
+    `(32600 + FLOOR((ST_X(ST_Centroid(${geomExpr})) + 180) / 6)::int + 1)`;
+
 // ── Review history helpers ──────────────────────────────────────────────────
 // ใช้ pool เสมอ (ไม่ใช้ transaction client) เพื่อไม่ให้ history หายไปถ้า rollback
 let _reviewHistoryReady = false;
@@ -232,7 +238,7 @@ async function recomputeTopologyStatus(tb, subIds = null) {
                 a.sub_id AS a_sub,
                 b.sub_id AS b_sub,
                 b.id AS b_id,
-                ROUND(ST_Area(ST_Transform(ST_Intersection(a.geom, b.geom), 32647))::numeric, 2) AS overlap_sqm
+                ROUND(ST_Area(ST_Transform(ST_Intersection(a.geom, b.geom), ${UTM_SRID_SQL('a.geom')}))::numeric, 2) AS overlap_sqm
             FROM reclass_${tb} a
             JOIN reclass_${tb} b
               ON a.sub_id <> b.sub_id
@@ -2387,6 +2393,7 @@ app.post('/api/check_topology_live/:tb', async (req, res) => {
         if (!geometry || !geometry.type || !geometry.coordinates) {
             return res.status(400).json({ error: 'Missing or invalid GeoJSON geometry' });
         }
+        const utmSrid = getUtmSridFromGeoJSON(geometry); // 32647 หรือ 32648 ตามตำแหน่งจริงของแปลง
 
         const sql = `
             WITH input AS (
@@ -2394,7 +2401,7 @@ app.post('/api/check_topology_live/:tb', async (req, res) => {
             )
             SELECT
                 b.id AS b_id,
-                ROUND(ST_Area(ST_Transform(ST_Intersection(i.geom, b.geom), 32647))::numeric, 2) AS overlap_sqm
+                ROUND(ST_Area(ST_Transform(ST_Intersection(i.geom, b.geom), ${utmSrid}))::numeric, 2) AS overlap_sqm
             FROM input i
             JOIN ${tb} b
               ON b.id IS DISTINCT FROM $2::integer
@@ -2428,12 +2435,21 @@ app.post('/api/collected_feat', async (req, res) => {
 
         const placeholders = id_list.map((_, i) => `$${i + 1}`).join(',');
         const sql = `
-            WITH polys AS (
-                SELECT ST_Transform(ST_MakeValid(geom), 32647) AS geom_proj
+            WITH raw AS (
+                SELECT geom
                 FROM public.reclass_${tb}
                 WHERE sub_id IN (${placeholders}) AND classtype='rubber'
+            ),
+            srid_pick AS (
+                -- เลือกโซน UTM เดียวจาก centroid ของกลุ่มแปลงที่จะรวมทั้งหมด (ไม่ hardcode 32647)
+                -- ต้องใช้โซนเดียวกันทุกแถวตอน transform ไม่งั้น ST_Union จะรวมพิกัดคนละระบบกัน
+                SELECT ${UTM_SRID_SQL('ST_Collect(geom)')} AS srid FROM raw
+            ),
+            polys AS (
+                SELECT ST_Transform(ST_MakeValid(r.geom), s.srid) AS geom_proj
+                FROM raw r, srid_pick s
             )
-            SELECT 
+            SELECT
                 ST_AsGeoJSON(ST_Transform(ST_Union(geom_proj), 4326)) AS geom,
                 SUM(ST_Area(geom_proj)) AS shpsplit_sqm
             FROM polys;
