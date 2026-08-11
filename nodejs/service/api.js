@@ -404,32 +404,36 @@ app.get('/api/getfeaturesv3/:tb', async (req, res) => {
         );
         const hasGeomPoint = colCheck.rowCount > 0;
 
-        const geomPointSelect = hasGeomPoint ? 'ST_AsGeoJSON(geom_point) AS geom_point' : "NULL::json AS geom_point";
-        const whereClause = hasGeomPoint ? 'WHERE geom IS NOT NULL OR geom_point IS NOT NULL' : 'WHERE geom IS NOT NULL';
+        const geomPointSelect = hasGeomPoint ? 'ST_AsGeoJSON(t.geom_point) AS geom_point' : "NULL::json AS geom_point";
+        const whereClause = hasGeomPoint ? 'WHERE t.geom IS NOT NULL OR t.geom_point IS NOT NULL' : 'WHERE t.geom IS NOT NULL';
+
+        await ensurePlotLocksTable();
 
         const sql = `
-            SELECT id,
-                "F_name",
-                "L_name",
-                "Para_Age",
-                refinal,
-                "Farmer_ID",
-                "Regis_No",
-                "Deed_Sqm",
-                "Deed_Area",
-                "Deed_total",
-                "Deed_ID",
-                "Rubr_Sqm",
-                "Rubr_total",
-                "Full_nam",
-                "Sqm_Deed",
-                classified,
-                ST_AsGeoJSON(geom) AS geom,
+            SELECT t.id,
+                t."F_name",
+                t."L_name",
+                t."Para_Age",
+                t.refinal,
+                t."Farmer_ID",
+                t."Regis_No",
+                t."Deed_Sqm",
+                t."Deed_Area",
+                t."Deed_total",
+                t."Deed_ID",
+                t."Rubr_Sqm",
+                t."Rubr_total",
+                t."Full_nam",
+                t."Sqm_Deed",
+                t.classified,
+                (pl.id IS NOT NULL) AS locked,
+                ST_AsGeoJSON(t.geom) AS geom,
                 ${geomPointSelect}
-            FROM ${tb}
+            FROM ${tb} t
+            LEFT JOIN plot_locks pl ON LOWER(pl.tb_name) = LOWER($1) AND pl.feature_id = t.id
             ${whereClause}
         `;
-        const result = await pool.query(sql);
+        const result = await pool.query(sql, [tb]);
         res.status(200).json({ success: true, data: result.rows });
     } catch (err) {
         console.error(err);
@@ -450,6 +454,8 @@ app.delete('/api/deletefeature/:tb/:id', async (req, res) => {
         if (isNaN(featureId)) {
             return res.status(400).json({ error: 'Feature ID must be a number' });
         }
+
+        if (await blockIfLocked(req, res, tb, featureId)) return;
 
         const client = await pool.connect();
         try {
@@ -490,6 +496,8 @@ app.put('/api/restorefeatures/:tb/:id', async (req, res) => {
         if (isNaN(featureId)) {
             return res.status(400).json({ error: 'Feature ID must be a number' });
         }
+
+        if (await blockIfLocked(req, res, tb, featureId)) return;
 
         // ──────────────────────────────────────────────────────────────────────
         // ลองดึงจาก backup table ก่อน (ค่าต้นฉบับ) ถ้ามี
@@ -692,11 +700,13 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
 
         const { id, refinal, features, displayName, geometryChanged, currentShpareaSq } = req.body;
 
-        const client = await pool.connect();
-
         if (!features || !Array.isArray(features) || features.length === 0) {
             return res.status(400).json({ error: 'Invalid or empty features' });
         }
+
+        if (await blockIfLocked(req, res, tb, parseInt(id, 10))) return;
+
+        const client = await pool.connect();
 
         // ✅ ฟังก์ชันคำนวณ EPSG จาก centroid
         function getPolygonCentroid(coords, type) {
@@ -869,6 +879,8 @@ app.put('/api/clearshape/:tb/:id', async (req, res) => {
         if (isNaN(featureId)) {
             return res.status(400).json({ error: 'Feature ID must be a number' });
         }
+
+        if (await blockIfLocked(req, res, tb, featureId)) return;
 
         const { refinal, displayName } = req.body;
 
@@ -3451,6 +3463,111 @@ app.get('/api/backup-diff/:tb', async (req, res) => {
         });
     } catch (err) {
         console.error('[BACKUP] diff error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   PLOT LOCK APIs
+   ให้แอดมินปิด (ล็อก) แปลงเป็นรายแปลง (tb_name + feature id) กัน worker แก้ไข
+   เก็บแยกตารางเพราะ public.{tb} ถูก DROP/CREATE ใหม่ทุกครั้งที่ upload
+══════════════════════════════════════════════════════════════ */
+
+async function ensurePlotLocksTable() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS plot_locks (
+            id             SERIAL PRIMARY KEY,
+            tb_name        TEXT NOT NULL,
+            feature_id     INTEGER NOT NULL,
+            locked_by      INTEGER REFERENCES users(id),
+            locked_by_name TEXT,
+            locked_at      TIMESTAMP DEFAULT NOW(),
+            UNIQUE (tb_name, feature_id)
+        )
+    `);
+}
+
+async function isPlotLocked(tb, featureId) {
+    await ensurePlotLocksTable();
+    const { rowCount } = await pool.query(
+        `SELECT 1 FROM plot_locks WHERE LOWER(tb_name) = LOWER($1) AND feature_id = $2`,
+        [tb, featureId]
+    );
+    return rowCount > 0;
+}
+
+/* คืน true (และตอบ 403 ให้เอง) ถ้าแปลงนี้ถูกล็อกและผู้เรียกไม่ใช่ admin — ใช้กันในทุก endpoint ที่แก้ไขข้อมูลแปลง */
+async function blockIfLocked(req, res, tb, featureId) {
+    const role = req.session?.user?.role;
+    if (role === 'admin') return false;
+    if (await isPlotLocked(tb, featureId)) {
+        res.status(403).json({ success: false, error: 'แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้' });
+        return true;
+    }
+    return false;
+}
+
+/* GET /api/plotlocks/:tb – รายการ feature id ที่ถูกล็อกทั้งหมดของ table นั้น */
+app.get('/api/plotlocks/:tb', async (req, res) => {
+    try {
+        await ensurePlotLocksTable();
+        const tb = req.params.tb.toLowerCase();
+        const result = await pool.query(
+            `SELECT feature_id, locked_by_name, locked_at FROM plot_locks WHERE LOWER(tb_name) = $1 ORDER BY feature_id`,
+            [tb]
+        );
+        res.json({ success: true, data: result.rows });
+    } catch (err) {
+        console.error('Error in GET /api/plotlocks:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* PUT /api/plotlocks/:tb/:id – แอดมินปิด (ล็อก) แปลง */
+app.put('/api/plotlocks/:tb/:id', async (req, res) => {
+    try {
+        const sessionUser = req.session?.user;
+        if (!sessionUser) return res.status(401).json({ success: false, error: 'Not authenticated' });
+        if (sessionUser.role !== 'admin') return res.status(403).json({ success: false, error: 'เฉพาะแอดมินเท่านั้นที่ปิดแปลงได้' });
+
+        await ensurePlotLocksTable();
+        const tb = req.params.tb.toLowerCase();
+        const featureId = parseInt(req.params.id, 10);
+        if (isNaN(featureId)) return res.status(400).json({ success: false, error: 'Feature ID must be a number' });
+
+        await pool.query(
+            `INSERT INTO plot_locks (tb_name, feature_id, locked_by, locked_by_name)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (tb_name, feature_id) DO UPDATE
+             SET locked_by = $3, locked_by_name = $4, locked_at = NOW()`,
+            [tb, featureId, sessionUser.id, sessionUser.displayName || null]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error in PUT /api/plotlocks:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* DELETE /api/plotlocks/:tb/:id – แอดมินปลดล็อกแปลง */
+app.delete('/api/plotlocks/:tb/:id', async (req, res) => {
+    try {
+        const sessionUser = req.session?.user;
+        if (!sessionUser) return res.status(401).json({ success: false, error: 'Not authenticated' });
+        if (sessionUser.role !== 'admin') return res.status(403).json({ success: false, error: 'เฉพาะแอดมินเท่านั้นที่ปลดล็อกแปลงได้' });
+
+        await ensurePlotLocksTable();
+        const tb = req.params.tb.toLowerCase();
+        const featureId = parseInt(req.params.id, 10);
+        if (isNaN(featureId)) return res.status(400).json({ success: false, error: 'Feature ID must be a number' });
+
+        await pool.query(
+            `DELETE FROM plot_locks WHERE LOWER(tb_name) = $1 AND feature_id = $2`,
+            [tb, featureId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error in DELETE /api/plotlocks:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
