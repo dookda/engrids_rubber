@@ -1149,6 +1149,7 @@ a:hover {
     padding: 2px;
 }
 .payv2-plot-card {
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1159,11 +1160,35 @@ a:hover {
     padding: 8px 12px;
     font-size: 0.82rem;
 }
+/* เลขกำกับลำดับแปลง — ปกติอยู่ในแนวเดียวกับหัวการ์ด (ก่อนไอดี) ไม่บังอะไร
+   ส่วนโหมดเต็มจอ (กริดรูปภาพ) ค่อยลอยทับมุมบนซ้ายของรูปแทน (ดู override ท้ายไฟล์ ใกล้ .payv2-fullscreen) */
+.payv2-plot-index {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    background: #00695c;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: 50%;
+}
 .payv2-plot-head {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
+}
+/* เลขทะเบียนเกษตรกร — บรรทัดเล็กสีเทาใต้หัวการ์ด แสดงเมื่อมีข้อมูลเท่านั้น */
+.payv2-plot-regis {
+    flex: 1 1 100%;
+    font-size: 0.74rem;
+    color: #78909c;
+    margin-top: -4px;
 }
 .payv2-plot-calc {
     color: #37474f;
@@ -1243,6 +1268,23 @@ a:hover {
     font-size: 0.78rem;
 }
 
+/* แถบสรุปยอด — รวมทั้งหมด + แยกยอดโบนัสหลายคลาส อัปเดตตามตัวกรอง/คำค้นหาปัจจุบัน (ดู applyPayv2PlotFilter) */
+.payv2-summary-banner {
+    flex: 0 0 auto;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: #2e7d32;
+    text-align: right;
+}
+.payv2-summary-sep {
+    margin: 0 8px;
+    color: #a5d6a7;
+}
+
 /* ── โหมดขยายเต็มหน้าจอสำหรับกล่องรายการแปลง ── */
 .payv2-plot-detail-wrap.payv2-fullscreen {
     position: fixed;
@@ -1289,11 +1331,13 @@ body.payv2-fullscreen-lock {
 }
 .payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-card {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 4px;
     padding: 8px;
 }
 .payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-head,
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-regis,
 .payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-calc,
 .payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-total {
     flex: none;
@@ -1305,12 +1349,22 @@ body.payv2-fullscreen-lock {
 .payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-total {
     margin-left: 0;
 }
+/* โหมดเต็มจอ: ดึงเลขลำดับออกจากแนวหัวการ์ด มาลอยทับมุมบนซ้ายของรูปแปลงแทน (การ์ดมี position:relative อยู่แล้ว) */
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-index {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 5;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
 
 /* รูปย่อแปลงในการ์ด — ซ่อนไว้ปกติ (ไม่สร้างแผนที่โดยไม่จำเป็น) โชว์เฉพาะตอนขยายเต็มจอ (payv2LoadVisibleThumbs)
    เป็นสี่เหลี่ยมจัตุรัส (aspect-ratio 1/1) และอยู่บนสุดของการ์ดเสมอ (order:-1) */
 .payv2-plot-thumb-wrap {
     display: none;
     position: relative;
+    z-index: 0; /* กัน z-index สูงๆ ของ Leaflet ข้างใน (เช่น .leaflet-pane z-index:400) หลุดออกมาบังพี่น้อง เช่นเลขลำดับ */
     width: 100%;
     aspect-ratio: 1 / 1;
     border-radius: 8px;
@@ -1475,6 +1529,14 @@ body.payv2-fullscreen-lock {
     padding: 8px 10px 10px;
     max-height: 220px;
     overflow-y: auto;
+}
+.payv2-idlist-footer {
+    padding: 8px 10px;
+    border-top: 1px dashed #b2dfdb;
+    background: #f1f8f5;
+    font-size: 0.8rem;
+    color: #2e7d32;
+    text-align: right;
 }
 .payv2-legend-wrap {
     display: flex;

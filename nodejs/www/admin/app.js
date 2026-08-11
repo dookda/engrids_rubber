@@ -1877,7 +1877,8 @@ function ensurePayv2IdListEl() {
             <span class="payv2-idlist-title"></span>
             <button type="button" class="payv2-idlist-close" onclick="closePayv2IdList()">&times;</button>
         </div>
-        <div class="payv2-idlist-body"></div>`;
+        <div class="payv2-idlist-body"></div>
+        <div class="payv2-idlist-footer d-none"></div>`;
     el.addEventListener('click', (e) => e.stopPropagation());
     document.body.appendChild(el);
     payv2IdListEl = el;
@@ -1914,6 +1915,20 @@ function showPayv2GroupIds(evt, workerIdx, group) {
     el.querySelector('.payv2-idlist-body').innerHTML = ids.length
         ? payV2IdChips(ids, paymentV2Tb)
         : `<div class="text-muted small py-1">ไม่มีแปลง</div>`;
+
+    // กลุ่ม "โบนัสหลายคลาส" คิดแบบคงที่ต่อแปลง (ไม่ใช่ตามไร่) จึงรวมยอดเงินทั้งหมดให้ดูตรงนี้ได้เลย
+    // อยู่ใน footer แยกจาก body ที่เลื่อนได้ กันยอดรวมเลื่อนหายไปตอนมีหลายแปลง
+    const footerEl = el.querySelector('.payv2-idlist-footer');
+    if (group === 'bonus' && ids.length > 0) {
+        const rateBonus = parseFloat(document.getElementById('payv2_rate_bonus').value) || 0;
+        const total = ids.length * rateBonus;
+        footerEl.innerHTML = `${ids.length.toLocaleString('th-TH')} แปลง &times; ${rateBonus.toLocaleString('th-TH')} บาท/แปลง =
+            <span class="fw-bold">${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>`;
+        footerEl.classList.remove('d-none');
+    } else {
+        footerEl.classList.add('d-none');
+        footerEl.innerHTML = '';
+    }
 }
 
 /* กดไอดีเดิมซ้ำ = ปิด, กดไอดีอื่น = ย้าย popover ไปแสดงที่ไอดีนั้นแทน */
@@ -2020,24 +2035,27 @@ const PAYV2_PLOT_BATCH = 10;
    ไว้ในบรรทัดเดียวกันแบบอ่านจบในตัวเอง ไม่ต้องเทียบข้ามคอลัมน์ กันงงเวลาการ์ดถูกตัด/เลื่อนจอแคบ ๆ
    data-search ใช้ให้ filterPayv2Plots() ค้นหาได้ — แปลงหลายคลาสมีเส้นขอบซ้ายสีเหลืองให้เห็นชัดตาโดยไม่ต้องอ่านตัวหนังสือ
    hidden=true คือการ์ดที่ยังไม่ถึงคิวแสดง (เกินโควตาชุดแรก) จะถูกซ่อนด้วย class batch-hidden ไว้ก่อน */
-function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, rateBonus, tb, hidden) {
+function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, rateBonus, tb, hidden, displayIndex) {
     const rate = plot.is_ns4 ? rateNs4 : rateOther;
     const areaPay = plot.area_rai * rate;
     const bonusPay = plot.is_multi ? rateBonus : 0;
     const totalPay = areaPay + bonusPay;
     const fmt = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    // data-search รวมประเภทโฉนด + ไอดี + คำว่า "หลายคลาส"/"multi" ไว้ในช่องเดียว เพื่อให้พิมพ์ค้นหาคำไหนก็เจอ
-    const searchText = `${deedLabel} ${plot.id}${plot.is_multi ? ' หลายคลาส multi' : ''}`.toLowerCase();
+    // data-search รวมประเภทโฉนด + ไอดี + เลขทะเบียน + คำว่า "หลายคลาส"/"multi" ไว้ในช่องเดียว เพื่อให้พิมพ์ค้นหาคำไหนก็เจอ
+    const searchText = `${deedLabel} ${plot.id} ${plot.regis_no || ''}${plot.is_multi ? ' หลายคลาส multi' : ''}`.toLowerCase();
     const cls = ['payv2-plot-card'];
     if (plot.is_multi) cls.push('is-multi');
     if (hidden) cls.push('batch-hidden');
     return `
-    <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}">
+    <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}"
+        data-total="${totalPay}" data-bonus="${bonusPay}">
         <div class="payv2-plot-head">
+            <span class="payv2-plot-index">${displayIndex}</span>
             ${payV2IdChips([plot.id], tb)}
             <span class="badge ${badgeClass}">${deedLabel}</span>
             ${plot.is_multi ? `<span class="badge bg-warning text-dark">หลายคลาส (${plot.class_count} คลาส)</span>` : ''}
         </div>
+        ${plot.regis_no ? `<div class="payv2-plot-regis"><i class="bi bi-person-vcard me-1"></i>เลขทะเบียน ${plot.regis_no}</div>` : ''}
         <div class="payv2-plot-calc">
             ${plot.area_rai.toFixed(2)} ${plot.is_multi ? 'ไร่รวม' : 'ไร่ยาง'} &times; ${rate.toLocaleString('th-TH')} บาท/ไร่ = ${fmt(areaPay)} บาท${plot.is_multi ? ` <span class="payv2-bonus-chip">+ โบนัส ${fmt(bonusPay)} บาท</span>` : ''}
         </div>
@@ -2078,8 +2096,22 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
     }
 
     const cards = entries.map((e, i) =>
-        payV2PlotDetailCard(e.p, e.badgeClass, e.deedLabel, rateNs4, rateOther, rateBonus, tb, i >= PAYV2_PLOT_BATCH)
+        payV2PlotDetailCard(e.p, e.badgeClass, e.deedLabel, rateNs4, rateOther, rateBonus, tb, i >= PAYV2_PLOT_BATCH, i + 1)
     );
+
+    // ยอดรวมเริ่มต้น (ก่อนกรอง) — ให้เห็นสรุปทันทีที่เปิดรายละเอียด ไม่ต้องกดกรองก่อนถึงจะเห็นยอด
+    // ค่านวณจากสูตรเดียวกับที่การ์ดแต่ละใบใช้ (payV2PlotDetailCard) ให้ตรงกันเป๊ะ
+    const fmt2 = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const grandTotal = entries.reduce((sum, e) => {
+        const rate = e.p.is_ns4 ? rateNs4 : rateOther;
+        const bonusPay = e.p.is_multi ? rateBonus : 0;
+        return sum + (e.p.area_rai * rate) + bonusPay;
+    }, 0);
+    const multiBonusTotal = worker.bonus.plot_count * rateBonus;
+    const summaryBannerHtml = `<i class="bi bi-cash-coin me-1"></i>
+        รวมทั้งหมด ${entries.length.toLocaleString('th-TH')} แปลง = <span class="fw-bold">${fmt2(grandTotal)} บาท</span>
+        <span class="payv2-summary-sep">|</span>
+        หลายคลาส ${worker.bonus.plot_count.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
 
     const datalistId = `payv2_deedtypes_${idx}`;
     const options = deedTypesSeen.map(dt => `<option value="${dt}">`).join('');
@@ -2106,12 +2138,18 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
                 title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส)">
                 <i class="bi bi-layers"></i> หลายคลาสเท่านั้น
             </button>
+            ${worker.bonus.plot_count > 0 ? `
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="showPayv2BonusFullscreen(event)"
+                title="ดูแปลงที่ได้โบนัสหลายคลาสแบบเต็มหน้าจอ พร้อมรูปและยอดรวม">
+                <i class="bi bi-cash-coin"></i> สรุปโบนัส (${worker.bonus.plot_count.toLocaleString('th-TH')})
+            </button>` : ''}
             <span class="payv2-plot-count-badge">${entries.length.toLocaleString('th-TH')} แปลง</span>
             <button type="button" class="btn btn-sm btn-outline-secondary payv2-fullscreen-toggle" onclick="togglePayv2Fullscreen(this)"
                 title="ขยายเต็มหน้าจอ">
                 <i class="bi bi-arrows-fullscreen"></i>
             </button>
         </div>
+        <div class="payv2-summary-banner">${summaryBannerHtml}</div>
         <div class="payv2-plot-list">${cards.join('')}</div>
         <div class="payv2-plot-empty d-none text-center text-muted py-2">ไม่พบแปลงที่ตรงกับคำค้นหา</div>
         ${loadMoreBar}
@@ -2193,15 +2231,56 @@ function applyPayv2PlotFilter(wrap) {
 
     const emptyMsg = wrap.querySelector('.payv2-plot-empty');
     let visibleCount = 0;
+    let grandTotal = 0;
+    let multiCount = 0;
+    let multiBonusTotal = 0;
     wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
         const textMatch = !q || card.dataset.search.includes(q);
         const multiMatch = !multiOnly || card.dataset.multi === '1';
         const match = textMatch && multiMatch;
         card.classList.toggle('d-none', !match);
-        if (match) visibleCount++;
+        if (match) {
+            visibleCount++;
+            grandTotal += parseFloat(card.dataset.total) || 0;
+            if (card.dataset.multi === '1') {
+                multiCount++;
+                multiBonusTotal += parseFloat(card.dataset.bonus) || 0;
+            }
+        }
     });
     if (emptyMsg) emptyMsg.classList.toggle('d-none', visibleCount !== 0);
+
+    // แถบสรุปยอด — รวมค่าจ้างของการ์ดที่มองเห็นอยู่ทั้งหมด (รวมไร่×เรท+โบนัส) และแยกยอดโบนัสหลายคลาสให้ดูด้วย
+    // อัปเดตตามตัวกรอง/คำค้นหาปัจจุบันเสมอ ไม่ใช่แค่ตอนเปิด "หลายคลาสเท่านั้น"
+    const fmt2 = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const banner = wrap.querySelector('.payv2-summary-banner');
+    if (banner) {
+        if (visibleCount > 0) {
+            banner.innerHTML = `<i class="bi bi-cash-coin me-1"></i>
+                รวมทั้งหมด ${visibleCount.toLocaleString('th-TH')} แปลง = <span class="fw-bold">${fmt2(grandTotal)} บาท</span>
+                <span class="payv2-summary-sep">|</span>
+                หลายคลาส ${multiCount.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
+            banner.classList.remove('d-none');
+        } else {
+            banner.classList.add('d-none');
+        }
+    }
+
     payv2LoadVisibleThumbs(wrap);
+}
+
+/* ปุ่ม "สรุปโบนัส" — เปิดกล่องรายการแปลงเป็นเต็มจอ + เปิดกรอง "หลายคลาสเท่านั้น" พร้อมกันในคลิกเดียว
+   ได้ผลลัพธ์เป็นกริดรูปแปลงเต็มจอที่กรองเหลือเฉพาะแปลงที่ได้โบนัส พร้อมยอดรวมด้านบน (payv2-summary-banner) */
+function showPayv2BonusFullscreen(evt) {
+    evt.stopPropagation();
+    const wrap = evt.currentTarget.closest('.payv2-plot-detail-wrap');
+    if (!wrap) return;
+
+    const fsBtn = wrap.querySelector('.payv2-fullscreen-toggle');
+    if (fsBtn && !wrap.classList.contains('payv2-fullscreen')) togglePayv2Fullscreen(fsBtn);
+
+    const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+    if (multiBtn && !multiBtn.classList.contains('active')) togglePayv2MultiOnly(multiBtn);
 }
 
 /* ปุ่มขยายเต็มหน้าจอ — สลับ class ให้กล่องรายการแปลงคลุมทั้งวิวพอร์ต ช่วยตรวจสอบรายการยาว ๆ ได้ง่ายขึ้น

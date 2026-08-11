@@ -3924,7 +3924,8 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
             SELECT r.id, r.editor, r.classtype,
                 ROUND(COALESCE(r."class_Area", 0)::numeric, 4) AS class_area_rai,
                 cc.cnt,
-                COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type
+                COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type,
+                COALESCE(m."Regis_No", '') AS regis_no
             FROM reclass_${tb} r
             JOIN class_counts cc ON cc.id = r.id
             LEFT JOIN ${tb} m ON m.id = r.id
@@ -3945,6 +3946,7 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
                     id: row.id,
                     editor: row.editor,
                     deedType: row.deed_type,
+                    regisNo: row.regis_no,
                     cnt: parseInt(row.cnt),
                     classRows: []
                 };
@@ -3974,7 +3976,7 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
         };
 
         Object.values(idGroups).forEach(g => {
-            const { id, editor, deedType, cnt, classRows } = g;
+            const { id, editor, deedType, regisNo, cnt, classRows } = g;
             const hasEditor = editor && editor !== '';
             const hasRubber = classRows.some(c => c.classtype === 'rubber');
             const isMulti = cnt > 1;
@@ -4027,6 +4029,7 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
             e.plots.push({
                 id,
                 deed_type: deedType,
+                regis_no: regisNo,
                 is_ns4: isNs4(deedType),
                 area_rai: parseFloat(payArea.toFixed(4)),
                 is_multi: isMulti,
