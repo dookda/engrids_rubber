@@ -1297,6 +1297,15 @@ a:hover {
     font-size: 0.78rem;
 }
 
+/* ป้ายเรทที่ใช้คิด (นส.4 / อื่นๆ / โบนัสหลายคลาส) — เรทคงที่ตลอดทั้งคนงานคนนั้น ไม่เปลี่ยนตามตัวกรอง จึงไม่ต้อง render ซ้ำเหมือนแถบสรุปยอด */
+.payv2-rate-legend {
+    flex: 0 0 auto;
+    margin-bottom: 6px;
+    font-size: 0.78rem;
+    color: #607d8b;
+    text-align: right;
+}
+
 /* แถบสรุปยอด — รวมทั้งหมด + แยกยอดโบนัสหลายคลาส อัปเดตตามตัวกรอง/คำค้นหาปัจจุบัน (ดู applyPayv2PlotFilter) */
 .payv2-summary-banner {
     flex: 0 0 auto;

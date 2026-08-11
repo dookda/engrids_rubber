@@ -2113,6 +2113,12 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
         <span class="payv2-summary-sep">|</span>
         หลายคลาส ${worker.bonus.plot_count.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
 
+    // แสดงเรทที่ใช้คิดของแต่ละกลุ่มไว้ให้เห็นชัด ๆ ว่ายอดรวมข้างบนคิดมาจากเรทเท่าไหร่ (ไม่เปลี่ยนตามตัวกรอง เพราะเรทคงที่ตลอดทั้งคนงาน)
+    const rateLegendHtml = `<i class="bi bi-calculator me-1"></i>เรทที่ใช้คิด:
+        <b>นส.4</b> ${rateNs4.toLocaleString('th-TH')} บาท/ไร่ &nbsp;&middot;&nbsp;
+        <b>อื่นๆ</b> ${rateOther.toLocaleString('th-TH')} บาท/ไร่ &nbsp;&middot;&nbsp;
+        <b>โบนัสหลายคลาส</b> ${rateBonus.toLocaleString('th-TH')} บาท/แปลง`;
+
     // นับแปลงหลายคลาส แยกตามประเภทโฉนด ให้เมนู "หลายคลาสเท่านั้น" เลือกกรองเจาะจงประเภทโฉนดได้เหมือนกัน
     const multiByDeed = {};
     entries.forEach(e => {
@@ -2206,6 +2212,7 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
                 <i class="bi bi-arrows-fullscreen"></i>
             </button>
         </div>
+        <div class="payv2-rate-legend">${rateLegendHtml}</div>
         <div class="payv2-summary-banner">${summaryBannerHtml}</div>
         <div class="payv2-plot-list">${cards.join('')}</div>
         <div class="payv2-plot-empty d-none text-center text-muted py-2">ไม่พบแปลงที่ตรงกับคำค้นหา</div>
