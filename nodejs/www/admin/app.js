@@ -2048,7 +2048,7 @@ function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, ra
     if (hidden) cls.push('batch-hidden');
     return `
     <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}"
-        data-total="${totalPay}" data-bonus="${bonusPay}">
+        data-deed="${deedLabel}" data-total="${totalPay}" data-bonus="${bonusPay}">
         <div class="payv2-plot-head">
             <span class="payv2-plot-index">${displayIndex}</span>
             ${payV2IdChips([plot.id], tb)}
@@ -2113,6 +2113,33 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
         <span class="payv2-summary-sep">|</span>
         หลายคลาส ${worker.bonus.plot_count.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
 
+    // นับแปลงหลายคลาส แยกตามประเภทโฉนด ให้เมนู "หลายคลาสเท่านั้น" เลือกกรองเจาะจงประเภทโฉนดได้เหมือนกัน
+    const multiByDeed = {};
+    entries.forEach(e => {
+        if (e.p.is_multi) multiByDeed[e.deedLabel] = (multiByDeed[e.deedLabel] || 0) + 1;
+    });
+    const multiTotal = Object.values(multiByDeed).reduce((a, b) => a + b, 0);
+    const multiDeedItems = deedTypesSeen
+        .filter(dt => (multiByDeed[dt] || 0) > 0)
+        .map(dt => `<li><a class="dropdown-item payv2-multi-deed-item" href="#" data-deed="${dt}" onclick="selectPayv2MultiDeed(event, this)">
+            ${dt} <span class="badge bg-light text-dark ms-1">${multiByDeed[dt].toLocaleString('th-TH')}</span>
+        </a></li>`)
+        .join('');
+
+    // นับแปลงคลาสเดียว (= ยางพาราลงทะเบียนล้วน ดู payV2PlotDetailCard) แยกตามประเภทโฉนด ให้เมนู "คลาสยางพาราลงทะเบียนเท่านั้น"
+    // เลือกกรองเจาะจงประเภทโฉนดได้ ไม่ใช่กรองรวมทุกประเภทอย่างเดียว
+    const pureRubberByDeed = {};
+    entries.forEach(e => {
+        if (!e.p.is_multi) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
+    });
+    const pureRubberTotal = Object.values(pureRubberByDeed).reduce((a, b) => a + b, 0);
+    const rubberDeedItems = deedTypesSeen
+        .filter(dt => (pureRubberByDeed[dt] || 0) > 0)
+        .map(dt => `<li><a class="dropdown-item payv2-rubber-deed-item" href="#" data-deed="${dt}" onclick="selectPayv2RubberDeed(event, this)">
+            ${dt} <span class="badge bg-light text-dark ms-1">${pureRubberByDeed[dt].toLocaleString('th-TH')}</span>
+        </a></li>`)
+        .join('');
+
     const datalistId = `payv2_deedtypes_${idx}`;
     const options = deedTypesSeen.map(dt => `<option value="${dt}">`).join('');
     const remaining = entries.length - PAYV2_PLOT_BATCH;
@@ -2134,10 +2161,40 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
             <input type="text" class="form-control form-control-sm payv2-plot-search"
                 placeholder="ค้นหาประเภทโฉนด / ไอดีแปลง / พิมพ์ &quot;หลายคลาส&quot;..." list="${datalistId}" oninput="filterPayv2Plots(this)">
             <datalist id="${datalistId}">${options}</datalist>
-            <button type="button" class="btn btn-sm btn-outline-warning payv2-multi-toggle" onclick="togglePayv2MultiOnly(this)"
-                title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส)">
-                <i class="bi bi-layers"></i> หลายคลาสเท่านั้น
-            </button>
+            <div class="btn-group payv2-multi-dropdown">
+                <button type="button" class="btn btn-sm btn-outline-warning payv2-multi-toggle dropdown-toggle" data-deed=""
+                    data-bs-toggle="dropdown" aria-expanded="false"
+                    title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส) เลือกแยกตามประเภทโฉนดได้">
+                    <i class="bi bi-layers"></i> <span class="payv2-multi-toggle-label">หลายคลาสเท่านั้น</span>
+                </button>
+                <ul class="dropdown-menu payv2-multi-dropdown-menu">
+                    <li><a class="dropdown-item payv2-multi-clear-item" href="#" onclick="selectPayv2MultiDeed(event, this)">
+                        <i class="bi bi-x-circle me-1"></i>ไม่กรอง (ปิด)
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item payv2-multi-deed-item" href="#" data-deed="" onclick="selectPayv2MultiDeed(event, this)">
+                        ทั้งหมด (ทุกประเภทโฉนด) <span class="badge bg-light text-dark ms-1">${multiTotal.toLocaleString('th-TH')}</span>
+                    </a></li>
+                    ${multiDeedItems}
+                </ul>
+            </div>
+            <div class="btn-group payv2-rubber-dropdown">
+                <button type="button" class="btn btn-sm btn-outline-success payv2-rubber-toggle dropdown-toggle" data-deed=""
+                    data-bs-toggle="dropdown" aria-expanded="false"
+                    title="แสดงเฉพาะแปลงคลาสเดียวที่เป็นยางพาราลงทะเบียนล้วน (ไม่ปนคลาสอื่น) เลือกแยกตามประเภทโฉนดได้">
+                    <i class="bi bi-tree"></i> <span class="payv2-rubber-toggle-label">คลาสยางพาราลงทะเบียนเท่านั้น</span>
+                </button>
+                <ul class="dropdown-menu payv2-rubber-dropdown-menu">
+                    <li><a class="dropdown-item payv2-rubber-clear-item" href="#" onclick="selectPayv2RubberDeed(event, this)">
+                        <i class="bi bi-x-circle me-1"></i>ไม่กรอง (ปิด)
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item payv2-rubber-deed-item" href="#" data-deed="" onclick="selectPayv2RubberDeed(event, this)">
+                        ทั้งหมด (ทุกประเภทโฉนด) <span class="badge bg-light text-dark ms-1">${pureRubberTotal.toLocaleString('th-TH')}</span>
+                    </a></li>
+                    ${rubberDeedItems}
+                </ul>
+            </div>
             ${worker.bonus.plot_count > 0 ? `
             <button type="button" class="btn btn-sm btn-outline-success" onclick="showPayv2BonusFullscreen(event)"
                 title="ดูแปลงที่ได้โบนัสหลายคลาสแบบเต็มหน้าจอ พร้อมรูปและยอดรวม">
@@ -2201,24 +2258,121 @@ function payv2RefreshLoadMoreBar(wrap) {
 }
 
 /* กรองการ์ดแปลงในกล่องรายละเอียดของคนงานคนเดียว — พิมพ์ค้นหา (ประเภทโฉนด/ไอดี/"หลายคลาส")
-   และ/หรือ กดปุ่ม "หลายคลาสเท่านั้น" เพื่อกรองเฉพาะแปลงที่ได้โบนัสหลายคลาส ใช้ร่วมกันได้ (AND) */
+   และ/หรือ กดปุ่ม "หลายคลาสเท่านั้น" เพื่อกรองเฉพาะแปลงที่ได้โบนัสหลายคลาส
+   และ/หรือ กดปุ่ม "คลาสยางพาราลงทะเบียนเท่านั้น" เพื่อกรองเฉพาะแปลงคลาสเดียวที่เป็นยางพาราลงทะเบียนล้วน (ตรงข้ามกับหลายคลาส
+   เพราะทุกแปลงที่แสดงในลิสต์นี้ต้องมีคลาสยางพาราลงทะเบียนอยู่แล้วเป็นเงื่อนไขจากฝั่ง backend — ดู hasRubber ใน api.js —
+   ดังนั้นแปลงคลาสเดียวในลิสต์นี้คือแปลงยางพาราลงทะเบียนล้วนเสมอ) ทุกตัวกรองใช้ร่วมกันได้ (AND) */
 function filterPayv2Plots(inputEl) {
     applyPayv2PlotFilter(inputEl.closest('.payv2-plot-detail-wrap'));
 }
 
-function togglePayv2MultiOnly(btn) {
-    const active = btn.classList.toggle('active');
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    applyPayv2PlotFilter(btn.closest('.payv2-plot-detail-wrap'));
+/* ตัวกรองหลายคลาส และตัวกรองยางพาราลงทะเบียน (คลาสเดียว) กันคนละขั้วกันเสมอ — แปลงคลาสเดียวเป็นยางพารา
+   ล้วนไม่มีทางเป็นแปลงหลายคลาสได้พร้อมกัน เปิดฝั่งหนึ่งแล้วปิดอีกฝั่งอัตโนมัติ (ดู clearPayv2MultiFilter/clearPayv2RubberFilter)
+   กันงงเวลาผลลัพธ์ว่างเปล่าโดยไม่รู้สาเหตุ ทั้งสองฝั่งออกแบบเหมือนกัน: ปุ่มเป็น dropdown เลือก "ทั้งหมด" (ทุกประเภทโฉนด)
+   หรือเจาะจงประเภทโฉนด (นส.4 / โฉนดอื่นๆ ที่มีในลิสต์นี้) ได้ พร้อมตัวเลขจำนวนแปลงกำกับแต่ละตัวเลือก */
+
+/* ปิดตัวกรอง "หลายคลาสเท่านั้น" กลับสู่สถานะเริ่มต้น — ใช้ทั้งตอนกดเมนู "ไม่กรอง (ปิด)" และตอนเปิดตัวกรองยางพาราลงทะเบียนซึ่งกันคนละขั้วกัน */
+function clearPayv2MultiFilter(wrap) {
+    const dropdown = wrap.querySelector('.payv2-multi-dropdown');
+    if (!dropdown) return;
+    const toggleBtn = dropdown.querySelector('.payv2-multi-toggle');
+    const label = toggleBtn.querySelector('.payv2-multi-toggle-label');
+    toggleBtn.classList.remove('active');
+    toggleBtn.setAttribute('aria-pressed', 'false');
+    toggleBtn.dataset.deed = '';
+    label.textContent = 'หลายคลาสเท่านั้น';
+    dropdown.querySelectorAll('.payv2-multi-deed-item').forEach(i => i.classList.remove('active'));
+}
+
+/* เปิดตัวกรอง "หลายคลาสเท่านั้น" แบบเจาะจง deed (หรือ '' = ทั้งหมด) — เรียกตรงได้จาก showPayv2BonusFullscreen
+   โดยไม่ต้องผ่าน event ของเมนู */
+function activatePayv2MultiFilter(wrap, deed) {
+    const dropdown = wrap.querySelector('.payv2-multi-dropdown');
+    if (!dropdown) return;
+    const toggleBtn = dropdown.querySelector('.payv2-multi-toggle');
+    const label = toggleBtn.querySelector('.payv2-multi-toggle-label');
+    dropdown.querySelectorAll('.payv2-multi-deed-item').forEach(i => {
+        i.classList.toggle('active', (i.dataset.deed || '') === (deed || ''));
+    });
+    toggleBtn.classList.add('active');
+    toggleBtn.setAttribute('aria-pressed', 'true');
+    toggleBtn.dataset.deed = deed || '';
+    label.textContent = deed ? `หลายคลาส: ${deed}` : 'หลายคลาส: ทั้งหมด';
+    clearPayv2RubberFilter(wrap);
+    applyPayv2PlotFilter(wrap);
+}
+
+/* กดเลือกรายการในเมนู "หลายคลาสเท่านั้น" */
+function selectPayv2MultiDeed(evt, el) {
+    evt.preventDefault();
+    if (el.classList.contains('disabled')) return;
+    const wrap = el.closest('.payv2-plot-detail-wrap');
+
+    if (el.classList.contains('payv2-multi-clear-item')) {
+        clearPayv2MultiFilter(wrap);
+        applyPayv2PlotFilter(wrap);
+        return;
+    }
+
+    activatePayv2MultiFilter(wrap, el.dataset.deed || '');
+}
+
+/* ปิดตัวกรอง "คลาสยางพาราลงทะเบียนเท่านั้น" กลับสู่สถานะเริ่มต้น — ใช้ทั้งตอนกดเมนู "ไม่กรอง (ปิด)"
+   และตอนเปิดตัวกรองหลายคลาสซึ่งกันคนละขั้วกัน */
+function clearPayv2RubberFilter(wrap) {
+    const dropdown = wrap.querySelector('.payv2-rubber-dropdown');
+    if (!dropdown) return;
+    const toggleBtn = dropdown.querySelector('.payv2-rubber-toggle');
+    const label = toggleBtn.querySelector('.payv2-rubber-toggle-label');
+    toggleBtn.classList.remove('active');
+    toggleBtn.setAttribute('aria-pressed', 'false');
+    toggleBtn.dataset.deed = '';
+    label.textContent = 'คลาสยางพาราลงทะเบียนเท่านั้น';
+    dropdown.querySelectorAll('.payv2-rubber-deed-item').forEach(i => i.classList.remove('active'));
+}
+
+/* กดเลือกรายการในเมนู "คลาสยางพาราลงทะเบียนเท่านั้น" — เลือก "ทั้งหมด" กรองทุกประเภทโฉนดที่เป็นคลาสเดียว (ยางพาราล้วน)
+   หรือเลือกประเภทโฉนดเจาะจง (เช่น "นส.4" หรือ "ส.ป.ก.4-01ข") กรองเฉพาะประเภทนั้น ปุ่มหลักแสดงชื่อประเภทที่เลือกไว้เสมอ
+   ให้รู้ว่ากำลังกรองอะไรอยู่โดยไม่ต้องเปิดเมนูซ้ำ */
+function selectPayv2RubberDeed(evt, el) {
+    evt.preventDefault();
+    if (el.classList.contains('disabled')) return;
+    const wrap = el.closest('.payv2-plot-detail-wrap');
+    const dropdown = el.closest('.payv2-rubber-dropdown');
+
+    if (el.classList.contains('payv2-rubber-clear-item')) {
+        clearPayv2RubberFilter(wrap);
+        applyPayv2PlotFilter(wrap);
+        return;
+    }
+
+    const toggleBtn = dropdown.querySelector('.payv2-rubber-toggle');
+    const label = toggleBtn.querySelector('.payv2-rubber-toggle-label');
+    const deed = el.dataset.deed || '';
+
+    dropdown.querySelectorAll('.payv2-rubber-deed-item').forEach(i => i.classList.remove('active'));
+    el.classList.add('active');
+    toggleBtn.classList.add('active');
+    toggleBtn.setAttribute('aria-pressed', 'true');
+    toggleBtn.dataset.deed = deed;
+    label.textContent = deed ? `ยางพาราลงทะเบียน: ${deed}` : 'ยางพาราลงทะเบียน: ทั้งหมด';
+
+    clearPayv2MultiFilter(wrap);
+
+    applyPayv2PlotFilter(wrap);
 }
 
 function applyPayv2PlotFilter(wrap) {
     if (!wrap) return;
     const input = wrap.querySelector('.payv2-plot-search');
     const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+    const rubberBtn = wrap.querySelector('.payv2-rubber-toggle');
     const q = input ? input.value.trim().toLowerCase() : '';
     const multiOnly = multiBtn ? multiBtn.classList.contains('active') : false;
-    const searching = !!q || multiOnly;
+    const multiDeed = multiBtn ? (multiBtn.dataset.deed || '') : '';
+    const rubberOnly = rubberBtn ? rubberBtn.classList.contains('active') : false;
+    const rubberDeed = rubberBtn ? (rubberBtn.dataset.deed || '') : '';
+    const searching = !!q || multiOnly || rubberOnly;
     const loadMoreBar = wrap.querySelector('.payv2-loadmore-bar');
 
     // กำลังค้นหา/กรองอยู่ — เปิดการ์ดที่ยังไม่ถึงคิว "แสดงเพิ่ม" ออกมาทั้งหมดก่อน กันเคสที่ตรงคำค้นหาแต่ยังไม่ถูกโหลดออกมา
@@ -2236,8 +2390,9 @@ function applyPayv2PlotFilter(wrap) {
     let multiBonusTotal = 0;
     wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
         const textMatch = !q || card.dataset.search.includes(q);
-        const multiMatch = !multiOnly || card.dataset.multi === '1';
-        const match = textMatch && multiMatch;
+        const multiMatch = !multiOnly || (card.dataset.multi === '1' && (!multiDeed || card.dataset.deed === multiDeed));
+        const rubberMatch = !rubberOnly || (card.dataset.multi === '0' && (!rubberDeed || card.dataset.deed === rubberDeed));
+        const match = textMatch && multiMatch && rubberMatch;
         card.classList.toggle('d-none', !match);
         if (match) {
             visibleCount++;
@@ -2280,7 +2435,7 @@ function showPayv2BonusFullscreen(evt) {
     if (fsBtn && !wrap.classList.contains('payv2-fullscreen')) togglePayv2Fullscreen(fsBtn);
 
     const multiBtn = wrap.querySelector('.payv2-multi-toggle');
-    if (multiBtn && !multiBtn.classList.contains('active')) togglePayv2MultiOnly(multiBtn);
+    if (multiBtn && !multiBtn.classList.contains('active')) activatePayv2MultiFilter(wrap, '');
 }
 
 /* ปุ่มขยายเต็มหน้าจอ — สลับ class ให้กล่องรายการแปลงคลุมทั้งวิวพอร์ต ช่วยตรวจสอบรายการยาว ๆ ได้ง่ายขึ้น

@@ -1264,6 +1264,35 @@ a:hover {
     border-color: #f9a825;
     color: #fff;
 }
+.payv2-multi-dropdown-menu {
+    font-size: 0.8rem;
+    max-height: 280px;
+    overflow-y: auto;
+}
+.payv2-multi-deed-item.active {
+    background: #fff3cd;
+    color: #8a6100;
+    font-weight: 600;
+}
+.payv2-rubber-toggle {
+    white-space: nowrap;
+    font-size: 0.78rem;
+}
+.payv2-rubber-toggle.active {
+    background: #2e7d32;
+    border-color: #2e7d32;
+    color: #fff;
+}
+.payv2-rubber-dropdown-menu {
+    font-size: 0.8rem;
+    max-height: 280px;
+    overflow-y: auto;
+}
+.payv2-rubber-deed-item.active {
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+}
 .payv2-fullscreen-toggle {
     font-size: 0.78rem;
 }
