@@ -181,6 +181,9 @@ const initApp = async () => {
                         <button class="btn btn-payment layer-btn payBtn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้าง">
                             <i class="bi bi-calculator-fill me-1"></i>คำนวณค่าจ้าง
                         </button>
+                        <button class="btn btn-payment-v2 layer-btn payV2Btn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้าง V2 (จาก class_Area)">
+                            <i class="bi bi-calculator-fill me-1"></i>คำนวณค่าจ้าง V2
+                        </button>
                         <button class="btn btn-checker-pay layer-btn checkerPayBtn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้างคนตรวจ">
                             <i class="bi bi-shield-check me-1"></i>ค่าคนตรวจ
                         </button>
@@ -323,6 +326,15 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 openPaymentModal(tb);
+            });
+        });
+
+        /* ── คำนวณค่าจ้าง V2 (class_Area) ── */
+        document.querySelectorAll('.payV2Btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                openPaymentModalV2(tb);
             });
         });
 
@@ -1702,6 +1714,905 @@ document.getElementById('btnPrintPayment').addEventListener('click', () => {
 <h4 style="color:#4a7c59">สรุปค่าจ้างทีมงาน – ${tb}</h4>
 <p class="text-muted mb-3">อัตราค่าจ้าง: <strong>${rate} บาท/ไร่</strong> &nbsp;|&nbsp; วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
 ${tableHtml}
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ═════════════════════════════════════════════════════════════
+   MODAL 5B – คำนวณค่าจ้าง V2 (คิดจาก class_Area ในตาราง reclass)
+
+   เงื่อนไข (ต่อ id หนึ่ง ๆ ในตาราง reclass) — 3 กลุ่มตายตัว:
+   - คลาสเดียว + เป็นยางพารา + โฉนด "นส.4"   → กลุ่ม นส.4     (ค่าเริ่มต้น 0.5 บาท/ไร่)
+   - คลาสเดียว + เป็นยางพารา + โฉนดอื่น       → กลุ่ม อื่นๆ    (ค่าเริ่มต้น 1 บาท/ไร่)
+   - ตั้งแต่ 2 คลาสขึ้นไป                     → กลุ่ม หลายคลาส (ค่าเริ่มต้น 1.5 บาท/ไร่)
+   - คลาสเดียวแต่ไม่ใช่ยางพารา                → ไม่คิดค่าจ้าง แสดงเป็นคำเตือนแยกไว้
+
+   ผลลัพธ์แสดงเป็นตารางแถวเดียวต่อคน สรุปยอดที่แต่ละคนได้รับตรง ๆ
+═════════════════════════════════════════════════════════════ */
+
+let paymentModalV2 = null;
+let paymentV2WorkerData = [];
+let paymentV2Warnings = [];
+let paymentV2Tb = '';
+
+function openPaymentModalV2(tb_name) {
+    if (!paymentModalV2) {
+        const modalEl = document.getElementById('paymentModalV2');
+        paymentModalV2 = new bootstrap.Modal(modalEl);
+        modalEl.addEventListener('hidden.bs.modal', closePayv2Preview);
+        const bodyEl = modalEl.querySelector('.modal-body');
+        if (bodyEl) bodyEl.addEventListener('scroll', closePayv2Preview);
+    }
+    paymentV2Tb = tb_name;
+    document.getElementById('paymentModalV2TbBadge').textContent = tb_name;
+    document.getElementById('paymentV2TableWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+    document.getElementById('paymentV2WarnWrap').innerHTML = '';
+    paymentModalV2.show();
+
+    fetch(`/rub/api/worker-summary-v2/${tb_name}`)
+        .then(r => r.json())
+        .then(({ data, warnings }) => {
+            paymentV2WorkerData = data || [];
+            paymentV2Warnings   = warnings || [];
+            renderPaymentTableV2();
+            renderWarningsV2();
+        })
+        .catch(() => {
+            document.getElementById('paymentV2TableWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+}
+
+/* ไอดีแต่ละอันเป็นชิปกดได้ — กดแล้วเด้งภาพย่อรูปทรงแปลง+สีคลาสขึ้นมาเป็น popover เล็ก ๆ ตรงจุดที่กด
+   (ไม่เปลี่ยนหน้า) ใช้เช็คว่าการจำแนกคลาสของ id นั้นถูกต้องหรือไม่
+   จำกัดจำนวนที่ render กันหน้าเว็บหนักถ้ากลุ่มไหนมีเป็นพันแปลง และห่อด้วยกล่อง scroll กันแถวยาวเกิน */
+function payV2IdChips(ids, tb) {
+    const CHIP_LIMIT = 200;
+    const shown = ids.slice(0, CHIP_LIMIT);
+    const chips = shown.map(id =>
+        `<span class="payv2-id-chip" onclick="showParcelPreview(event,'${tb}',${id})" title="ดูรูปแปลง/คลาส id ${id} เพื่อตรวจสอบ">${id}</span>`
+    ).join('');
+    const more = ids.length > CHIP_LIMIT
+        ? `<span class="text-muted small ms-1">และอีก ${(ids.length - CHIP_LIMIT).toLocaleString('th-TH')} แปลง</span>`
+        : '';
+    return `<div class="payv2-id-scroll"><div class="payv2-id-chip-wrap">${chips}${more}</div></div>`;
+}
+
+/* ═════ Parcel preview popover — ภาพย่อรูปทรงแปลง + สีคลาส เด้งขึ้นตรงจุดที่กดไอดี ไม่เปลี่ยนหน้า ═════
+   สีอ้างอิงจาก CLASS_COLORS ในหน้า reclass (nodejs/www/reclass/app.js) ให้สีตรงกัน */
+const PAYV2_CLASS_COLORS = {
+    'rubber': '#006d2c', 'Other': '#ff0004', 'not-rubber': '#9900ff',
+    'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
+    'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
+};
+const PAYV2_DEFAULT_COLOR = '#fdae61';
+const payv2ClassColor = (ct) => PAYV2_CLASS_COLORS[ct] || PAYV2_DEFAULT_COLOR;
+
+/* ป้ายภาษาไทย — ใช้ชื่อเดียวกับตัวเลือกประเภทในหน้า reclass (nodejs/www/reclass/index.html) */
+const PAYV2_CLASS_LABELS = {
+    'rubber': 'ยางพาราที่ลงทะเบียน',
+    'not-rubber': 'ยางพาราที่ไม่ได้ลงทะเบียน',
+    'Other': 'ไม่ใช่ยางพารา',
+    'ex_age_rubber': 'พื้นที่กันออก (ยางพาราต่างอายุ)',
+    'ex_building': 'พื้นที่กันออก (สิ่งปลูกสร้าง)',
+    'ex_pond': 'พื้นที่กันออก (บ่อน้ำ)',
+    'ex_cr_area': 'พื้นที่กันออก (ถนนคอนกรีต)',
+    'ex_ar_area': 'พื้นที่กันออก (ถนนลาดยาง)',
+    'ex_other': 'พื้นที่กันออก (เพิ่มเติม)'
+};
+const payv2ClassLabel = (ct) => PAYV2_CLASS_LABELS[ct] || ct || 'ไม่ระบุ';
+
+let payv2PreviewEl = null;
+let payv2PreviewBackdropEl = null;
+let payv2PreviewMap = null;
+let payv2PreviewLayerGroup = null;
+let payv2PreviewCache = {};
+let payv2PreviewKey = null;
+let payv2PreviewReqSeq = 0;
+
+/* map ตัวเดียวใช้ซ้ำทุกครั้งที่เปิด popover (ไม่สร้างใหม่ทุกคลิก) — เบากว่าและกัน Leaflet container ชนกัน
+   ฐานภาพเป็น Google Satellite แบบเดียวกับที่ใช้ในหน้า reclass (nodejs/www/reclass/app.js) */
+function ensurePayv2PreviewEl() {
+    if (payv2PreviewEl) return payv2PreviewEl;
+
+    // backdrop เป็นแค่ฉากหลังหรี่จอ ไม่ดักคลิก (pointer-events:none ใน CSS) เพราะปิดตอนคลิกนอกป๊อปอัพ
+    // ใช้ document click listener เดิมอยู่แล้ว (ต้องปล่อยให้คลิก id chip อื่นทะลุไปเปลี่ยนแปลงที่แสดงได้)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'payv2-preview-backdrop d-none';
+    document.body.appendChild(backdrop);
+    payv2PreviewBackdropEl = backdrop;
+
+    const el = document.createElement('div');
+    el.className = 'payv2-preview-popover d-none';
+    el.innerHTML = `
+        <div class="payv2-preview-header">
+            <span class="payv2-preview-title"></span>
+            <button type="button" class="payv2-preview-close" onclick="closePayv2Preview()">&times;</button>
+        </div>
+        <div class="payv2-preview-map"></div>
+        <div class="payv2-preview-info"></div>`;
+    el.addEventListener('click', (e) => e.stopPropagation());
+    document.body.appendChild(el);
+    payv2PreviewEl = el;
+
+    payv2PreviewMap = L.map(el.querySelector('.payv2-preview-map'), {
+        attributionControl: false,
+        scrollWheelZoom: false
+    }).setView([13.7563, 100.5018], 5);
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 21
+    }).addTo(payv2PreviewMap);
+    payv2PreviewLayerGroup = L.layerGroup().addTo(payv2PreviewMap);
+
+    return el;
+}
+
+function closePayv2Preview() {
+    if (payv2PreviewEl) payv2PreviewEl.classList.add('d-none');
+    if (payv2PreviewBackdropEl) payv2PreviewBackdropEl.classList.add('d-none');
+    payv2PreviewKey = null;
+}
+
+document.addEventListener('click', (e) => {
+    if (payv2PreviewEl && !payv2PreviewEl.classList.contains('d-none') && !e.target.closest('.payv2-id-chip')) {
+        closePayv2Preview();
+    }
+});
+
+/* ═════ ป๊อปอัพ "ดูรายการไอดี" — กดปุ่มเล็ก ๆ ข้างตัวเลขแปลงในตารางสรุปหลัก (นส.4 / อื่นๆ / โบนัสหลายคลาส)
+   เพื่อดูว่ากลุ่มนั้นมี id ไหนบ้าง โดยไม่ต้องกดขยาย "รายละเอียด" ทั้งแถว ═════ */
+let payv2IdListEl = null;
+
+function ensurePayv2IdListEl() {
+    if (payv2IdListEl) return payv2IdListEl;
+    const el = document.createElement('div');
+    el.className = 'payv2-idlist-popover d-none';
+    el.innerHTML = `
+        <div class="payv2-idlist-header">
+            <span class="payv2-idlist-title"></span>
+            <button type="button" class="payv2-idlist-close" onclick="closePayv2IdList()">&times;</button>
+        </div>
+        <div class="payv2-idlist-body"></div>
+        <div class="payv2-idlist-footer d-none"></div>`;
+    el.addEventListener('click', (e) => e.stopPropagation());
+    document.body.appendChild(el);
+    payv2IdListEl = el;
+    return el;
+}
+
+function closePayv2IdList() {
+    if (payv2IdListEl) payv2IdListEl.classList.add('d-none');
+}
+
+document.addEventListener('click', (e) => {
+    if (payv2IdListEl && !payv2IdListEl.classList.contains('d-none') && !e.target.closest('.payv2-count-link')) {
+        closePayv2IdList();
+    }
+});
+
+const PAYV2_GROUP_LABELS = { ns4: 'นส.4', other: 'อื่นๆ', bonus: 'โบนัสหลายคลาส' };
+
+function showPayv2GroupIds(evt, workerIdx, group) {
+    evt.stopPropagation();
+    const worker = paymentV2WorkerData[workerIdx];
+    const g = worker && worker[group];
+    const ids = (g && g.ids) || [];
+    const el = ensurePayv2IdListEl();
+
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const popW = 260;
+    const left = Math.min(rect.left + window.scrollX, window.scrollX + window.innerWidth - popW - 12);
+    el.style.left = Math.max(8, left) + 'px';
+    el.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+    el.classList.remove('d-none');
+    el.querySelector('.payv2-idlist-title').textContent =
+        `${PAYV2_GROUP_LABELS[group] || group} — ${ids.length.toLocaleString('th-TH')} แปลง`;
+    el.querySelector('.payv2-idlist-body').innerHTML = ids.length
+        ? payV2IdChips(ids, paymentV2Tb)
+        : `<div class="text-muted small py-1">ไม่มีแปลง</div>`;
+
+    // กลุ่ม "โบนัสหลายคลาส" คิดแบบคงที่ต่อแปลง (ไม่ใช่ตามไร่) จึงรวมยอดเงินทั้งหมดให้ดูตรงนี้ได้เลย
+    // อยู่ใน footer แยกจาก body ที่เลื่อนได้ กันยอดรวมเลื่อนหายไปตอนมีหลายแปลง
+    const footerEl = el.querySelector('.payv2-idlist-footer');
+    if (group === 'bonus' && ids.length > 0) {
+        const rateBonus = parseFloat(document.getElementById('payv2_rate_bonus').value) || 0;
+        const total = ids.length * rateBonus;
+        footerEl.innerHTML = `${ids.length.toLocaleString('th-TH')} แปลง &times; ${rateBonus.toLocaleString('th-TH')} บาท/แปลง =
+            <span class="fw-bold">${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>`;
+        footerEl.classList.remove('d-none');
+    } else {
+        footerEl.classList.add('d-none');
+        footerEl.innerHTML = '';
+    }
+}
+
+/* กดไอดีเดิมซ้ำ = ปิด, กดไอดีอื่น = ย้าย popover ไปแสดงที่ไอดีนั้นแทน */
+async function showParcelPreview(evt, tb, id) {
+    evt.stopPropagation();
+    closePayv2IdList(); // ปิดป๊อปอัพ "รายการไอดี" (ถ้าเปิดอยู่) กันซ้อนทับรูปแปลงที่กำลังจะเปิด
+    const key = `${tb}:${id}`;
+    const el = ensurePayv2PreviewEl();
+
+    if (payv2PreviewKey === key && !el.classList.contains('d-none')) {
+        closePayv2Preview();
+        return;
+    }
+    payv2PreviewKey = key;
+
+    // ปักตำแหน่งไว้กลางจอเสมอ (กำหนดใน CSS .payv2-preview-popover) ไม่อิงจุดที่กด
+    // กันไม่ให้ป๊อปอัพไปบังแถวตารางที่กำลังดูอยู่ ไม่ว่าจะกดไอดีจากตรงไหนของหน้า
+    el.classList.remove('d-none');
+    if (payv2PreviewBackdropEl) payv2PreviewBackdropEl.classList.remove('d-none');
+    el.querySelector('.payv2-preview-title').textContent = `แปลง id ${id}`;
+    payv2PreviewMap.invalidateSize(); // popover เพิ่งเปลี่ยนจาก d-none เป็นแสดงผล ต้องบอก Leaflet คำนวณขนาด container ใหม่
+    payv2PreviewLayerGroup.clearLayers();
+    const infoEl = el.querySelector('.payv2-preview-info');
+    infoEl.innerHTML = `<div class="text-center text-muted py-2"><div class="spinner-border spinner-border-sm"></div></div>`;
+
+    const seq = ++payv2PreviewReqSeq;
+    try {
+        let data = payv2PreviewCache[key];
+        if (!data) {
+            const r = await fetch(`/rub/api/parcel-preview/${tb}/${id}`);
+            data = await r.json();
+            payv2PreviewCache[key] = data;
+        }
+        if (seq !== payv2PreviewReqSeq || payv2PreviewKey !== key) return; // ผู้ใช้กดไอดีอื่นไปแล้วระหว่างรอโหลด
+        if (!data.success) throw new Error(data.error || 'โหลดไม่สำเร็จ');
+        if (data.deed_type) el.querySelector('.payv2-preview-title').textContent = `แปลง id ${id} · ${data.deed_type}`;
+        infoEl.innerHTML = renderParcelPreviewLayers(data);
+    } catch (err) {
+        if (seq !== payv2PreviewReqSeq || payv2PreviewKey !== key) return;
+        infoEl.innerHTML = `<div class="text-danger small py-2">โหลดรูปแปลงไม่สำเร็จ</div>`;
+    }
+}
+
+/* วาดขอบแปลงเดิม (เส้นประเทา) + คลาสที่จำแนกไว้ (สีตาม classtype) ทับบนภาพถ่ายดาวเทียม แล้ว fit ขอบเขตให้พอดี
+   คืน HTML ของ legend + ตารางรายละเอียดคลาส (ใส่ใต้แผนที่) */
+function renderParcelPreviewLayers(data) {
+    const { parcel, classes } = data;
+    if (!parcel && (!classes || classes.length === 0)) {
+        return `<div class="text-muted small py-2">ไม่พบข้อมูลรูปแปลง</div>`;
+    }
+
+    const bounds = [];
+    if (parcel) {
+        const gj = L.geoJSON(parcel, {
+            style: { color: '#eeeeee', weight: 2, dashArray: '4,3', fillOpacity: 0 }
+        }).addTo(payv2PreviewLayerGroup);
+        if (gj.getBounds().isValid()) bounds.push(gj.getBounds());
+    }
+    (classes || []).forEach(c => {
+        if (!c.geom) return;
+        const color = payv2ClassColor(c.classtype);
+        const gj = L.geoJSON(c.geom, {
+            style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.5 }
+        }).addTo(payv2PreviewLayerGroup);
+        if (gj.getBounds().isValid()) bounds.push(gj.getBounds());
+    });
+
+    if (bounds.length > 0) {
+        let combined = bounds[0];
+        bounds.slice(1).forEach(b => { combined = combined.extend(b); });
+        payv2PreviewMap.fitBounds(combined, { padding: [16, 16], maxZoom: 20 });
+    }
+
+    // ตร.ม. เอาจาก class_area_sqm (shpsplit_sqm ดิบ) ตรงๆ ไม่ใช่ ไร่×1600 — เพราะ class_area_rai
+    // ถูกปัดเป็นไร่ 2 ตำแหน่งแล้ว คูณกลับจะเพี้ยนได้หลาย ตร.ม. เทียบกับตัวเลขในหน้า reclassdash
+    const fmtSqm = (n) => Math.round(n || 0).toLocaleString('th-TH');
+    const rows = (classes || []).map(c => `
+        <tr>
+            <td class="text-muted">${c.sub_id || '-'}</td>
+            <td><span class="payv2-legend-dot" style="background:${payv2ClassColor(c.classtype)}"></span>${payv2ClassLabel(c.classtype)}</td>
+            <td class="text-end">${(c.class_area_rai || 0).toFixed(2)} ไร่ (${fmtSqm(c.class_area_sqm)} ตร.ม.)</td>
+        </tr>`).join('');
+    if (!rows) return `<div class="text-muted small py-2">ยังไม่ได้จำแนกคลาส</div>`;
+    const totalArea = (classes || []).reduce((s, c) => s + (c.class_area_rai || 0), 0);
+    const totalSqm = (classes || []).reduce((s, c) => s + (c.class_area_sqm || 0), 0);
+    return `
+        <table class="table table-sm mb-0 mt-1 payv2-preview-table">
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="fw-bold">
+                    <td colspan="2">เนื้อที่รวม</td>
+                    <td class="text-end">${totalArea.toFixed(2)} ไร่ (${fmtSqm(totalSqm)} ตร.ม.)</td>
+                </tr>
+            </tfoot>
+        </table>`;
+}
+
+/* จำนวนการ์ดที่ render ให้เห็นตั้งแต่แรกต่อคนงานหนึ่งคน — กันหน้าเว็บหนักถ้าคนงานคนเดียวทำเป็นร้อยเป็นพันแปลง
+   ที่เหลือกดปุ่ม "แสดงเพิ่ม" ทีละชุด หรือ "แสดงทั้งหมด" ครั้งเดียว หรือพิมพ์ค้นหา/กดตัวกรองหลายคลาส
+   ระบบจะดึงออกมาให้ครบอัตโนมัติ (ดู applyPayv2PlotFilter) */
+const PAYV2_PLOT_BATCH = 10;
+
+/* การ์ดเดียวต่อ "แปลง" (id) หนึ่งแปลง — 1 id ปรากฏแค่ครั้งเดียวเสมอ ไม่ซ้ำ และเขียนสูตรคำนวณ (ไร่ × เรท + โบนัส = รวม)
+   ไว้ในบรรทัดเดียวกันแบบอ่านจบในตัวเอง ไม่ต้องเทียบข้ามคอลัมน์ กันงงเวลาการ์ดถูกตัด/เลื่อนจอแคบ ๆ
+   data-search ใช้ให้ filterPayv2Plots() ค้นหาได้ — แปลงหลายคลาสมีเส้นขอบซ้ายสีเหลืองให้เห็นชัดตาโดยไม่ต้องอ่านตัวหนังสือ
+   hidden=true คือการ์ดที่ยังไม่ถึงคิวแสดง (เกินโควตาชุดแรก) จะถูกซ่อนด้วย class batch-hidden ไว้ก่อน */
+function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, rateBonus, tb, hidden, displayIndex) {
+    const rate = plot.is_ns4 ? rateNs4 : rateOther;
+    const areaPay = plot.area_rai * rate;
+    const bonusPay = plot.is_multi ? rateBonus : 0;
+    const totalPay = areaPay + bonusPay;
+    const fmt = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // data-search รวมประเภทโฉนด + ไอดี + เลขทะเบียน + คำว่า "หลายคลาส"/"multi" ไว้ในช่องเดียว เพื่อให้พิมพ์ค้นหาคำไหนก็เจอ
+    const searchText = `${deedLabel} ${plot.id} ${plot.regis_no || ''}${plot.is_multi ? ' หลายคลาส multi' : ''}`.toLowerCase();
+    const cls = ['payv2-plot-card'];
+    if (plot.is_multi) cls.push('is-multi');
+    if (hidden) cls.push('batch-hidden');
+    return `
+    <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}"
+        data-total="${totalPay}" data-bonus="${bonusPay}">
+        <div class="payv2-plot-head">
+            <span class="payv2-plot-index">${displayIndex}</span>
+            ${payV2IdChips([plot.id], tb)}
+            <span class="badge ${badgeClass}">${deedLabel}</span>
+            ${plot.is_multi ? `<span class="badge bg-warning text-dark">หลายคลาส (${plot.class_count} คลาส)</span>` : ''}
+        </div>
+        ${plot.regis_no ? `<div class="payv2-plot-regis"><i class="bi bi-person-vcard me-1"></i>เลขทะเบียน ${plot.regis_no}</div>` : ''}
+        <div class="payv2-plot-calc">
+            ${plot.area_rai.toFixed(2)} ${plot.is_multi ? 'ไร่รวม' : 'ไร่ยาง'} &times; ${rate.toLocaleString('th-TH')} บาท/ไร่ = ${fmt(areaPay)} บาท${plot.is_multi ? ` <span class="payv2-bonus-chip">+ โบนัส ${fmt(bonusPay)} บาท</span>` : ''}
+        </div>
+        <div class="payv2-plot-total">รวม <span class="pay-amount fw-bold">${fmt(totalPay)}</span> บาท</div>
+        <div class="payv2-plot-thumb-wrap">
+            <div class="payv2-plot-thumb" data-tb="${tb}" data-id="${plot.id}"></div>
+            <div class="payv2-plot-thumb-loading"><div class="spinner-border spinner-border-sm text-muted"></div></div>
+        </div>
+    </div>`;
+}
+
+/* รายละเอียดของคนงานหนึ่งคน: การ์ดแบบ 1 ใบต่อ 1 แปลง (id) เรียงตาม นส.4 ก่อน แล้วตามด้วยประเภทโฉนดอื่นๆ
+   ทุกแปลงปรากฏแค่ครั้งเดียว พร้อมสูตรคำนวณและยอดรวมที่ได้จริงต่อแปลงในการ์ดเดียวกัน มีช่องค้นหาประเภทโฉนด/ไอดี
+   อยู่ด้านบน (มีประโยชน์มากเมื่อคนงานคนหนึ่งทำหลายประเภทโฉนดปนกันจนรายการยาว) — และแสดงแค่ชุดแรกก่อนถ้ารายการยาวมาก
+   พร้อมปุ่ม "แสดงเพิ่ม" ให้ทยอยโหลดทีละชุด กันหน้าเว็บหนักเวลาคนงานคนเดียวมีเป็นร้อยเป็นพันแปลง */
+function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
+    const plots = worker.plots || [];
+    const plotById = {};
+    plots.forEach(p => { plotById[p.id] = p; });
+
+    const entries = [];
+    const deedTypesSeen = [];
+    if (worker.ns4.plot_count > 0) deedTypesSeen.push('นส.4');
+    worker.ns4.ids.forEach(id => {
+        const p = plotById[id];
+        if (p) entries.push({ p, badgeClass: 'bg-success', deedLabel: 'นส.4' });
+    });
+    Object.entries(worker.other.by_deed_type).forEach(([dt, d]) => {
+        deedTypesSeen.push(dt);
+        d.ids.forEach(id => {
+            const p = plotById[id];
+            if (p) entries.push({ p, badgeClass: 'bg-info text-dark', deedLabel: dt });
+        });
+    });
+
+    if (entries.length === 0) {
+        return `<div class="text-center text-muted py-2">ไม่มีรายการที่คิดค่าจ้างได้</div>`;
+    }
+
+    const cards = entries.map((e, i) =>
+        payV2PlotDetailCard(e.p, e.badgeClass, e.deedLabel, rateNs4, rateOther, rateBonus, tb, i >= PAYV2_PLOT_BATCH, i + 1)
+    );
+
+    // ยอดรวมเริ่มต้น (ก่อนกรอง) — ให้เห็นสรุปทันทีที่เปิดรายละเอียด ไม่ต้องกดกรองก่อนถึงจะเห็นยอด
+    // ค่านวณจากสูตรเดียวกับที่การ์ดแต่ละใบใช้ (payV2PlotDetailCard) ให้ตรงกันเป๊ะ
+    const fmt2 = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const grandTotal = entries.reduce((sum, e) => {
+        const rate = e.p.is_ns4 ? rateNs4 : rateOther;
+        const bonusPay = e.p.is_multi ? rateBonus : 0;
+        return sum + (e.p.area_rai * rate) + bonusPay;
+    }, 0);
+    const multiBonusTotal = worker.bonus.plot_count * rateBonus;
+    const summaryBannerHtml = `<i class="bi bi-cash-coin me-1"></i>
+        รวมทั้งหมด ${entries.length.toLocaleString('th-TH')} แปลง = <span class="fw-bold">${fmt2(grandTotal)} บาท</span>
+        <span class="payv2-summary-sep">|</span>
+        หลายคลาส ${worker.bonus.plot_count.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
+
+    const datalistId = `payv2_deedtypes_${idx}`;
+    const options = deedTypesSeen.map(dt => `<option value="${dt}">`).join('');
+    const remaining = entries.length - PAYV2_PLOT_BATCH;
+    const loadMoreBar = remaining > 0
+        ? `<div class="payv2-loadmore-bar">
+                <button type="button" class="btn btn-sm btn-outline-secondary payv2-loadmore-btn" onclick="payv2LoadMorePlots(this)">
+                    <i class="bi bi-chevron-down me-1"></i>แสดงเพิ่ม ${Math.min(PAYV2_PLOT_BATCH, remaining).toLocaleString('th-TH')} รายการ (เหลืออีก ${remaining.toLocaleString('th-TH')})
+                </button>
+                <button type="button" class="btn btn-sm btn-link payv2-loadall-btn" onclick="payv2LoadAllPlots(this)">
+                    แสดงทั้งหมด (${entries.length.toLocaleString('th-TH')} แปลง)
+                </button>
+           </div>`
+        : '';
+
+    return `
+    <div class="payv2-plot-detail-wrap">
+        <div class="payv2-plot-search-bar">
+            <i class="bi bi-search text-muted"></i>
+            <input type="text" class="form-control form-control-sm payv2-plot-search"
+                placeholder="ค้นหาประเภทโฉนด / ไอดีแปลง / พิมพ์ &quot;หลายคลาส&quot;..." list="${datalistId}" oninput="filterPayv2Plots(this)">
+            <datalist id="${datalistId}">${options}</datalist>
+            <button type="button" class="btn btn-sm btn-outline-warning payv2-multi-toggle" onclick="togglePayv2MultiOnly(this)"
+                title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส)">
+                <i class="bi bi-layers"></i> หลายคลาสเท่านั้น
+            </button>
+            ${worker.bonus.plot_count > 0 ? `
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="showPayv2BonusFullscreen(event)"
+                title="ดูแปลงที่ได้โบนัสหลายคลาสแบบเต็มหน้าจอ พร้อมรูปและยอดรวม">
+                <i class="bi bi-cash-coin"></i> สรุปโบนัส (${worker.bonus.plot_count.toLocaleString('th-TH')})
+            </button>` : ''}
+            <span class="payv2-plot-count-badge">${entries.length.toLocaleString('th-TH')} แปลง</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary payv2-fullscreen-toggle" onclick="togglePayv2Fullscreen(this)"
+                title="ขยายเต็มหน้าจอ">
+                <i class="bi bi-arrows-fullscreen"></i>
+            </button>
+        </div>
+        <div class="payv2-summary-banner">${summaryBannerHtml}</div>
+        <div class="payv2-plot-list">${cards.join('')}</div>
+        <div class="payv2-plot-empty d-none text-center text-muted py-2">ไม่พบแปลงที่ตรงกับคำค้นหา</div>
+        ${loadMoreBar}
+    </div>`;
+}
+
+/* กดปุ่ม "แสดงเพิ่ม" — เปิดการ์ดชุดถัดไปทีละ PAYV2_PLOT_BATCH ใบ */
+function payv2LoadMorePlots(btn) {
+    const wrap = btn.closest('.payv2-plot-detail-wrap');
+    if (!wrap) return;
+    const hiddenCards = wrap.querySelectorAll('.payv2-plot-card.batch-hidden');
+    let revealed = 0;
+    hiddenCards.forEach(card => {
+        if (revealed >= PAYV2_PLOT_BATCH) return;
+        card.classList.remove('batch-hidden');
+        revealed++;
+    });
+    payv2RefreshLoadMoreBar(wrap);
+    payv2LoadVisibleThumbs(wrap);
+}
+
+/* กดปุ่ม "แสดงทั้งหมด" — เปิดการ์ดที่เหลือทุกใบทีเดียว ไม่ต้องกด "แสดงเพิ่ม" หลายรอบ */
+function payv2LoadAllPlots(btn) {
+    const wrap = btn.closest('.payv2-plot-detail-wrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('.payv2-plot-card.batch-hidden').forEach(c => c.classList.remove('batch-hidden'));
+    payv2RefreshLoadMoreBar(wrap);
+    payv2LoadVisibleThumbs(wrap);
+}
+
+/* อัปเดตข้อความปุ่ม/ซ่อนแถบ "แสดงเพิ่ม | แสดงทั้งหมด" เมื่อไม่มีการ์ดที่ซ่อนไว้เหลือแล้ว */
+function payv2RefreshLoadMoreBar(wrap) {
+    const bar = wrap.querySelector('.payv2-loadmore-bar');
+    if (!bar) return;
+    const remaining = wrap.querySelectorAll('.payv2-plot-card.batch-hidden').length;
+    if (remaining <= 0) {
+        bar.remove();
+        return;
+    }
+    const moreBtn = bar.querySelector('.payv2-loadmore-btn');
+    const allBtn = bar.querySelector('.payv2-loadall-btn');
+    const totalCount = wrap.querySelectorAll('.payv2-plot-card').length;
+    if (moreBtn) {
+        moreBtn.innerHTML = `<i class="bi bi-chevron-down me-1"></i>แสดงเพิ่ม ${Math.min(PAYV2_PLOT_BATCH, remaining).toLocaleString('th-TH')} รายการ (เหลืออีก ${remaining.toLocaleString('th-TH')})`;
+    }
+    if (allBtn) {
+        allBtn.textContent = `แสดงทั้งหมด (${totalCount.toLocaleString('th-TH')} แปลง)`;
+    }
+}
+
+/* กรองการ์ดแปลงในกล่องรายละเอียดของคนงานคนเดียว — พิมพ์ค้นหา (ประเภทโฉนด/ไอดี/"หลายคลาส")
+   และ/หรือ กดปุ่ม "หลายคลาสเท่านั้น" เพื่อกรองเฉพาะแปลงที่ได้โบนัสหลายคลาส ใช้ร่วมกันได้ (AND) */
+function filterPayv2Plots(inputEl) {
+    applyPayv2PlotFilter(inputEl.closest('.payv2-plot-detail-wrap'));
+}
+
+function togglePayv2MultiOnly(btn) {
+    const active = btn.classList.toggle('active');
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    applyPayv2PlotFilter(btn.closest('.payv2-plot-detail-wrap'));
+}
+
+function applyPayv2PlotFilter(wrap) {
+    if (!wrap) return;
+    const input = wrap.querySelector('.payv2-plot-search');
+    const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+    const q = input ? input.value.trim().toLowerCase() : '';
+    const multiOnly = multiBtn ? multiBtn.classList.contains('active') : false;
+    const searching = !!q || multiOnly;
+    const loadMoreBar = wrap.querySelector('.payv2-loadmore-bar');
+
+    // กำลังค้นหา/กรองอยู่ — เปิดการ์ดที่ยังไม่ถึงคิว "แสดงเพิ่ม" ออกมาทั้งหมดก่อน กันเคสที่ตรงคำค้นหาแต่ยังไม่ถูกโหลดออกมา
+    if (searching) {
+        wrap.querySelectorAll('.payv2-plot-card.batch-hidden').forEach(c => c.classList.remove('batch-hidden'));
+        if (loadMoreBar) loadMoreBar.classList.add('d-none');
+    } else if (loadMoreBar) {
+        loadMoreBar.classList.remove('d-none');
+    }
+
+    const emptyMsg = wrap.querySelector('.payv2-plot-empty');
+    let visibleCount = 0;
+    let grandTotal = 0;
+    let multiCount = 0;
+    let multiBonusTotal = 0;
+    wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
+        const textMatch = !q || card.dataset.search.includes(q);
+        const multiMatch = !multiOnly || card.dataset.multi === '1';
+        const match = textMatch && multiMatch;
+        card.classList.toggle('d-none', !match);
+        if (match) {
+            visibleCount++;
+            grandTotal += parseFloat(card.dataset.total) || 0;
+            if (card.dataset.multi === '1') {
+                multiCount++;
+                multiBonusTotal += parseFloat(card.dataset.bonus) || 0;
+            }
+        }
+    });
+    if (emptyMsg) emptyMsg.classList.toggle('d-none', visibleCount !== 0);
+
+    // แถบสรุปยอด — รวมค่าจ้างของการ์ดที่มองเห็นอยู่ทั้งหมด (รวมไร่×เรท+โบนัส) และแยกยอดโบนัสหลายคลาสให้ดูด้วย
+    // อัปเดตตามตัวกรอง/คำค้นหาปัจจุบันเสมอ ไม่ใช่แค่ตอนเปิด "หลายคลาสเท่านั้น"
+    const fmt2 = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const banner = wrap.querySelector('.payv2-summary-banner');
+    if (banner) {
+        if (visibleCount > 0) {
+            banner.innerHTML = `<i class="bi bi-cash-coin me-1"></i>
+                รวมทั้งหมด ${visibleCount.toLocaleString('th-TH')} แปลง = <span class="fw-bold">${fmt2(grandTotal)} บาท</span>
+                <span class="payv2-summary-sep">|</span>
+                หลายคลาส ${multiCount.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
+            banner.classList.remove('d-none');
+        } else {
+            banner.classList.add('d-none');
+        }
+    }
+
+    payv2LoadVisibleThumbs(wrap);
+}
+
+/* ปุ่ม "สรุปโบนัส" — เปิดกล่องรายการแปลงเป็นเต็มจอ + เปิดกรอง "หลายคลาสเท่านั้น" พร้อมกันในคลิกเดียว
+   ได้ผลลัพธ์เป็นกริดรูปแปลงเต็มจอที่กรองเหลือเฉพาะแปลงที่ได้โบนัส พร้อมยอดรวมด้านบน (payv2-summary-banner) */
+function showPayv2BonusFullscreen(evt) {
+    evt.stopPropagation();
+    const wrap = evt.currentTarget.closest('.payv2-plot-detail-wrap');
+    if (!wrap) return;
+
+    const fsBtn = wrap.querySelector('.payv2-fullscreen-toggle');
+    if (fsBtn && !wrap.classList.contains('payv2-fullscreen')) togglePayv2Fullscreen(fsBtn);
+
+    const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+    if (multiBtn && !multiBtn.classList.contains('active')) togglePayv2MultiOnly(multiBtn);
+}
+
+/* ปุ่มขยายเต็มหน้าจอ — สลับ class ให้กล่องรายการแปลงคลุมทั้งวิวพอร์ต ช่วยตรวจสอบรายการยาว ๆ ได้ง่ายขึ้น
+   โดยไม่ต้องเปิดหน้าต่างใหม่ กด ESC หรือกดปุ่มซ้ำเพื่อย่อกลับ — ตอนขยายเต็มจอจะโชว์รูปแปลงของทุกการ์ดที่มองเห็นทันที
+   โดยไม่ต้องกดไอดีทีละอัน (ดู payv2LoadVisibleThumbs) */
+function togglePayv2Fullscreen(btn) {
+    const wrap = btn.closest('.payv2-plot-detail-wrap');
+    if (!wrap) return;
+    const isFullscreen = wrap.classList.toggle('payv2-fullscreen');
+    document.body.classList.toggle('payv2-fullscreen-lock', isFullscreen);
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+    btn.title = isFullscreen ? 'ย่อกลับ' : 'ขยายเต็มหน้าจอ';
+
+    if (isFullscreen) {
+        const onKeydown = (ev) => {
+            if (ev.key === 'Escape') togglePayv2Fullscreen(btn);
+        };
+        wrap._payv2EscHandler = onKeydown;
+        document.addEventListener('keydown', onKeydown);
+        // รอเฟรมถัดไปให้ browser คำนวณ layout ของกล่องเต็มจอเสร็จก่อน ค่อยสร้างแผนที่ย่อ (กันขนาด container เพี้ยน)
+        requestAnimationFrame(() => payv2LoadVisibleThumbs(wrap));
+    } else if (wrap._payv2EscHandler) {
+        document.removeEventListener('keydown', wrap._payv2EscHandler);
+        wrap._payv2EscHandler = null;
+    }
+}
+
+/* ปุ่มขยายเต็มหน้าจอของตาราง "แปลงที่ไม่มีคลาสยางพาราลงทะเบียนเลย" — เหมือน togglePayv2Fullscreen
+   แต่ทำงานกับกล่อง .payv2-warn-wrap (ตารางแจ้งเตือนด้านล่างค่าจ้าง) แยกต่างหาก เผื่อมีแปลงแจ้งเตือนเยอะ */
+function togglePayv2WarnFullscreen(btn) {
+    const wrap = btn.closest('.payv2-warn-wrap');
+    if (!wrap) return;
+    const isFullscreen = wrap.classList.toggle('payv2-fullscreen');
+    document.body.classList.toggle('payv2-fullscreen-lock', isFullscreen);
+    const icon = btn.querySelector('i');
+    if (icon) icon.className = isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+    btn.title = isFullscreen ? 'ย่อกลับ' : 'ขยายเต็มหน้าจอ';
+
+    if (isFullscreen) {
+        const onKeydown = (ev) => {
+            if (ev.key === 'Escape') togglePayv2WarnFullscreen(btn);
+        };
+        wrap._payv2EscHandler = onKeydown;
+        document.addEventListener('keydown', onKeydown);
+    } else if (wrap._payv2EscHandler) {
+        document.removeEventListener('keydown', wrap._payv2EscHandler);
+        wrap._payv2EscHandler = null;
+    }
+}
+
+/* ═════ รูปย่อแปลงแบบโชว์อัตโนมัติในการ์ด (เฉพาะตอนขยายเต็มจอ) — ใช้ API/สีเดียวกับ showParcelPreview
+   แต่สร้างแผนที่ Leaflet แยกต่อการ์ด (เล็ก, ปิดการโต้ตอบ) และโหลดเฉพาะการ์ดที่มองเห็นอยู่จริงเพื่อไม่ให้หน้าเว็บหนัก ═════ */
+const payv2ThumbMaps = {}; // key `${tb}:${id}` -> { map, layerGroup, bounds }
+
+function ensurePayv2ThumbMap(container, key) {
+    if (payv2ThumbMaps[key]) return payv2ThumbMaps[key];
+    const map = L.map(container, {
+        attributionControl: false, zoomControl: false, scrollWheelZoom: false,
+        dragging: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false, tap: false
+    }).setView([13.7563, 100.5018], 5);
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'], maxZoom: 21
+    }).addTo(map);
+    const layerGroup = L.layerGroup().addTo(map);
+    const entry = { map, layerGroup, bounds: null };
+    payv2ThumbMaps[key] = entry;
+    return entry;
+}
+
+async function loadPayv2Thumb(thumbEl) {
+    const wrapEl = thumbEl.closest('.payv2-plot-thumb-wrap');
+    const tb = thumbEl.dataset.tb, id = thumbEl.dataset.id;
+    const key = `${tb}:${id}`;
+    const entry = ensurePayv2ThumbMap(thumbEl, key);
+    entry.map.invalidateSize();
+
+    if (thumbEl.dataset.loaded === '1') {
+        if (entry.bounds) entry.map.fitBounds(entry.bounds, { padding: [8, 8], maxZoom: 20 });
+        if (wrapEl) wrapEl.classList.add('loaded');
+        return;
+    }
+    if (thumbEl.dataset.loading === '1') return;
+    thumbEl.dataset.loading = '1';
+
+    try {
+        let data = payv2PreviewCache[key];
+        if (!data) {
+            const r = await fetch(`/rub/api/parcel-preview/${tb}/${id}`);
+            data = await r.json();
+            payv2PreviewCache[key] = data;
+        }
+        if (!data.success) throw new Error(data.error || 'โหลดไม่สำเร็จ');
+        entry.layerGroup.clearLayers();
+        const bounds = [];
+        if (data.parcel) {
+            const gj = L.geoJSON(data.parcel, { style: { color: '#eeeeee', weight: 2, dashArray: '4,3', fillOpacity: 0 } }).addTo(entry.layerGroup);
+            if (gj.getBounds().isValid()) bounds.push(gj.getBounds());
+        }
+        (data.classes || []).forEach(c => {
+            if (!c.geom) return;
+            const color = payv2ClassColor(c.classtype);
+            const gj = L.geoJSON(c.geom, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.5 } }).addTo(entry.layerGroup);
+            if (gj.getBounds().isValid()) bounds.push(gj.getBounds());
+        });
+        if (bounds.length > 0) {
+            let combined = bounds[0];
+            bounds.slice(1).forEach(b => { combined = combined.extend(b); });
+            entry.bounds = combined;
+            entry.map.fitBounds(combined, { padding: [8, 8], maxZoom: 20 });
+        }
+        thumbEl.dataset.loaded = '1';
+    } catch (err) {
+        thumbEl.title = 'โหลดรูปแปลงไม่สำเร็จ';
+    } finally {
+        thumbEl.dataset.loading = '0';
+        if (wrapEl) wrapEl.classList.add('loaded');
+    }
+}
+
+/* หาการ์ดที่มองเห็นอยู่จริง (ไม่ถูกซ่อนด้วยตัวกรอง/batch-hidden) ในกล่องที่กำลังขยายเต็มจอ แล้วสั่งโหลดรูปย่อทีละใบ */
+function payv2LoadVisibleThumbs(wrap) {
+    if (!wrap || !wrap.classList.contains('payv2-fullscreen')) return;
+    wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
+        if (card.classList.contains('d-none') || card.classList.contains('batch-hidden')) return;
+        const thumb = card.querySelector('.payv2-plot-thumb');
+        if (thumb) loadPayv2Thumb(thumb);
+    });
+}
+
+/* เรียกตอน renderPaymentTableV2() สร้างตารางใหม่ทั้งหมด (เช่น เปลี่ยนเรท) — เคลียร์แผนที่ย่อเก่าที่ค้างอยู่ใน memory
+   เพราะ container เดิมถูกทิ้งไปพร้อม innerHTML แล้ว ไม่เคลียร์ก็จะรั่วและยังโหลด tile ต่อทั้งที่มองไม่เห็น */
+function payv2DestroyAllThumbMaps() {
+    Object.values(payv2ThumbMaps).forEach(entry => {
+        try { entry.map.remove(); } catch (e) { /* container อาจถูกลบไปแล้ว */ }
+    });
+    Object.keys(payv2ThumbMaps).forEach(k => delete payv2ThumbMaps[k]);
+}
+
+function togglePayV2Detail(i) {
+    const row = document.getElementById(`payv2_detail_${i}`);
+    const icon = document.getElementById(`payv2_detail_icon_${i}`);
+    if (!row) return;
+    row.classList.toggle('d-none');
+    if (icon) icon.classList.toggle('bi-chevron-down');
+    if (icon) icon.classList.toggle('bi-chevron-up');
+}
+
+/* ตารางสรุปแบบแถวเดียวต่อคน: นส.4 / อื่นๆ / หลายคลาส / รวม — อ่านง่าย สรุปยอดที่แต่ละคนได้ตรง ๆ
+   กดปุ่ม "รายละเอียด" เพื่อดูไอดีแปลงที่ทำ และประเภทโฉนดทุกประเภทที่อยู่ในกลุ่ม "อื่นๆ" */
+function renderPaymentTableV2() {
+    payv2DestroyAllThumbMaps(); // ตารางเดิมกำลังจะถูกทิ้งทั้งหมด เคลียร์แผนที่ย่อเก่าก่อนกันรั่ว/โหลด tile ค้าง
+    const rateNs4   = parseFloat(document.getElementById('payv2_rate_ns4').value) || 0;
+    const rateOther = parseFloat(document.getElementById('payv2_rate_other').value) || 0;
+    const rateBonus = parseFloat(document.getElementById('payv2_rate_bonus').value) || 0;
+    const wrap = document.getElementById('paymentV2TableWrap');
+    const data = paymentV2WorkerData;
+
+    if (!data || data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            ยังไม่มีข้อมูลจำแนกพื้นที่ (class_Area) ที่มีผู้ทำงานใน table นี้
+        </div>`;
+        return;
+    }
+
+    const avatarOf = (r) => r.photo
+        ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+            onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=00695c&rounded=true'">`
+        : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=E9F5EC&color=00695c&rounded=true" class="pay-avatar">`;
+
+    let gNs4Plot = 0, gNs4Area = 0, gNs4Pay = 0;
+    let gOtherPlot = 0, gOtherArea = 0, gOtherPay = 0;
+    let gBonusPlot = 0, gBonusPay = 0;
+    let grandPay = 0;
+
+    const rows = data.map((worker, i) => {
+        const ns4Pay   = worker.ns4.area_rai   * rateNs4;
+        const otherPay = worker.other.area_rai * rateOther;
+        const bonusPay = worker.bonus.plot_count * rateBonus;
+        const totalPay = ns4Pay + otherPay + bonusPay;
+
+        gNs4Plot += worker.ns4.plot_count;     gNs4Area += worker.ns4.area_rai;     gNs4Pay += ns4Pay;
+        gOtherPlot += worker.other.plot_count; gOtherArea += worker.other.area_rai; gOtherPay += otherPay;
+        gBonusPlot += worker.bonus.plot_count; gBonusPay += bonusPay;
+        grandPay += totalPay;
+
+        // ตัวเลขจำนวนแปลงเองเป็นตัวกดดูรายการไอดี (ขีดเส้นใต้จุด ๆ) แทนปุ่มไอคอนแยก กันรกตา — ถ้าไม่มีแปลงเลยก็เป็นแค่ตัวเลขเฉย ๆ กดไม่ได้
+        const countCell = (count, group, unit) => count > 0
+            ? `<span class="payv2-count-link" onclick="showPayv2GroupIds(event, ${i}, '${group}')" title="ดูรายการไอดี">${count.toLocaleString('th-TH')}${unit ? ' ' + unit : ''}</span>`
+            : `${count.toLocaleString('th-TH')}${unit ? ' ' + unit : ''}`;
+
+        return `<tr>
+            <td class="text-center align-middle">${i + 1}</td>
+            <td class="align-middle">
+                <div class="d-flex align-items-center gap-2">
+                    ${avatarOf(worker)}
+                    <span class="fw-bold">${worker.editor}</span>
+                </div>
+            </td>
+            <td class="text-center align-middle">${countCell(worker.ns4.plot_count, 'ns4', 'แปลง')}<br><small class="text-muted">${worker.ns4.area_rai.toFixed(2)} ไร่</small></td>
+            <td class="text-end align-middle">${ns4Pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">${countCell(worker.other.plot_count, 'other', 'แปลง')}<br><small class="text-muted">${worker.other.area_rai.toFixed(2)} ไร่</small></td>
+            <td class="text-end align-middle">${otherPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">${countCell(worker.bonus.plot_count, 'bonus')}<br><small class="text-muted">แปลง</small></td>
+            <td class="text-end align-middle">${bonusPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-end align-middle fw-bold pay-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="payv2_detail_btn_${i}" onclick="togglePayV2Detail(${i})" title="ดูไอดีที่ทำ / ทุกประเภทโฉนด">
+                    <i class="bi bi-chevron-down" id="payv2_detail_icon_${i}"></i>
+                </button>
+            </td>
+        </tr>
+        <tr id="payv2_detail_${i}" class="d-none payv2-detail-row">
+            <td colspan="10">${buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, paymentV2Tb, i)}</td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+    <div class="table-responsive">
+        <table class="table table-hover payment-table">
+            <thead>
+                <tr>
+                    <th class="text-center align-middle" style="width:40px">#</th>
+                    <th class="align-middle">ชื่อผู้ทำงาน</th>
+                    <th class="text-center align-middle">นส.4<br><small class="fw-normal text-muted">แปลง / ไร่</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง นส.4</th>
+                    <th class="text-center align-middle">อื่นๆ<br><small class="fw-normal text-muted">แปลง / ไร่</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง อื่นๆ</th>
+                    <th class="text-center align-middle">โบนัสหลายคลาส<br><small class="fw-normal text-muted">แปลง</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง โบนัส</th>
+                    <th class="text-end align-middle">รวมค่าจ้าง</th>
+                    <th class="text-center align-middle" style="width:60px">รายละเอียด</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="payment-total-row">
+                    <td colspan="2" class="fw-bold align-middle">รวมทั้งหมด</td>
+                    <td class="text-center fw-bold align-middle">${gNs4Plot.toLocaleString('th-TH')} แปลง<br><small class="text-muted">${gNs4Area.toFixed(2)} ไร่</small></td>
+                    <td class="text-end fw-bold align-middle">${gNs4Pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-center fw-bold align-middle">${gOtherPlot.toLocaleString('th-TH')} แปลง<br><small class="text-muted">${gOtherArea.toFixed(2)} ไร่</small></td>
+                    <td class="text-end fw-bold align-middle">${gOtherPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-center fw-bold align-middle">${gBonusPlot.toLocaleString('th-TH')}<br><small class="text-muted">แปลง</small></td>
+                    <td class="text-end fw-bold align-middle">${gBonusPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-end fw-bold align-middle pay-total-amount">${grandPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+}
+
+function renderWarningsV2() {
+    const wrap = document.getElementById('paymentV2WarnWrap');
+    if (!paymentV2Warnings || paymentV2Warnings.length === 0) {
+        wrap.innerHTML = '';
+        return;
+    }
+    const ids = paymentV2Warnings.map(w => w.id);
+    const idText = compressIdRanges(ids);
+    const rows = paymentV2Warnings.map(w => `
+        <tr>
+            <td><span class="payv2-id-chip" onclick="showParcelPreview(event,'${paymentV2Tb}',${w.id})" title="ดูรูปแปลง/คลาส id ${w.id} เพื่อตรวจสอบ">${w.id}</span></td>
+            <td>${payv2ClassLabel(w.classtype)}</td>
+            <td>${w.deed_type}</td>
+            <td>${w.editor}</td>
+        </tr>`).join('');
+
+    wrap.innerHTML = `
+        <div class="alert alert-warning mb-0 payv2-warn-wrap">
+            <div class="fw-bold mb-1 d-flex align-items-start justify-content-between gap-2">
+                <span><i class="bi bi-exclamation-triangle-fill me-1"></i>
+                พบ ${paymentV2Warnings.length.toLocaleString('th-TH')} แปลง (id: ${idText}) ที่ไม่มีคลาสยางพาราลงทะเบียนเลย (ไม่มีฐานไร่ยางให้คิดเรท) — ไม่ถูกนับในค่าจ้างข้างต้น กรุณาตรวจสอบ</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 payv2-warn-fullscreen-toggle" onclick="togglePayv2WarnFullscreen(this)" title="ขยายเต็มหน้าจอ">
+                    <i class="bi bi-arrows-fullscreen"></i>
+                </button>
+            </div>
+            <div class="table-responsive payv2-warn-table-wrap" style="max-height:220px;overflow:auto;">
+                <table class="table table-sm table-bordered mb-0 bg-white">
+                    <thead><tr><th>ID</th><th>ประเภทคลาส</th><th>ประเภทโฉนด</th><th>ผู้ทำงาน</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+document.getElementById('btnCalcPayV2').addEventListener('click', renderPaymentTableV2);
+
+document.getElementById('btnPrintPaymentV2').addEventListener('click', () => {
+    const tb = document.getElementById('paymentModalV2TbBadge').textContent;
+    const tableHtml = document.getElementById('paymentV2TableWrap').innerHTML;
+    const warnHtml = document.getElementById('paymentV2WarnWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สรุปค่าจ้าง V2 – ${tb}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family: "Noto Sans Thai", sans-serif; padding: 20px; }
+  .pay-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+  .pay-amount { color:#00695c; }
+  .pay-total-amount { color:#004d40; font-size:1.1rem; }
+  .payment-total-row { background:#e0f2f1; }
+  .pay-id-range { font-family: "Consolas", "SFMono-Regular", monospace; font-size:0.8rem; color:#2e7d32; word-break: break-all; }
+  .payv2-detail-row.d-none { display: table-row !important; }
+  .pay-id-cell .pay-id-clamp { max-height: none !important; }
+  .payv2-id-scroll { max-height: none !important; overflow: visible !important; }
+  .payv2-id-chip-wrap { display:flex; flex-wrap:wrap; gap:4px; }
+  .payv2-id-chip { font-family:"Consolas","SFMono-Regular",monospace; font-size:0.72rem; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:5px; padding:1px 6px; text-decoration:none; }
+  .payv2-plot-list { display:flex; flex-direction:column; gap:6px; max-height:none !important; overflow:visible !important; }
+  .payv2-plot-card { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; background:#fff; border:1px solid #d3ede9; border-radius:8px; padding:8px 12px; font-size:0.82rem; }
+  .payv2-plot-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .payv2-plot-calc { color:#37474f; flex:1 1 240px; line-height:1.7; }
+  .payv2-plot-total { margin-left:auto; white-space:nowrap; color:#00695c; }
+  .payv2-plot-card.is-multi { border-left:4px solid #f9a825; background:#fffbeb; }
+  .payv2-bonus-chip { display:inline-block; font-size:0.74rem; background:#fff3cd; color:#8a6100; border:1px solid #ffe08a; border-radius:10px; padding:1px 8px; margin-left:2px; }
+  .payv2-plot-search-bar { display:none !important; }
+  .payv2-plot-card.d-none, .payv2-plot-card.batch-hidden { display:flex !important; }
+  .payv2-plot-empty { display:none !important; }
+  .payv2-loadmore-bar { display:none !important; }
+  @media print { button { display:none; } }
+</style>
+</head>
+<body>
+<h4 style="color:#00695c">สรุปค่าจ้างทีมงาน V2 (class_Area) – ${tb}</h4>
+<p class="text-muted mb-3">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
+${tableHtml}
+<div class="mt-3">${warnHtml}</div>
 <script>window.onload=()=>window.print();<\/script>
 </body></html>`);
     win.document.close();

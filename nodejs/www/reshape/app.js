@@ -773,6 +773,11 @@ const onEachFeature = (feature, layer) => {
         // ถ้ากำลัง digitize (draw) อยู่ ไม่ให้แปลงอื่นมาแย่งข้อมูล
         if (isDrawing) return;
         showFeaturePanel(feature, layer);
+        if (feature.properties.locked && _userRole !== 'admin') {
+            highlightSelectedLayer(layer);
+            alert('แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้');
+            return;
+        }
         featureGroup.eachLayer(l => l.pm.disable());
         layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
         highlightSelectedLayer(layer);
@@ -895,6 +900,7 @@ const loadGeoData = async () => {
                 current_sqm: item['Sqm_Deed'] || 0,         // เนื้อที่ขณะนี้ (m²) = Sqm_Deed
                 current_rai: item['Deed_Area'] || 0,        // เนื้อที่ขณะนี้ (ไร่) = Deed_Area
                 classified: item.classified,
+                locked: !!item.locked,
             };
         }).filter(item => item.geom !== null);
 
@@ -908,8 +914,20 @@ const loadGeoData = async () => {
                     title: 'Zoom',
                     render: (data, type, row) => {
                         const _geojson = JSON.stringify(row.geom);
-                        return `<a class="btn btn-success map-btn" 
-                                    data-refid="${row.id}" 
+                        const isBlocked = row.locked && _userRole !== 'admin';
+                        if (isBlocked) {
+                            return `<a class="btn btn-secondary disabled map-btn"
+                                        aria-disabled="true" tabindex="-1"
+                                        title="แปลงนี้ถูกปิดโดยแอดมิน"
+                                        data-refid="${row.id}"
+                                        data-geojson='${_geojson}'
+                                        data-locked="1"
+                                        href="#">
+                                        <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
+                                    </a>`
+                        }
+                        return `<a class="btn btn-success map-btn"
+                                    data-refid="${row.id}"
                                     data-geojson='${_geojson}'
                                     href="#">
                                     <em class="icon ni ni-zoom-in"></em>&nbsp;ซูม
@@ -965,6 +983,28 @@ const loadGeoData = async () => {
                     }
                 },
                 {
+                    data: 'locked',
+                    title: 'สถานะ',
+                    render: (data, type, row) => {
+                        return data
+                            ? '<span class="badge bg-danger"><i class="bi bi-lock-fill"></i> ปิดโดยแอดมิน</span>'
+                            : '<span class="badge bg-success">เปิดใช้งาน</span>';
+                    }
+                },
+                {
+                    data: null,
+                    title: 'ปิด/เปิดแปลง',
+                    render: (data, type, row) => {
+                        return row.locked
+                            ? `<button class="btn btn-outline-success btn-sm lock-toggle-btn" data-id="${row.id}" data-action="unlock" title="ปลดล็อกแปลงนี้">
+                                    <i class="bi bi-unlock-fill"></i> เปิด
+                                </button>`
+                            : `<button class="btn btn-outline-danger btn-sm lock-toggle-btn" data-id="${row.id}" data-action="lock" title="ปิดแปลงนี้ไม่ให้ worker แก้ไข">
+                                    <i class="bi bi-lock-fill"></i> ปิด
+                                </button>`;
+                    }
+                },
+                {
                     data: null,
                     title: 'ลบข้อมูล',
                     render: (data, type, row) => {
@@ -982,9 +1022,37 @@ const loadGeoData = async () => {
             initComplete: function () {
                 if (_userRole !== 'admin') {
                     this.api().columns().every(function () {
-                        if (this.header().textContent.trim() === 'ลบข้อมูล') this.visible(false);
+                        const title = this.header().textContent.trim();
+                        if (title === 'ลบข้อมูล' || title === 'ปิด/เปิดแปลง') this.visible(false);
                     });
                 }
+            }
+        });
+
+        // ปิด/ปลดล็อกแปลง (admin เท่านั้น — ปุ่มถูกซ่อนไปแล้วสำหรับ worker แต่ยังกันซ้ำฝั่ง client ไว้ด้วย)
+        $('#featureTable tbody').on('click', '.lock-toggle-btn', async function (e) {
+            e.stopPropagation();
+            const id = $(this).data('id');
+            const action = $(this).data('action'); // 'lock' | 'unlock'
+            const tb = document.getElementById('tb').value;
+            const confirmMsg = action === 'lock'
+                ? `ต้องการปิดแปลงนี้ไม่ให้แก้ไขใช่หรือไม่? (ID: ${id})`
+                : `ต้องการปลดล็อกแปลงนี้ใช่หรือไม่? (ID: ${id})`;
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const response = await fetch(`/rub/api/plotlocks/${tb}/${id}`, {
+                    method: action === 'lock' ? 'PUT' : 'DELETE'
+                });
+                const result = await response.json();
+                if (result.success) {
+                    await loadGeoData();
+                } else {
+                    alert('เกิดข้อผิดพลาด: ' + (result.error || ''));
+                }
+            } catch (error) {
+                console.error('Error toggling plot lock:', error);
+                alert('ไม่สามารถเปลี่ยนสถานะแปลงได้');
             }
         });
 
@@ -1027,7 +1095,8 @@ const loadGeoData = async () => {
                         rubr_sqm: row.rubr_sqm,
                         rubr_total: row.rubr_total,
                         current_sqm: row.current_sqm,
-                        current_rai: row.current_rai
+                        current_rai: row.current_rai,
+                        locked: !!row.locked
                     }
                 }
 
@@ -1047,6 +1116,11 @@ const loadGeoData = async () => {
                         // ถ้ากำลัง digitize (draw) อยู่ ไม่ให้แปลงอื่นมาแย่งข้อมูล
                         if (isDrawing) return;
                         showFeaturePanel(geoJsonData, marker);
+                        if (geoJsonData.properties.locked && _userRole !== 'admin') {
+                            highlightSelectedLayer(marker);
+                            alert('แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้');
+                            return;
+                        }
                         selectedLayer = marker;
                         highlightSelectedLayer(marker);
                     });
@@ -1083,6 +1157,7 @@ const loadGeoData = async () => {
         $('#featureTable tbody').on('click', '.map-btn', function (e) {
             try {
                 e.stopPropagation();
+                if ($(this).data('locked')) return; // ปุ่มถูกปิดใช้งานไว้แล้วสำหรับแปลงที่ล็อก (กันการคลิกผ่าน keyboard/เหตุการณ์อื่น)
                 const geojson = $(this).data('geojson');
                 const refid = $(this).data('refid');
 
@@ -1100,14 +1175,24 @@ const loadGeoData = async () => {
                 featureGroup.eachLayer(layer => {
                     if (layer instanceof L.Marker) {
                         if (layer.options.properties.id === refid) {
-                            selectedLayer = layer;
                             showFeaturePanel({ properties: layer.options.properties }, layer);
+                            if (layer.options.properties.locked && _userRole !== 'admin') {
+                                highlightSelectedLayer(layer);
+                                alert('แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้');
+                                return;
+                            }
+                            selectedLayer = layer;
                             highlightSelectedLayer(layer);
                         }
                     } else if (layer instanceof L.Path) {
                         if (layer.feature.properties.id === refid) {
-                            selectedLayer = layer;
                             showFeaturePanel(layer.feature, layer);
+                            if (layer.feature.properties.locked && _userRole !== 'admin') {
+                                highlightSelectedLayer(layer);
+                                alert('แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้');
+                                return;
+                            }
+                            selectedLayer = layer;
                             layer.pm.enable({ removeVertexOn: PM_REMOVE_VERTEX_ON });
                             highlightSelectedLayer(layer);
                         }
@@ -1182,6 +1267,12 @@ map.on('click', (e) => {
 document.getElementById('save').addEventListener('click', async () => {
     if (!selectedLayer) {
         alert('กรุณาเลือกแปลงที่ต้องการบันทึกก่อน');
+        return;
+    }
+
+    const selectedProps = (selectedLayer.feature && selectedLayer.feature.properties) || selectedLayer.options?.properties || {};
+    if (selectedProps.locked && _userRole !== 'admin') {
+        alert('แปลงนี้ถูกปิดโดยแอดมิน ไม่สามารถแก้ไขได้');
         return;
     }
 

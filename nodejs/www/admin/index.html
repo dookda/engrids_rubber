@@ -379,6 +379,102 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
+         MODAL 5B: คำนวณค่าจ้าง V2 (จาก class_Area ในตาราง reclass)
+    ═══════════════════════════════════════════════════════ -->
+    <div class="modal fade" id="paymentModalV2" tabindex="-1" aria-labelledby="paymentModalV2Label" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background:linear-gradient(135deg,#26a69a,#00695c); color:#fff;">
+                    <h5 class="modal-title f" id="paymentModalV2Label">
+                        <i class="bi bi-calculator-fill me-2"></i>สรุปค่าจ้างทีมงาน V2
+                        <span class="ms-2 badge bg-light text-dark" id="paymentModalV2TbBadge"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        คำนวณจาก <strong>class_Area</strong> (พื้นที่จำแนกจริง ในตาราง reclass) — อัตราต่อไร่คิดจาก <strong>พื้นที่คลาสยางพารา</strong> ในแปลงเสมอ (ไม่ว่าแปลงจะมีคลาสเดียวหรือหลายคลาส)
+                        แล้วถ้าแปลงนั้นมี <strong>มากกว่า 1 คลาส</strong> (มีคลาสอื่นปนกับยางพารา) จะบวกโบนัสคงที่ <strong>ต่อแปลง</strong> เพิ่มอีกก้อนหนึ่ง
+                        &nbsp;|&nbsp; แปลงที่ไม่มีคลาสยางพาราลงทะเบียนเลย จะไม่คิดค่าจ้าง (แจ้งเตือนแยกไว้ด้านล่างสุด)
+                    </div>
+
+                    <!-- Rate setting: อัตราต่อไร่ (นส.4 / อื่นๆ) + โบนัสต่อแปลงเมื่อมีหลายคลาส -->
+                    <div class="payment-rate-bar payv2-rate-bar mb-3">
+                        <div class="table-responsive">
+                            <table class="table table-sm payv2-rate-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>กลุ่ม</th>
+                                        <th>เงื่อนไข</th>
+                                        <th style="width:160px;">อัตรา</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="badge bg-success">นส.4</span></td>
+                                        <td>พื้นที่คลาสยางพาราในแปลงที่โฉนดประเภท <strong>นส.4</strong></td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="payv2_rate_ns4" class="form-control payment-rate-input"
+                                                    value="0.5" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/ไร่</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-info text-dark">อื่นๆ</span></td>
+                                        <td>พื้นที่คลาสยางพาราในแปลงที่โฉนดประเภท<strong>อื่น</strong> (ไม่ใช่นส.4)</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="payv2_rate_other" class="form-control payment-rate-input"
+                                                    value="1" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/ไร่</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-warning text-dark">โบนัสหลายคลาส</span></td>
+                                        <td>แปลงมี <strong>ตั้งแต่ 2 คลาสขึ้นไป</strong> (มีคลาสอื่นปนกับยางพารา) — บวกเพิ่มแบบคงที่ต่อแปลง ไม่ใช่ต่อไร่</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="payv2_rate_bonus" class="form-control payment-rate-input"
+                                                    value="0.5" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/แปลง</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="text-end mt-2">
+                            <button class="btn btn-primary btn-sm" id="btnCalcPayV2" style="background:#00695c; border-color:#00695c;">
+                                <i class="bi bi-calculator me-1"></i>คำนวณ
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Summary table -->
+                    <div id="paymentV2TableWrap">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+                        </div>
+                    </div>
+
+                    <!-- Warnings: single-class, non-rubber -->
+                    <div id="paymentV2WarnWrap" class="mt-3"></div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <button class="btn btn-outline-secondary btn-sm" id="btnPrintPaymentV2">
+                        <i class="bi bi-printer me-1"></i>พิมพ์รายงาน
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
          MODAL 6: คำนวณค่าจ้างคนตรวจ (Checker Payment per layer)
     ═══════════════════════════════════════════════════════ -->
     <div class="modal fade" id="checkerPaymentModal" tabindex="-1" aria-labelledby="checkerPaymentModalLabel" aria-hidden="true">
@@ -429,6 +525,7 @@
         crossorigin="anonymous"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="./app.js?v=20260624"></script>
 </body>
 

@@ -1079,6 +1079,491 @@ a:hover {
     color: #fff !important;
 }
 
+.btn-payment-v2 {
+    background: linear-gradient(135deg, #26a69a, #00695c) !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600;
+    font-size: 0.82rem !important;
+    padding: 0.35rem 0.7rem !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(0, 105, 92, 0.22);
+    transition: all 0.22s ease;
+}
+.btn-payment-v2:hover {
+    background: linear-gradient(135deg, #4db6ac, #004d40) !important;
+    box-shadow: 0 4px 14px rgba(0, 105, 92, 0.3) !important;
+    transform: translateY(-1px);
+    color: #fff !important;
+}
+
+.payv2-rate-bar {
+    background: linear-gradient(135deg, #e0f2f1, #e0f7fa);
+    border: 1px solid #80cbc4;
+    border-radius: 12px;
+    padding: 0.75rem 1.2rem;
+}
+.payv2-rate-table {
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.payv2-rate-table th {
+    font-size: 0.8rem;
+    color: #00695c;
+    background: #f1f8f7;
+}
+.payv2-rate-table td {
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+.payv2-rate-table input.payment-rate-input {
+    max-width: 100%;
+    text-align: center;
+    font-weight: 700;
+}
+
+.payv2-detail-row td {
+    background: #f6fbfa;
+    padding: 10px 14px !important;
+    border-top: none !important;
+}
+.payv2-detail-table thead th {
+    font-size: 0.75rem;
+    color: #00695c;
+    background: transparent;
+    border-bottom: 1px solid #b2dfdb;
+}
+.payv2-detail-table td {
+    font-size: 0.82rem;
+    vertical-align: middle;
+}
+
+/* ── การ์ดรายละเอียดค่าจ้างต่อแปลง (1 การ์ด = 1 id เสมอ) — อ่านจบในตัวเอง ไม่ต้องเลื่อนจอเทียบคอลัมน์ ── */
+.payv2-plot-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 340px;
+    overflow-y: auto;
+    padding: 2px;
+}
+.payv2-plot-card {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    background: #fff;
+    border: 1px solid #d3ede9;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+}
+/* เลขกำกับลำดับแปลง — ปกติอยู่ในแนวเดียวกับหัวการ์ด (ก่อนไอดี) ไม่บังอะไร
+   ส่วนโหมดเต็มจอ (กริดรูปภาพ) ค่อยลอยทับมุมบนซ้ายของรูปแทน (ดู override ท้ายไฟล์ ใกล้ .payv2-fullscreen) */
+.payv2-plot-index {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    background: #00695c;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    border-radius: 50%;
+}
+.payv2-plot-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+/* เลขทะเบียนเกษตรกร — บรรทัดเล็กสีเทาใต้หัวการ์ด แสดงเมื่อมีข้อมูลเท่านั้น */
+.payv2-plot-regis {
+    flex: 1 1 100%;
+    font-size: 0.74rem;
+    color: #78909c;
+    margin-top: -4px;
+}
+.payv2-plot-calc {
+    color: #37474f;
+    flex: 1 1 240px;
+    line-height: 1.7;
+}
+.payv2-plot-total {
+    margin-left: auto;
+    white-space: nowrap;
+    color: #00695c;
+}
+.payv2-plot-card.is-multi {
+    border-left: 4px solid #f9a825;
+    background: #fffbeb;
+}
+.payv2-plot-card.batch-hidden {
+    display: none;
+}
+.payv2-loadmore-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+.payv2-loadmore-btn {
+    font-size: 0.8rem;
+}
+.payv2-loadall-btn {
+    font-size: 0.78rem;
+    text-decoration: none;
+    color: #00695c;
+}
+.payv2-loadall-btn:hover {
+    text-decoration: underline;
+}
+.payv2-bonus-chip {
+    display: inline-block;
+    font-size: 0.74rem;
+    background: #fff3cd;
+    color: #8a6100;
+    border: 1px solid #ffe08a;
+    border-radius: 10px;
+    padding: 1px 8px;
+    margin-left: 2px;
+}
+.payv2-plot-detail-wrap { width: 100%; }
+.payv2-plot-search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.payv2-plot-search-bar i {
+    font-size: 0.85rem;
+}
+.payv2-plot-search {
+    max-width: 280px;
+}
+.payv2-plot-count-badge {
+    font-size: 0.75rem;
+    color: #00695c;
+    white-space: nowrap;
+    margin-left: auto;
+}
+.payv2-multi-toggle {
+    white-space: nowrap;
+    font-size: 0.78rem;
+}
+.payv2-multi-toggle.active {
+    background: #f9a825;
+    border-color: #f9a825;
+    color: #fff;
+}
+.payv2-fullscreen-toggle {
+    font-size: 0.78rem;
+}
+
+/* แถบสรุปยอด — รวมทั้งหมด + แยกยอดโบนัสหลายคลาส อัปเดตตามตัวกรอง/คำค้นหาปัจจุบัน (ดู applyPayv2PlotFilter) */
+.payv2-summary-banner {
+    flex: 0 0 auto;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: #2e7d32;
+    text-align: right;
+}
+.payv2-summary-sep {
+    margin: 0 8px;
+    color: #a5d6a7;
+}
+
+/* ── โหมดขยายเต็มหน้าจอสำหรับกล่องรายการแปลง ── */
+.payv2-plot-detail-wrap.payv2-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    background: #fff;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-search-bar {
+    flex: 0 0 auto;
+}
+body.payv2-fullscreen-lock {
+    overflow: hidden;
+}
+
+/* ── โหมดขยายเต็มหน้าจอสำหรับตารางแจ้งเตือน "แปลงที่ไม่มีคลาสยางพาราลงทะเบียนเลย" ── */
+.payv2-warn-wrap.payv2-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    background: #fff3cd;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 0;
+}
+.payv2-warn-wrap.payv2-fullscreen .payv2-warn-table-wrap {
+    max-height: none !important;
+    flex: 1 1 auto;
+}
+
+/* โหมดเต็มจอ: เปลี่ยนรายการจากแถวยาวเป็น "กริดการ์ดสี่เหลี่ยม" — สแกนรูปแปลงได้เร็วขึ้นเยอะ
+   เทียบกับการเลื่อนดูรูปยาวๆ ทีละแถวแบบเดิม แต่ละการ์ดมีรูปสี่เหลี่ยมจัตุรัสอยู่บนสุด ตามด้วยรายละเอียด */
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-list {
+    max-height: none;
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    align-content: start;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-card {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-head,
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-regis,
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-calc,
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-total {
+    flex: none;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-calc {
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-total {
+    margin-left: 0;
+}
+/* โหมดเต็มจอ: ดึงเลขลำดับออกจากแนวหัวการ์ด มาลอยทับมุมบนซ้ายของรูปแปลงแทน (การ์ดมี position:relative อยู่แล้ว) */
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-index {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 5;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* รูปย่อแปลงในการ์ด — ซ่อนไว้ปกติ (ไม่สร้างแผนที่โดยไม่จำเป็น) โชว์เฉพาะตอนขยายเต็มจอ (payv2LoadVisibleThumbs)
+   เป็นสี่เหลี่ยมจัตุรัส (aspect-ratio 1/1) และอยู่บนสุดของการ์ดเสมอ (order:-1) */
+.payv2-plot-thumb-wrap {
+    display: none;
+    position: relative;
+    z-index: 0; /* กัน z-index สูงๆ ของ Leaflet ข้างใน (เช่น .leaflet-pane z-index:400) หลุดออกมาบังพี่น้อง เช่นเลขลำดับ */
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #d3ede9;
+    background: #e8f0ef;
+}
+.payv2-plot-detail-wrap.payv2-fullscreen .payv2-plot-thumb-wrap {
+    display: block;
+    order: -1;
+}
+.payv2-plot-thumb {
+    width: 100%;
+    height: 100%;
+}
+.payv2-plot-thumb-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+}
+.payv2-plot-thumb-wrap.loaded .payv2-plot-thumb-loading {
+    display: none;
+}
+
+/* ── ไอดีแปลงแบบชิปกดได้ (กดแล้วเด้งภาพย่อรูปทรง+คลาสขึ้นมาตรงจุด ไม่เปลี่ยนหน้า) ── */
+.payv2-id-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+.payv2-id-chip-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+.payv2-id-chip {
+    display: inline-block;
+    font-family: "Consolas", "SFMono-Regular", monospace;
+    font-size: 0.72rem;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+    border-radius: 5px;
+    padding: 1px 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+.payv2-id-chip:hover {
+    background: #c8e6c9;
+    color: #1b5e20;
+}
+
+/* ฉากหลังหรี่จอตอนป๊อปอัพรูปแปลงเปิดอยู่ (pointer-events:none — ไม่ดักคลิก กันคลิก id chip อื่นทะลุไม่ได้) */
+.payv2-preview-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2999;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+
+/* ── Parcel preview popover (ภาพย่อรูปทรงแปลง + สีคลาส) ── */
+/* ปักไว้กลางจอเสมอ (ไม่อิงตำแหน่งที่กด) กันไม่ให้ไปบังแถว/เนื้อหาที่กำลังดูอยู่ ไม่ว่าจะกดไอดีจากตรงไหนของหน้า */
+.payv2-preview-popover {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 3000;
+    width: 560px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #b2dfdb;
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
+.payv2-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #26a69a, #00695c);
+    color: #fff;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+.payv2-preview-close {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    opacity: 0.85;
+}
+.payv2-preview-close:hover {
+    opacity: 1;
+}
+.payv2-preview-map {
+    height: 420px;
+    width: 100%;
+    background: #cfd8dc;
+}
+.payv2-preview-info {
+    padding: 8px 10px 10px;
+}
+
+/* ── ตัวเลขจำนวนแปลงในตารางสรุปหลัก กดดูรายการไอดีได้เลย (ขีดเส้นใต้จุด ๆ ไม่มีปุ่ม/ไอคอนแยกให้รก) + ป๊อปอัพแสดงรายการ ── */
+.payv2-count-link {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    color: inherit;
+}
+.payv2-count-link:hover {
+    color: #00695c;
+    text-decoration-style: solid;
+}
+.payv2-idlist-popover {
+    position: absolute;
+    z-index: 3000;
+    width: 260px;
+    background: #fff;
+    border: 1px solid #b2dfdb;
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+}
+.payv2-idlist-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, #26a69a, #00695c);
+    color: #fff;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+.payv2-idlist-close {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 2px;
+    cursor: pointer;
+    opacity: 0.85;
+}
+.payv2-idlist-close:hover {
+    opacity: 1;
+}
+.payv2-idlist-body {
+    padding: 8px 10px 10px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+.payv2-idlist-footer {
+    padding: 8px 10px;
+    border-top: 1px dashed #b2dfdb;
+    background: #f1f8f5;
+    font-size: 0.8rem;
+    color: #2e7d32;
+    text-align: right;
+}
+.payv2-legend-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.payv2-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    color: #455a64;
+}
+.payv2-legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+}
+.payv2-preview-table td {
+    font-size: 0.72rem;
+    padding: 2px 4px;
+    vertical-align: middle;
+}
+
 .btn-checker-pay {
     background: linear-gradient(135deg, #29b6f6, #0277bd) !important;
     border: none !important;
