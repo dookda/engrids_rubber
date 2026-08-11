@@ -2138,6 +2138,10 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
                 title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส)">
                 <i class="bi bi-layers"></i> หลายคลาสเท่านั้น
             </button>
+            <button type="button" class="btn btn-sm btn-outline-success payv2-rubber-toggle" onclick="togglePayv2RubberOnly(this)"
+                title="แสดงเฉพาะแปลงคลาสเดียวที่เป็นยางพาราลงทะเบียนล้วน (ไม่ปนคลาสอื่น)">
+                <i class="bi bi-tree"></i> คลาสยางพาราลงทะเบียนเท่านั้น
+            </button>
             ${worker.bonus.plot_count > 0 ? `
             <button type="button" class="btn btn-sm btn-outline-success" onclick="showPayv2BonusFullscreen(event)"
                 title="ดูแปลงที่ได้โบนัสหลายคลาสแบบเต็มหน้าจอ พร้อมรูปและยอดรวม">
@@ -2201,24 +2205,53 @@ function payv2RefreshLoadMoreBar(wrap) {
 }
 
 /* กรองการ์ดแปลงในกล่องรายละเอียดของคนงานคนเดียว — พิมพ์ค้นหา (ประเภทโฉนด/ไอดี/"หลายคลาส")
-   และ/หรือ กดปุ่ม "หลายคลาสเท่านั้น" เพื่อกรองเฉพาะแปลงที่ได้โบนัสหลายคลาส ใช้ร่วมกันได้ (AND) */
+   และ/หรือ กดปุ่ม "หลายคลาสเท่านั้น" เพื่อกรองเฉพาะแปลงที่ได้โบนัสหลายคลาส
+   และ/หรือ กดปุ่ม "คลาสยางพาราลงทะเบียนเท่านั้น" เพื่อกรองเฉพาะแปลงคลาสเดียวที่เป็นยางพาราลงทะเบียนล้วน (ตรงข้ามกับหลายคลาส
+   เพราะทุกแปลงที่แสดงในลิสต์นี้ต้องมีคลาสยางพาราลงทะเบียนอยู่แล้วเป็นเงื่อนไขจากฝั่ง backend — ดู hasRubber ใน api.js —
+   ดังนั้นแปลงคลาสเดียวในลิสต์นี้คือแปลงยางพาราลงทะเบียนล้วนเสมอ) ทุกตัวกรองใช้ร่วมกันได้ (AND) */
 function filterPayv2Plots(inputEl) {
     applyPayv2PlotFilter(inputEl.closest('.payv2-plot-detail-wrap'));
 }
 
+/* สองปุ่มนี้กันคนละขั้ว (แปลงคลาสเดียว vs หลายคลาส) กดพร้อมกันแล้วไม่มีการ์ดใดตรงเงื่อนไขเลย
+   เลยปิดอีกปุ่มให้อัตโนมัติเวลาเปิดปุ่มหนึ่งขึ้นมา กันงงเวลาผลลัพธ์ว่างเปล่าโดยไม่รู้สาเหตุ */
 function togglePayv2MultiOnly(btn) {
     const active = btn.classList.toggle('active');
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    applyPayv2PlotFilter(btn.closest('.payv2-plot-detail-wrap'));
+    const wrap = btn.closest('.payv2-plot-detail-wrap');
+    if (active) {
+        const rubberBtn = wrap.querySelector('.payv2-rubber-toggle');
+        if (rubberBtn && rubberBtn.classList.contains('active')) {
+            rubberBtn.classList.remove('active');
+            rubberBtn.setAttribute('aria-pressed', 'false');
+        }
+    }
+    applyPayv2PlotFilter(wrap);
+}
+
+function togglePayv2RubberOnly(btn) {
+    const active = btn.classList.toggle('active');
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const wrap = btn.closest('.payv2-plot-detail-wrap');
+    if (active) {
+        const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+        if (multiBtn && multiBtn.classList.contains('active')) {
+            multiBtn.classList.remove('active');
+            multiBtn.setAttribute('aria-pressed', 'false');
+        }
+    }
+    applyPayv2PlotFilter(wrap);
 }
 
 function applyPayv2PlotFilter(wrap) {
     if (!wrap) return;
     const input = wrap.querySelector('.payv2-plot-search');
     const multiBtn = wrap.querySelector('.payv2-multi-toggle');
+    const rubberBtn = wrap.querySelector('.payv2-rubber-toggle');
     const q = input ? input.value.trim().toLowerCase() : '';
     const multiOnly = multiBtn ? multiBtn.classList.contains('active') : false;
-    const searching = !!q || multiOnly;
+    const rubberOnly = rubberBtn ? rubberBtn.classList.contains('active') : false;
+    const searching = !!q || multiOnly || rubberOnly;
     const loadMoreBar = wrap.querySelector('.payv2-loadmore-bar');
 
     // กำลังค้นหา/กรองอยู่ — เปิดการ์ดที่ยังไม่ถึงคิว "แสดงเพิ่ม" ออกมาทั้งหมดก่อน กันเคสที่ตรงคำค้นหาแต่ยังไม่ถูกโหลดออกมา
@@ -2237,7 +2270,8 @@ function applyPayv2PlotFilter(wrap) {
     wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
         const textMatch = !q || card.dataset.search.includes(q);
         const multiMatch = !multiOnly || card.dataset.multi === '1';
-        const match = textMatch && multiMatch;
+        const rubberMatch = !rubberOnly || card.dataset.multi === '0';
+        const match = textMatch && multiMatch && rubberMatch;
         card.classList.toggle('d-none', !match);
         if (match) {
             visibleCount++;
