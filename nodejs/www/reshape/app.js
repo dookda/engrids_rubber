@@ -882,7 +882,7 @@ const loadGeoData = async () => {
             let geomPoint = null;
             try { if (item.geom_point) geomPoint = JSON.parse(item.geom_point); } catch (_) {}
             return {
-                id: item.id,
+                id: Number(item.id),
                 refinal: item.refinal,
                 farm_name: item['Full_nam'] || '',
                 f_name: item['F_name'] || '',
@@ -934,7 +934,7 @@ const loadGeoData = async () => {
                                 </a>`
                     }
                 },
-                { data: 'id', title: 'ID' },
+                { data: 'id', title: 'ID', type: 'num' },
                 { data: 'farm_name', title: 'ชื่อเกษตรกร' },
                 { data: 'age', title: 'อายุ (ปี)' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
@@ -1015,6 +1015,7 @@ const loadGeoData = async () => {
                 }
             ],
             pageLength: 10,
+            order: [[1, 'asc']],
             responsive: false,
             select: true,
             destroy: true,

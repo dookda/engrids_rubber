@@ -1638,7 +1638,7 @@ const loadGeoData = async () => {
         }
 
         const tableData = data.map(item => ({
-            id: item.id,
+            id: Number(item.id),
             sub_id: item.sub_id,
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
@@ -1748,7 +1748,7 @@ const loadGeoData = async () => {
                                     ><i class="bi bi-pencil-square"></i> แก้ไข</a>`
                     }
                 },
-                { data: 'id', title: 'ID' },
+                { data: 'id', title: 'ID', type: 'num' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
                 { data: 'regis_no', title: 'เลขที่ทะเบียน (Regis_No)' },
                 {
