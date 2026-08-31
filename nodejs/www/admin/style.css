@@ -576,6 +576,41 @@ a:hover {
 }
 
 /* ═══════════════════════════════════════
+   NEW: Pending Review Badge (ยังไม่ได้ตรวจ)
+═══════════════════════════════════════ */
+.pending-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 0.22rem 0.6rem;
+    border-radius: 20px;
+    white-space: nowrap;
+    cursor: pointer;
+    vertical-align: middle;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.pending-badge-warn {
+    background: linear-gradient(135deg, #ffca28, #f9a825) !important;
+    color: #4a2f00 !important;
+    box-shadow: 0 2px 6px rgba(249, 168, 37, 0.28);
+}
+
+.pending-badge-warn:hover {
+    background: linear-gradient(135deg, #ffb300, #ef6c00) !important;
+    box-shadow: 0 3px 10px rgba(239, 108, 0, 0.32);
+    transform: translateY(-1px);
+}
+
+.pending-badge-done {
+    background: rgba(76, 175, 80, 0.16) !important;
+    color: #2e7d32 !important;
+    cursor: default;
+}
+
+/* ═══════════════════════════════════════
    NEW: Layer Row Action Buttons
 ═══════════════════════════════════════ */
 .layer-actions {

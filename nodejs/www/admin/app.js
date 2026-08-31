@@ -126,6 +126,9 @@ const initApp = async () => {
                     <button class="btn btn-link btn-sm p-0 ms-2 renameBtn" data-tb="${tb_name}" title="แก้ไขชื่อโปรเจค" style="color:#555;">
                         <i class="bi bi-pencil-square"></i>
                     </button>
+                    <span class="pending-badge pending-badge-loading ms-2 pendingBadgeBtn" id="pendingBadge_${tb_name}" data-tb="${tb_name}" style="display:none;">
+                        <i class="bi bi-clipboard-x me-1"></i><span class="pending-badge-count">0</span> ยังไม่ได้ตรวจ
+                    </span>
                     <div class="layer-actions mt-2">
                         <button class="btn btn-add-data layer-btn addDataBtn" data-tb="${tb_name}">
                             <i class="bi bi-upload me-1"></i>เพิ่มข้อมูล
@@ -201,6 +204,7 @@ const initApp = async () => {
             layerList.appendChild(wrapper);
             await showChart(tb_name, tb_name);
             await loadAssignmentStrip(tb_name);
+            await loadPendingReviewBadge(tb_name);
         });
 
         await Promise.all(promises);
@@ -356,6 +360,14 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 openCheckerPaymentModal(tb);
+            });
+        });
+
+        /* ── ยังไม่ได้ตรวจ (badge) ── */
+        document.querySelectorAll('.pendingBadgeBtn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const tb = this.getAttribute('data-tb');
+                openPendingReviewModal(tb);
             });
         });
 
@@ -1162,6 +1174,39 @@ async function loadAssignmentStrip(tb_name) {
     }
 }
 
+/* ── ป้ายบอกจำนวนแปลงที่ยังไม่ได้ตรวจ ต่อโปรเจค ── */
+const pendingReviewCache = {};
+
+async function loadPendingReviewBadge(tb_name) {
+    const badge = document.getElementById(`pendingBadge_${tb_name}`);
+    if (!badge) return;
+
+    try {
+        const res = await fetch(`/rub/api/pending-review/${tb_name}`);
+        const result = await res.json();
+        pendingReviewCache[tb_name] = result;
+
+        const pending = result.total_pending || 0;
+        badge.classList.remove('pending-badge-loading');
+        badge.style.display = 'inline-flex';
+
+        if (pending > 0) {
+            badge.classList.remove('pending-badge-done');
+            badge.classList.add('pending-badge-warn');
+            badge.innerHTML = `<i class="bi bi-clipboard-x me-1"></i>${pending.toLocaleString()} ยังไม่ได้ตรวจ`;
+            badge.title = 'คลิกดูรายการที่ยังไม่ได้ตรวจ';
+        } else if (result.total_rows > 0) {
+            badge.classList.remove('pending-badge-warn');
+            badge.classList.add('pending-badge-done');
+            badge.innerHTML = `<i class="bi bi-check-circle me-1"></i>ตรวจครบแล้ว`;
+            badge.title = 'ตรวจครบทุกแปลงแล้ว';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (e) {
+        badge.style.display = 'none';
+    }
+}
 
 /* ═════════════════════════════════════════════════════════════
    MODAL 4 – ภาพรวมทีมงานทุกโปรเจค (Global Team Overview)
@@ -3594,6 +3639,111 @@ ${tableHtml}
 </body></html>`);
     win.document.close();
 });
+
+/* ═════════════════════════════════════════════════════════════
+   MODAL 7 – รายการที่ยังไม่ได้ตรวจ (Pending Review per Layer)
+═════════════════════════════════════════════════════════════ */
+
+let pendingReviewModal = null;
+
+function openPendingReviewModal(tb_name) {
+    if (!pendingReviewModal) {
+        pendingReviewModal = new bootstrap.Modal(document.getElementById('pendingReviewModal'));
+    }
+    document.getElementById('pendingReviewModalTbBadge').textContent = tb_name;
+    pendingReviewModal.show();
+
+    const cached = pendingReviewCache[tb_name];
+    if (cached) {
+        renderPendingReviewTable(cached);
+        return;
+    }
+
+    document.getElementById('pendingReviewTableWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+
+    fetch(`/rub/api/pending-review/${tb_name}`)
+        .then(r => r.json())
+        .then(result => {
+            pendingReviewCache[tb_name] = result;
+            renderPendingReviewTable(result);
+        })
+        .catch(() => {
+            document.getElementById('pendingReviewTableWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+}
+
+function renderPendingReviewTable(result) {
+    const wrap = document.getElementById('pendingReviewTableWrap');
+    const data = result.data || [];
+
+    if (data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>ตรวจครบทุกแปลงแล้วในโปรเจคนี้
+        </div>`;
+        return;
+    }
+
+    const rows = data.map((r, i) => {
+        const avatar = r.photo
+            ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+                onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=fff3e0&color=e65100&rounded=true'">`
+            : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=fff3e0&color=e65100&rounded=true" class="pay-avatar">`;
+
+        return `<tr>
+            <td class="text-center align-middle">${i + 1}</td>
+            <td class="align-middle">
+                <div class="d-flex align-items-center gap-2">
+                    ${avatar}
+                    <span class="fw-bold">${r.editor}</span>
+                </div>
+            </td>
+            <td class="align-middle${(r.ids || []).length > 10 ? ' pay-id-cell' : ''}">
+                ${(() => {
+                    const idText = compressIdRanges(r.ids || []);
+                    const isLong = (r.ids || []).length > 10;
+                    const idHtml = isLong
+                        ? `<div class="pay-id-clamp"><div class="pay-id-range">ID: ${idText}</div></div>`
+                        : `<div class="pay-id-range">ID: ${idText}</div>`;
+                    return `${idHtml}
+                        <div class="text-muted small">(${(r.farmer_count || 0).toLocaleString()} แปลง)
+                        ${isLong ? '<button type="button" class="pay-id-toggle-btn ms-1" onclick="toggleIdCell(this)">ดูทั้งหมด</button>' : ''}
+                        </div>`;
+                })()}
+            </td>
+            <td class="text-end fw-bold align-middle">${(r.sub_plot_count || 0).toLocaleString()} รายการ</td>
+        </tr>`;
+    }).join('');
+
+    const totalSubplot = data.reduce((s, r) => s + (r.sub_plot_count || 0), 0);
+    const totalPlot     = data.reduce((s, r) => s + (r.farmer_count   || 0), 0);
+
+    wrap.innerHTML = `
+    <div class="table-responsive">
+        <table class="table table-hover payment-table">
+            <thead style="background:#fff3e0 !important;">
+                <tr>
+                    <th class="text-center align-middle" style="width:36px">#</th>
+                    <th class="align-middle">ผู้บันทึกข้อมูล</th>
+                    <th class="align-middle">ID ที่ยังไม่ได้ตรวจ</th>
+                    <th class="text-end align-middle">จำนวนที่ค้าง</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="payment-total-row" style="background:#fff3e0 !important;">
+                    <td colspan="3" class="fw-bold align-middle">รวมทั้งหมด</td>
+                    <td class="text-end fw-bold align-middle" style="color:#e65100;">
+                        ${totalSubplot.toLocaleString()} รายการ / ${totalPlot.toLocaleString()} แปลง
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+}
 
 /* ── Bootstrap DOMContentLoaded: auth check → role guard → init ── */
 document.addEventListener('DOMContentLoaded', async () => {

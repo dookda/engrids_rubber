@@ -1727,58 +1727,6 @@ document.getElementById('save').addEventListener('click', async () => {
     }
 });
 
-// บันทึกแล้วเด้งไปแก้ ID ถัดไปทันที — ไม่ต้องย้อนกลับไปที่ตาราง dashboard แล้วไล่หาหน้าเดิม
-document.getElementById('saveNext').addEventListener('click', async () => {
-    if (!selectedFeature) {
-        alert('กรุณาเลือก polygon ที่ต้องการบันทึก');
-        return;
-    }
-
-    try {
-        const data = await saveSelectedGeometry();
-        if (!data.success) {
-            alert('เกิดข้อผิดพลาดขณะบันทึก');
-            return;
-        }
-    } catch (err) {
-        alert('เกิดข้อผิดพลาด: ' + err.message);
-        return;
-    }
-
-    const tb = document.getElementById('tb').value;
-    const currentId = document.getElementById('id').value;
-    const urlParams = new URLSearchParams(window.location.search);
-    const id_from = urlParams.get('id_from');
-    const id_to = urlParams.get('id_to');
-    const assignee = urlParams.get('assignee');
-
-    try {
-        const res = await fetch(`/rub/api/getfeaturesv3/${tb}`);
-        const json = await res.json();
-        const allIds = [...new Set((json.data || []).map(item => Number(item.id)))]
-            .filter(n => !isNaN(n))
-            .sort((a, b) => a - b);
-
-        const curNum = Number(currentId);
-        let candidates = allIds.filter(n => n > curNum);
-        if (id_to) candidates = candidates.filter(n => n <= Number(id_to));
-        const nextId = candidates.length ? candidates[0] : null;
-
-        if (!nextId) {
-            alert('บันทึกเรียบร้อยแล้ว — เป็น ID สุดท้ายในช่วงงานนี้แล้ว');
-            return;
-        }
-
-        let url = `${window.location.pathname}?tb=${tb}&id=${nextId}`;
-        if (id_from && id_to && assignee) {
-            url += `&id_from=${id_from}&id_to=${id_to}&assignee=${encodeURIComponent(assignee)}`;
-        }
-        window.location.href = url;
-    } catch (err) {
-        alert('บันทึกสำเร็จแล้ว แต่หา ID ถัดไปไม่ได้: ' + err.message);
-    }
-});
-
 // ── 15. Classtype change → update DB ─────────────────────
 document.getElementById('classtype').addEventListener('change', async (e) => {
     const selectedValue = e.target.value;
