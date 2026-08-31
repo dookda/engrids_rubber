@@ -3926,7 +3926,10 @@ app.get('/api/worker-summary-all', async (req, res) => {
 });
 
 /* GET /api/worker-summary/:tb
-   สรุปค่าจ้างต่อคนจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) แยกตามประเภทเอกสาร (Deed_Type)
+   สรุปค่าจ้างต่อคนจากยางพาราลงทะเบียน (ข้อมูลดิบ Rubr_total) เท่านั้น — เหมือนหลักการ V2 (ดู worker-summary-v2 ด้านล่าง)
+   แต่ใช้ Rubr_total (ไม่ใช่ class_Area จาก reclass) เป็นฐานคิดไร่ และไม่มีโบนัสหลายคลาส:
+     - โฉนดประเภท "นส.4"   → กลุ่ม ns4    (ค่าเริ่มต้น 0.5 บาท/ไร่)
+     - โฉนดประเภทอื่น      → กลุ่ม other  (ค่าเริ่มต้น 1 บาท/ไร่)
    นับเฉพาะแปลงที่ทำเสร็จแล้ว (classified = TRUE) ไม่นับแปลงที่เพิ่งวาดเค้า/reshape แล้วยังไม่จำแนกที่ดิน */
 app.get('/api/worker-summary/:tb', async (req, res) => {
     try {
@@ -3939,43 +3942,7 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
         const photoMap = {};
         usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
 
-        const rowsRes = await pool.query(`
-            SELECT editor, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
-                COUNT(*) AS plot_count,
-                ROUND(COALESCE(SUM("Rubr_total"), 0)::numeric, 4) AS total_rai
-            FROM ${tb}
-            WHERE editor IS NOT NULL AND editor != ''
-                AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
-                AND classified = TRUE
-            GROUP BY editor, COALESCE("Deed_Type", 'ไม่ระบุ')
-            ORDER BY editor, total_rai DESC
-        `);
-
-        const editorMap = {};
-        const deedTypeSet = new Set();
-        rowsRes.rows.forEach(row => {
-            const editor = row.editor;
-            const rai = parseFloat(row.total_rai) || 0;
-            const plotCount = parseInt(row.plot_count);
-            deedTypeSet.add(row.deed_type);
-            if (!editorMap[editor]) {
-                editorMap[editor] = {
-                    editor,
-                    photo: photoMap[editor] || null,
-                    total_rai: 0,
-                    plot_count: 0,
-                    by_deed_type: {}
-                };
-            }
-            editorMap[editor].total_rai += rai;
-            editorMap[editor].plot_count += plotCount;
-            editorMap[editor].by_deed_type[row.deed_type] = { total_rai: rai, plot_count: plotCount };
-        });
-
-        const data = Object.values(editorMap).sort((a, b) => b.total_rai - a.total_rai);
-        const deed_types = [...deedTypeSet].sort((a, b) => a.localeCompare(b, 'th'));
-
-        // ── รายละเอียดรายแปลง: ไอดีที่ทำงาน (id) เป็นประเภทเอกสารอะไร ──
+        // ── รายละเอียดรายแปลง: ไอดีที่ทำงาน (id) เป็นประเภทเอกสารอะไร — ใช้เป็นฐานคำนวณสรุปรายคนด้านล่างด้วย ──
         const detailsRes = await pool.query(`
             SELECT id,
                 COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
@@ -3987,14 +3954,101 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
                 AND classified = TRUE
             ORDER BY editor, COALESCE("Deed_Type", 'ไม่ระบุ'), id
         `);
-        const details = detailsRes.rows.map(r => ({
+
+        // ── ข้อมูลจำแนกคลาสจริงจาก reclass (ใช้แค่เป็นข้อมูลอ้างอิง/ตัวกรองในหน้าเว็บ ไม่ได้ใช้คิดเงิน — คิดเงินจาก Rubr_total เท่านั้น) ──
+        // ให้ตัวกรอง "หลายคลาสเท่านั้น" / "คลาสยางพาราลงทะเบียนเท่านั้น" ในการ์ดรายแปลงทำงานได้เหมือน V2
+        const reclassExists = await pool.query(
+            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=$1)`,
+            [`reclass_${tb}`]
+        );
+        const classInfoMap = {};
+        if (reclassExists.rows[0].exists) {
+            const classInfoRes = await pool.query(`
+                SELECT id, COUNT(*) AS cnt,
+                    CASE WHEN COUNT(*) = 1 THEN MAX(LOWER(TRIM(classtype))) ELSE NULL END AS single_classtype
+                FROM reclass_${tb}
+                GROUP BY id
+            `);
+            classInfoRes.rows.forEach(r => {
+                const cnt = parseInt(r.cnt);
+                classInfoMap[r.id] = {
+                    class_count: cnt,
+                    is_multi: cnt > 1,
+                    is_pure_rubber_class: cnt === 1 && r.single_classtype === 'rubber'
+                };
+            });
+        }
+
+        // เทียบแบบตัดจุด/ช่องว่างออกก่อน กันกรณีข้อมูลดิบสะกดไม่ตรงกันเป๊ะ เช่น "นส.4", "น.ส. 4", "นส4" — ใช้กฎเดียวกับ worker-summary-v2
+        const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    total_rai: 0,
+                    ns4:   { plot_count: 0, area_rai: 0, ids: [] },
+                    other: { plot_count: 0, area_rai: 0, ids: [] },
+                    // รายละเอียดต่อแปลง (1 แปลง = 1 รายการ) ให้ฝั่งหน้าเว็บ render การ์ดรายแปลงแบบเดียวกับ V2
+                    plots: []
+                };
+            }
+            return editorMap[name];
+        };
+
+        detailsRes.rows.forEach(r => {
+            const deedType = r.deed_type;
+            const rai = parseFloat(r.total_rai) || 0;
+            const e = ensureEditor(r.editor);
+            const isNs4Deed = isNs4(deedType);
+            e.total_rai += rai;
+
+            const group = isNs4Deed ? e.ns4 : e.other;
+            group.plot_count += 1;
+            group.area_rai += rai;
+            group.ids.push(r.id);
+
+            const cls = classInfoMap[r.id] || { class_count: 0, is_multi: false, is_pure_rubber_class: false };
+            e.plots.push({
+                id: r.id,
+                deed_type: deedType,
+                is_ns4: isNs4Deed,
+                area_rai: rai,
+                class_count: cls.class_count,
+                is_multi: cls.is_multi,
+                is_pure_rubber_class: cls.is_pure_rubber_class
+            });
+        });
+
+        const data = Object.values(editorMap).map(e => {
+            e.total_rai = parseFloat(e.total_rai.toFixed(4));
+            e.ns4.area_rai = parseFloat(e.ns4.area_rai.toFixed(4));
+            e.other.area_rai = parseFloat(e.other.area_rai.toFixed(4));
+            e.ns4.ids.sort((a, b) => a - b);
+            e.other.ids.sort((a, b) => a - b);
+            e.plots.sort((a, b) => a.id - b.id);
+            return e;
+        }).sort((a, b) => b.total_rai - a.total_rai);
+
+        // ── แปลงที่มีผู้ทำงานแล้วแต่ไม่ถูกนับข้างต้น (ยังไม่จำแนกที่ดิน หรือไม่มีพื้นที่ยางพาราลงทะเบียน) — แจ้งเตือนแยกไว้เหมือน V2 ──
+        const warnRes = await pool.query(`
+            SELECT id, editor, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type, classified
+            FROM ${tb}
+            WHERE editor IS NOT NULL AND editor != ''
+                AND (classified IS NOT TRUE OR "Rubr_total" IS NULL OR "Rubr_total" <= 0)
+            ORDER BY editor, id
+        `);
+        const warnings = warnRes.rows.map(r => ({
             id: r.id,
-            deed_type: r.deed_type,
             editor: r.editor,
-            total_rai: parseFloat(r.total_rai) || 0
+            deed_type: r.deed_type,
+            reason: r.classified !== true ? 'ยังไม่จำแนกที่ดิน (classified)' : 'ไม่มีพื้นที่ยางพาราลงทะเบียน (Rubr_total)'
         }));
 
-        res.json({ success: true, data, deed_types, details });
+        res.json({ success: true, data, warnings });
     } catch (err) {
         console.error('[WORKER-SUMMARY]', err);
         res.status(500).json({ success: false, error: err.message });
@@ -4004,14 +4058,16 @@ app.get('/api/worker-summary/:tb', async (req, res) => {
 /* GET /api/worker-summary-v2/:tb
    สรุปค่าจ้าง V2 — คิดจากพื้นที่จำแนกจริง ("class_Area" ในตาราง reclass) แทนข้อมูลดิบ Rubr_total
    เงื่อนไข (ตาม id หนึ่ง ๆ ในตาราง reclass) — ให้แก้ไขค่าเริ่มต้นได้จากหน้าเว็บ:
-     - แปลงคลาสเดียว (ต้องเป็นยางพารา) → เรทต่อไร่คิดจาก "พื้นที่คลาสยางพารา (classtype='rubber')" เท่านั้น
-     - แปลงหลายคลาส (มีคลาสอื่นปนกับยางพารา) → เรทต่อไร่คิดจาก "พื้นที่รวมทุกคลาสในแปลงนั้น" (ไม่ใช่เฉพาะคลาสยางพารา)
+     - ใช้ "เนื้อที่รวมทุกคลาส" (ผลรวม class_Area ของทุกคลาสย่อยในแปลงนั้น รวมถึง 'not-rubber'/'Other' ด้วย)
+       เป็นฐานคิดเรทเสมอ ไม่ว่าแปลงจะมีคลาสเดียวหรือหลายคลาสก็ตาม (ต่างจาก V3 ที่จำกัดเฉพาะคลาสยางพาราลงทะเบียน
+       + พื้นที่กันออกเท่านั้น — V2 ไม่จำกัด นับทุกคลาสที่จำแนกไว้ในแปลง)
          · โฉนดประเภท "นส.4"   → tier "ns4"    (ค่าเริ่มต้น 0.5 บาท/ไร่)
          · โฉนดประเภทอื่น      → tier "other"  (ค่าเริ่มต้น 1 บาท/ไร่)
      - ถ้าแปลงนั้นมีมากกว่า 1 คลาส (มีคลาสอื่นปนกับยางพารา) → บวกโบนัสเพิ่มแบบคงที่ "ต่อแปลง" (ไม่ใช่ต่อไร่)
        เข้าไปอีก tier "bonus" (ค่าเริ่มต้น 0.5 บาท/แปลง) ไม่ว่าจะเป็นนส.4 หรือโฉนดประเภทอื่นก็ตาม
-     - แปลงที่มีคลาสเดียวแต่ไม่ใช่ยางพารา หรือมีหลายคลาสแต่ไม่มีคลาสยางพาราเลย
+     - แปลงที่ไม่มีคลาสยางพาราลงทะเบียนเลย (ไม่ว่าคลาสเดียวหรือหลายคลาส)
        → ไม่มีฐานไร่ยางให้คิดเรท ไม่คิดค่าจ้าง แจ้งเตือนแยกต่างหากให้แอดมินตรวจสอบ */
+
 app.get('/api/worker-summary-v2/:tb', async (req, res) => {
     try {
         const tb = req.params.tb.toLowerCase();
@@ -4097,12 +4153,8 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
             const hasEditor = editor && editor !== '';
             const hasRubber = classRows.some(c => c.classtype === 'rubber');
             const isMulti = cnt > 1;
-            // แปลงหลายคลาส → ใช้พื้นที่รวมทุกคลาสเป็นฐานคิดเรท, แปลงคลาสเดียว → ใช้เฉพาะพื้นที่คลาสยางพารา
-            const payArea = isMulti
-                ? classRows.reduce((sum, c) => sum + c.area, 0)
-                : classRows
-                    .filter(c => c.classtype === 'rubber')
-                    .reduce((sum, c) => sum + c.area, 0);
+            // ใช้เนื้อที่รวมทุกคลาสในแปลง (class_Area ของทุกคลาสย่อย) เป็นฐานคิดเรทเสมอ ไม่ว่าแปลงจะมีคลาสเดียวหรือหลายคลาส
+            const payArea = classRows.reduce((sum, c) => sum + c.area, 0);
 
             if (!hasRubber) {
                 // แปลงที่ยังเป็นแค่จุด (classtype='point') คือยังไม่ได้ขึ้นรูปแปลง/จำแนกคลาสเลย
@@ -4136,7 +4188,7 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
                 e.other.by_deed_type[deedType].ids.push(id);
             }
 
-            // มากกว่า 1 คลาสในแปลงเดียวกัน (มีคลาสอื่นปนกับยางพารา) → บวกโบนัสคงที่ต่อแปลงเพิ่ม
+            // มากกว่า 1 คลาสในแปลงเดียวกัน (ไม่ว่าคลาสนั้นจะเข้าเงื่อนไขคิดเงินหรือไม่) → บวกโบนัสคงที่ต่อแปลงเพิ่ม
             if (isMulti) {
                 e.bonus.plot_count += 1;
                 e.bonus.sub_plot_count += cnt;
@@ -4180,7 +4232,7 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
      - นับเฉพาะ classtype = 'rubber' (ยางพาราที่ลงทะเบียน) และคลาสพื้นที่กันออกทุกชนิด
        ('ex_age_rubber','ex_building','ex_pond','ex_cr_area','ex_ar_area','ex_other')
      - ไม่นับ 'not-rubber' (ยางพาราที่ไม่ได้ลงทะเบียน) และ 'Other' (ไม่ใช่ยางพารา) เข้าไปในพื้นที่คิดเงินเลย
-       ไม่ว่าแปลงนั้นจะมีคลาสเดียวหรือหลายคลาสก็ตาม (ต่างจาก V2 ที่แปลงหลายคลาสจะรวมทุกคลาสรวมถึง Other/not-rubber ด้วย)
+       ไม่ว่าแปลงนั้นจะมีคลาสเดียวหรือหลายคลาสก็ตาม (ต่างจาก V2 ที่ใช้เนื้อที่รวมทุกคลาสในแปลงเสมอ ไม่จำกัดคลาส)
      - อัตรา: โฉนดประเภท "นส.4" → tier "ns4" (ค่าเริ่มต้น 0.5 บาท/ไร่), โฉนดประเภทอื่น → tier "other" (ค่าเริ่มต้น 1 บาท/ไร่)
      - แปลงที่มีมากกว่า 1 คลาสในตาราง reclass (ไม่ว่าคลาสนั้นจะเข้าเงื่อนไขคิดเงินหรือไม่) → บวกโบนัสคงที่ "ต่อแปลง"
        เพิ่มอีก tier "bonus" (ค่าเริ่มต้น 0.5 บาท/แปลง) เหมือน V2
@@ -4353,7 +4405,9 @@ app.get('/api/parcel-preview/:tb/:id', async (req, res) => {
         }
 
         const [mainRes, classRes] = await Promise.all([
-            pool.query(`SELECT ST_AsGeoJSON(geom) AS geom, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type FROM ${tb} WHERE id = $1 LIMIT 1`, [id]),
+            pool.query(`SELECT ST_AsGeoJSON(geom) AS geom, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
+                    ROUND(COALESCE("Rubr_total", 0)::numeric, 4) AS rubr_total
+                FROM ${tb} WHERE id = $1 LIMIT 1`, [id]),
             pool.query(`
                 SELECT sub_id, classtype, "class_Area" AS class_area_rai,
                     ROUND(shpsplit_sqm::numeric, 2) AS class_area_sqm,
@@ -4366,6 +4420,9 @@ app.get('/api/parcel-preview/:tb/:id', async (req, res) => {
             success: true,
             parcel: mainRes.rows[0] && mainRes.rows[0].geom ? JSON.parse(mainRes.rows[0].geom) : null,
             deed_type: mainRes.rows[0] ? mainRes.rows[0].deed_type : null,
+            // ข้อมูลดิบยางพาราลงทะเบียน (Rubr_total) จากตารางหลัก — ใช้เป็นฐานคิดเงินจริง (ดู renderParcelPreviewLayers)
+            // แยกจาก class_Area (พื้นที่จำแนกจริงจากตาราง reclass) ที่โชว์เป็นรายคลาสด้านล่าง เพราะสองค่านี้อาจไม่ตรงกัน
+            rubr_total: mainRes.rows[0] ? parseFloat(mainRes.rows[0].rubr_total) || 0 : 0,
             classes: classRes.rows.map(r => ({
                 sub_id: r.sub_id,
                 classtype: r.classtype,
