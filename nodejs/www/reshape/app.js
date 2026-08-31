@@ -904,6 +904,9 @@ const loadGeoData = async () => {
             };
         }).filter(item => item.geom !== null);
 
+        // จำหน้าที่กำลังดูอยู่ไว้ก่อนสร้างตารางใหม่ (เช่นตอนล็อก/ปลดล็อกแปลง) เพื่อไม่ให้กระโดดกลับหน้า 1
+        const _existingDt = $.fn.DataTable.isDataTable('#featureTable') ? $('#featureTable').DataTable() : null;
+        const _savedPage = _existingDt ? _existingDt.page() : 0;
 
         // สร้างตารางหน้า ui
         const dataTable = $('#featureTable').DataTable({
@@ -1026,6 +1029,10 @@ const loadGeoData = async () => {
                         const title = this.header().textContent.trim();
                         if (title === 'ลบข้อมูล' || title === 'ปิด/เปิดแปลง') this.visible(false);
                     });
+                }
+                if (_savedPage > 0) {
+                    const pageCount = this.api().page.info().pages;
+                    this.api().page(Math.min(_savedPage, Math.max(pageCount - 1, 0))).draw(false);
                 }
             }
         });
