@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.css" />
     <link rel="stylesheet" href="./../assets/bootstrap.min.css">
-    <link rel="stylesheet" href="./style.css?v=3">
+    <link rel="stylesheet" href="./style.css?v=4">
 </head>
 
 <body>
@@ -652,6 +652,33 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL 7: รายการที่ยังไม่ได้ตรวจ (Pending Review per layer)
+    ═══════════════════════════════════════════════════════ -->
+    <div class="modal fade" id="pendingReviewModal" tabindex="-1" aria-labelledby="pendingReviewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header" style="background:linear-gradient(135deg,#f9a825,#e65100); color:#fff;">
+                    <h5 class="modal-title" id="pendingReviewModalLabel">
+                        <i class="bi bi-clipboard-x me-2"></i>รายการที่ยังไม่ได้ตรวจ
+                        <span class="ms-2 badge bg-light text-dark" id="pendingReviewModalTbBadge"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="pendingReviewTableWrap">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bootstrap JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
@@ -659,7 +686,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="./app.js?v=20260624"></script>
+    <script src="./app.js?v=20260831"></script>
 </body>
 
 </html>

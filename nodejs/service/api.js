@@ -4522,5 +4522,67 @@ app.get('/api/checker-summary/:tb', async (req, res) => {
     }
 });
 
+/* GET /api/pending-review/:tb
+   สรุปแปลงที่ยังไม่ได้ตรวจ (reviewer ว่าง) ใน reclass_<tb> จัดกลุ่มตาม editor
+   (คนที่บันทึกข้อมูล/ปรับรูปแปลงไว้) เพื่อให้เห็นว่างานของใครยังตกค้างรอตรวจ */
+app.get('/api/pending-review/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const reclassExists = await pool.query(
+            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=$1)`,
+            [`reclass_${tb}`]
+        );
+        if (!reclassExists.rows[0].exists) {
+            return res.json({ success: true, total_pending: 0, total_rows: 0, data: [] });
+        }
+
+        await ensureReclassReviewColumns(tb);
+
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const totalRes = await pool.query(`
+            SELECT COUNT(*) AS total_rows,
+                COUNT(*) FILTER (WHERE reviewer IS NULL OR reviewer = '') AS total_pending
+            FROM reclass_${tb}
+        `);
+
+        const pendingRes = await pool.query(`
+            SELECT COALESCE(NULLIF(editor, ''), 'ไม่ทราบผู้บันทึก') AS editor,
+                COUNT(*) AS sub_plot_count,
+                COUNT(DISTINCT id) AS farmer_count,
+                array_agg(DISTINCT id ORDER BY id) AS ids
+            FROM reclass_${tb}
+            WHERE reviewer IS NULL OR reviewer = ''
+            GROUP BY editor
+            ORDER BY sub_plot_count DESC
+        `);
+
+        const data = pendingRes.rows.map(r => ({
+            editor:         r.editor,
+            photo:          photoMap[r.editor] || null,
+            sub_plot_count: parseInt(r.sub_plot_count),
+            farmer_count:   parseInt(r.farmer_count),
+            ids:            r.ids || []
+        }));
+
+        res.json({
+            success: true,
+            total_pending: parseInt(totalRes.rows[0].total_pending) || 0,
+            total_rows:    parseInt(totalRes.rows[0].total_rows) || 0,
+            data
+        });
+    } catch (err) {
+        console.error('[PENDING-REVIEW]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = app;
 
