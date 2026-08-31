@@ -882,7 +882,7 @@ const loadGeoData = async () => {
             let geomPoint = null;
             try { if (item.geom_point) geomPoint = JSON.parse(item.geom_point); } catch (_) {}
             return {
-                id: item.id,
+                id: Number(item.id),
                 refinal: item.refinal,
                 farm_name: item['Full_nam'] || '',
                 f_name: item['F_name'] || '',
@@ -904,6 +904,9 @@ const loadGeoData = async () => {
             };
         }).filter(item => item.geom !== null);
 
+        // จำหน้าที่กำลังดูอยู่ไว้ก่อนสร้างตารางใหม่ (เช่นตอนล็อก/ปลดล็อกแปลง) เพื่อไม่ให้กระโดดกลับหน้า 1
+        const _existingDt = $.fn.DataTable.isDataTable('#featureTable') ? $('#featureTable').DataTable() : null;
+        const _savedPage = _existingDt ? _existingDt.page() : 0;
 
         // สร้างตารางหน้า ui
         const dataTable = $('#featureTable').DataTable({
@@ -934,7 +937,7 @@ const loadGeoData = async () => {
                                 </a>`
                     }
                 },
-                { data: 'id', title: 'ID' },
+                { data: 'id', title: 'ID', type: 'num' },
                 { data: 'farm_name', title: 'ชื่อเกษตรกร' },
                 { data: 'age', title: 'อายุ (ปี)' },
                 { data: 'id_farmer', title: 'เลขทะเบียนเกษตรกร' },
@@ -1015,6 +1018,7 @@ const loadGeoData = async () => {
                 }
             ],
             pageLength: 10,
+            order: [[1, 'asc']],
             responsive: false,
             select: true,
             destroy: true,
@@ -1025,6 +1029,10 @@ const loadGeoData = async () => {
                         const title = this.header().textContent.trim();
                         if (title === 'ลบข้อมูล' || title === 'ปิด/เปิดแปลง') this.visible(false);
                     });
+                }
+                if (_savedPage > 0) {
+                    const pageCount = this.api().page.info().pages;
+                    this.api().page(Math.min(_savedPage, Math.max(pageCount - 1, 0))).draw(false);
                 }
             }
         });
