@@ -4175,6 +4175,172 @@ app.get('/api/worker-summary-v2/:tb', async (req, res) => {
     }
 });
 
+/* GET /api/worker-summary-v3/:tb
+   สรุปค่าจ้าง V3 — คิดจาก "class_Area" เหมือน V2 แต่จำกัดฐานพื้นที่ที่นำมาคิดเงินให้แคบลง:
+     - นับเฉพาะ classtype = 'rubber' (ยางพาราที่ลงทะเบียน) และคลาสพื้นที่กันออกทุกชนิด
+       ('ex_age_rubber','ex_building','ex_pond','ex_cr_area','ex_ar_area','ex_other')
+     - ไม่นับ 'not-rubber' (ยางพาราที่ไม่ได้ลงทะเบียน) และ 'Other' (ไม่ใช่ยางพารา) เข้าไปในพื้นที่คิดเงินเลย
+       ไม่ว่าแปลงนั้นจะมีคลาสเดียวหรือหลายคลาสก็ตาม (ต่างจาก V2 ที่แปลงหลายคลาสจะรวมทุกคลาสรวมถึง Other/not-rubber ด้วย)
+     - อัตรา: โฉนดประเภท "นส.4" → tier "ns4" (ค่าเริ่มต้น 0.5 บาท/ไร่), โฉนดประเภทอื่น → tier "other" (ค่าเริ่มต้น 1 บาท/ไร่)
+     - แปลงที่มีมากกว่า 1 คลาสในตาราง reclass (ไม่ว่าคลาสนั้นจะเข้าเงื่อนไขคิดเงินหรือไม่) → บวกโบนัสคงที่ "ต่อแปลง"
+       เพิ่มอีก tier "bonus" (ค่าเริ่มต้น 0.5 บาท/แปลง) เหมือน V2
+     - แปลงที่ไม่มีคลาสยางพาราลงทะเบียนหรือพื้นที่กันออกเลย (มีแต่ not-rubber/Other/point) → ไม่มีฐานไร่ให้คิดเรท
+       ไม่คิดค่าจ้าง แจ้งเตือนแยกต่างหากให้แอดมินตรวจสอบ */
+const PAYV3_ELIGIBLE_CLASSES = ['rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other'];
+
+app.get('/api/worker-summary-v3/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+            return res.status(400).json({ error: 'Invalid table name' });
+        }
+
+        const reclassExists = await pool.query(
+            `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+              WHERE table_schema='public' AND table_name=$1)`,
+            [`reclass_${tb}`]
+        );
+        if (!reclassExists.rows[0].exists) {
+            return res.json({ success: true, data: [], warnings: [] });
+        }
+
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const rowsRes = await pool.query(`
+            WITH class_counts AS (
+                SELECT id, COUNT(*) AS cnt
+                FROM reclass_${tb}
+                GROUP BY id
+            )
+            SELECT r.id, r.editor, r.classtype,
+                ROUND(COALESCE(r."class_Area", 0)::numeric, 4) AS class_area_rai,
+                cc.cnt,
+                COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type,
+                COALESCE(m."Regis_No", '') AS regis_no
+            FROM reclass_${tb} r
+            JOIN class_counts cc ON cc.id = r.id
+            LEFT JOIN ${tb} m ON m.id = r.id
+            ORDER BY r.editor, r.id
+        `);
+
+        const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+        const idGroups = {};
+        rowsRes.rows.forEach(row => {
+            if (!idGroups[row.id]) {
+                idGroups[row.id] = {
+                    id: row.id,
+                    editor: row.editor,
+                    deedType: row.deed_type,
+                    regisNo: row.regis_no,
+                    cnt: parseInt(row.cnt),
+                    classRows: []
+                };
+            }
+            idGroups[row.id].classRows.push({
+                classtype: (row.classtype || '').trim().toLowerCase(),
+                area: parseFloat(row.class_area_rai) || 0
+            });
+        });
+
+        const editorMap = {};
+        const warnings = [];
+
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    ns4:   { plot_count: 0, area_rai: 0, ids: [] },
+                    other: { plot_count: 0, area_rai: 0, ids: [], by_deed_type: {} },
+                    bonus: { plot_count: 0, sub_plot_count: 0, ids: [] },
+                    plots: []
+                };
+            }
+            return editorMap[name];
+        };
+
+        Object.values(idGroups).forEach(g => {
+            const { id, editor, deedType, regisNo, cnt, classRows } = g;
+            const hasEditor = editor && editor !== '';
+            const isMulti = cnt > 1;
+            // ต่างจาก V2: ไม่ว่าคลาสเดียวหรือหลายคลาส ให้รวมเฉพาะพื้นที่ที่เข้าเงื่อนไข (ยางพาราลงทะเบียน + พื้นที่กันออกทั้งหมด)
+            // ตัด 'not-rubber' และ 'Other' ออกจากฐานคิดเงินเสมอ
+            const eligibleRows = classRows.filter(c => PAYV3_ELIGIBLE_CLASSES.includes(c.classtype));
+            const hasEligible = eligibleRows.length > 0;
+            const payArea = eligibleRows.reduce((sum, c) => sum + c.area, 0);
+
+            if (!hasEligible) {
+                // แปลงที่ยังเป็นแค่จุด (classtype='point') คือยังไม่ได้ขึ้นรูปแปลง/จำแนกคลาสเลย ไม่ต้องขึ้นแจ้งเตือน
+                if (!isMulti && classRows[0].classtype === 'point') return;
+
+                warnings.push({
+                    id, editor: editor || 'ไม่ระบุ',
+                    classtype: isMulti ? 'หลายคลาส (ไม่มียางพารา/พื้นที่กันออก)' : (classRows[0].classtype || 'ไม่ระบุ'),
+                    deed_type: deedType
+                });
+                return;
+            }
+            if (!hasEditor) return;
+
+            const e = ensureEditor(editor);
+            if (isNs4(deedType)) {
+                e.ns4.plot_count += 1;
+                e.ns4.area_rai += payArea;
+                e.ns4.ids.push(id);
+            } else {
+                e.other.plot_count += 1;
+                e.other.area_rai += payArea;
+                e.other.ids.push(id);
+                if (!e.other.by_deed_type[deedType]) {
+                    e.other.by_deed_type[deedType] = { plot_count: 0, area_rai: 0, ids: [] };
+                }
+                e.other.by_deed_type[deedType].plot_count += 1;
+                e.other.by_deed_type[deedType].area_rai += payArea;
+                e.other.by_deed_type[deedType].ids.push(id);
+            }
+
+            // มากกว่า 1 คลาสในแปลงเดียวกัน (ไม่ว่าคลาสนั้นจะเข้าเงื่อนไขคิดเงินหรือไม่) → บวกโบนัสคงที่ต่อแปลงเพิ่ม เหมือน V2
+            if (isMulti) {
+                e.bonus.plot_count += 1;
+                e.bonus.sub_plot_count += cnt;
+                e.bonus.ids.push(id);
+            }
+
+            e.plots.push({
+                id,
+                deed_type: deedType,
+                regis_no: regisNo,
+                is_ns4: isNs4(deedType),
+                area_rai: parseFloat(payArea.toFixed(4)),
+                is_multi: isMulti,
+                class_count: cnt
+            });
+        });
+
+        const data = Object.values(editorMap).map(e => {
+            e.ns4.area_rai = parseFloat(e.ns4.area_rai.toFixed(4));
+            e.ns4.ids.sort((a, b) => a - b);
+            e.other.area_rai = parseFloat(e.other.area_rai.toFixed(4));
+            e.other.ids.sort((a, b) => a - b);
+            Object.values(e.other.by_deed_type).forEach(d => {
+                d.area_rai = parseFloat(d.area_rai.toFixed(4));
+                d.ids.sort((a, b) => a - b);
+            });
+            e.bonus.ids.sort((a, b) => a - b);
+            e.plots.sort((a, b) => a.id - b.id);
+            return e;
+        }).sort((a, b) => (b.ns4.area_rai + b.other.area_rai) - (a.ns4.area_rai + a.other.area_rai));
+
+        res.json({ success: true, data, warnings });
+    } catch (err) {
+        console.error('[WORKER-SUMMARY-V3]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 /* GET /api/parcel-preview/:tb/:id
    ภาพย่อรูปทรงแปลง (id เดียว) + คลาสที่จำแนกไว้ ใช้แสดงเป็น thumbnail แบบไม่ต้องเปิดหน้า reclass เต็ม
    คืนขอบเขตแปลงเดิม (จากตารางหลัก) และรูปทรง+ประเภทของทุกคลาสย่อยที่จำแนกไว้ (จากตาราง reclass) */

@@ -184,6 +184,9 @@ const initApp = async () => {
                         <button class="btn btn-payment-v2 layer-btn payV2Btn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้าง V2 (จาก class_Area)">
                             <i class="bi bi-calculator-fill me-1"></i>คำนวณค่าจ้าง V2
                         </button>
+                        <button class="btn btn-payment-v3 layer-btn payV3Btn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้าง V3 (ยางลงทะเบียน+พื้นที่กันออกทั้งหมด)">
+                            <i class="bi bi-calculator-fill me-1"></i>คำนวณค่าจ้าง V3
+                        </button>
                         <button class="btn btn-checker-pay layer-btn checkerPayBtn mt-1" data-tb="${tb_name}" title="คำนวณค่าจ้างคนตรวจ">
                             <i class="bi bi-shield-check me-1"></i>ค่าคนตรวจ
                         </button>
@@ -335,6 +338,15 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 openPaymentModalV2(tb);
+            });
+        });
+
+        /* ── คำนวณค่าจ้าง V3 (ยางลงทะเบียน+พื้นที่กันออกทั้งหมด) ── */
+        document.querySelectorAll('.payV3Btn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                openPaymentModalV3(tb);
             });
         });
 
@@ -1792,6 +1804,11 @@ const PAYV2_CLASS_COLORS = {
 const PAYV2_DEFAULT_COLOR = '#fdae61';
 const payv2ClassColor = (ct) => PAYV2_CLASS_COLORS[ct] || PAYV2_DEFAULT_COLOR;
 
+/* คลาสที่ V3 นับเข้าฐานคิดเงิน (ยางพาราลงทะเบียน + พื้นที่กันออกทุกชนิด) — ใช้ตรงกับ PAYV3_ELIGIBLE_CLASSES ฝั่ง api.js
+   เอามาแบ่ง "2 ฝั่ง" ในป๊อปอัพดูรูปแปลง (renderParcelPreviewLayers) ให้เห็นชัดว่าพื้นที่รวมทุกคลาส vs พื้นที่ที่ใช้คิดเงินจริงต่างกันเท่าไหร่ */
+const PAYV2_ELIGIBLE_CLASSES = ['rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other'];
+const isPayv2Eligible = (ct) => PAYV2_ELIGIBLE_CLASSES.includes((ct || '').trim().toLowerCase());
+
 /* ป้ายภาษาไทย — ใช้ชื่อเดียวกับตัวเลือกประเภทในหน้า reclass (nodejs/www/reclass/index.html) */
 const PAYV2_CLASS_LABELS = {
     'rubber': 'ยางพาราที่ลงทะเบียน',
@@ -2005,22 +2022,35 @@ function renderParcelPreviewLayers(data) {
     // ตร.ม. เอาจาก class_area_sqm (shpsplit_sqm ดิบ) ตรงๆ ไม่ใช่ ไร่×1600 — เพราะ class_area_rai
     // ถูกปัดเป็นไร่ 2 ตำแหน่งแล้ว คูณกลับจะเพี้ยนได้หลาย ตร.ม. เทียบกับตัวเลขในหน้า reclassdash
     const fmtSqm = (n) => Math.round(n || 0).toLocaleString('th-TH');
-    const rows = (classes || []).map(c => `
-        <tr>
+    const rows = (classes || []).map(c => {
+        const eligible = isPayv2Eligible(c.classtype);
+        return `
+        <tr class="${eligible ? 'payv2-preview-row-eligible' : ''}">
             <td class="text-muted">${c.sub_id || '-'}</td>
-            <td><span class="payv2-legend-dot" style="background:${payv2ClassColor(c.classtype)}"></span>${payv2ClassLabel(c.classtype)}</td>
+            <td><span class="payv2-legend-dot" style="background:${payv2ClassColor(c.classtype)}"></span>${payv2ClassLabel(c.classtype)}${eligible ? ' <i class="bi bi-check-circle-fill text-success" title="นับเป็นพื้นที่คิดเงิน"></i>' : ''}</td>
             <td class="text-end">${(c.class_area_rai || 0).toFixed(2)} ไร่ (${fmtSqm(c.class_area_sqm)} ตร.ม.)</td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
     if (!rows) return `<div class="text-muted small py-2">ยังไม่ได้จำแนกคลาส</div>`;
+
+    // แบ่งยอดรวมเป็น 2 ฝั่ง: (1) เนื้อที่รวมทุกคลาสในแปลง (2) เฉพาะคลาสที่นับเป็นพื้นที่คิดเงิน
+    // (ยางพาราลงทะเบียน + พื้นที่กันออกทุกชนิด — ดู isPayv2Eligible) ตัดยางไม่ลงทะเบียน/ไม่ใช่ยางออก
     const totalArea = (classes || []).reduce((s, c) => s + (c.class_area_rai || 0), 0);
     const totalSqm = (classes || []).reduce((s, c) => s + (c.class_area_sqm || 0), 0);
+    const eligibleClasses = (classes || []).filter(c => isPayv2Eligible(c.classtype));
+    const eligibleArea = eligibleClasses.reduce((s, c) => s + (c.class_area_rai || 0), 0);
+    const eligibleSqm = eligibleClasses.reduce((s, c) => s + (c.class_area_sqm || 0), 0);
     return `
         <table class="table table-sm mb-0 mt-1 payv2-preview-table">
             <tbody>${rows}</tbody>
             <tfoot>
-                <tr class="fw-bold">
-                    <td colspan="2">เนื้อที่รวม</td>
+                <tr>
+                    <td colspan="2">เนื้อที่รวมทุกคลาส</td>
                     <td class="text-end">${totalArea.toFixed(2)} ไร่ (${fmtSqm(totalSqm)} ตร.ม.)</td>
+                </tr>
+                <tr class="fw-bold payv2-preview-row-eligible">
+                    <td colspan="2"><i class="bi bi-check-circle-fill text-success me-1"></i>ยางลงทะเบียน + พื้นที่กันออก (ใช้คิดเงิน)</td>
+                    <td class="text-end">${eligibleArea.toFixed(2)} ไร่ (${fmtSqm(eligibleSqm)} ตร.ม.)</td>
                 </tr>
             </tfoot>
         </table>`;
@@ -2772,6 +2802,428 @@ document.getElementById('btnPrintPaymentV2').addEventListener('click', () => {
 </head>
 <body>
 <h4 style="color:#00695c">สรุปค่าจ้างทีมงาน V2 (class_Area) – ${tb}</h4>
+<p class="text-muted mb-3">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
+${tableHtml}
+<div class="mt-3">${warnHtml}</div>
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ═════════════════════════════════════════════════════════════
+   MODAL 5C – คำนวณค่าจ้าง V3 (เฉพาะยางพาราลงทะเบียน + พื้นที่กันออกทั้งหมด)
+
+   ต่างจาก V2 ตรงที่ฐานพื้นที่คิดเงินไม่ได้ขึ้นกับว่าแปลงมีคลาสเดียวหรือหลายคลาส —
+   ทุกแปลงนับเฉพาะพื้นที่คลาส 'rubber' (ยางพาราลงทะเบียน) และคลาสพื้นที่กันออกทุกชนิด (ex_*) เท่านั้น
+   ตัด 'not-rubber' (ยางพาราไม่ลงทะเบียน) และ 'Other' (ไม่ใช่ยางพารา) ออกจากฐานคิดเงินเสมอ
+   ส่วนโบนัสหลายคลาส/อัตรา นส.4-อื่นๆ/หน้าตาตาราง ใช้ pattern เดียวกับ V2 (ดู MODAL 5B ด้านบน)
+   และใช้ popover ดูรูปแปลง/ตัวกรอง/thumbnail ชุดเดียวกับ V2 ร่วมกัน (payv2* ยูทิลิตี้ generic ไม่ผูกกับเวอร์ชัน)
+═════════════════════════════════════════════════════════════ */
+
+let paymentModalV3 = null;
+let paymentV3WorkerData = [];
+let paymentV3Warnings = [];
+let paymentV3Tb = '';
+
+function openPaymentModalV3(tb_name) {
+    if (!paymentModalV3) {
+        const modalEl = document.getElementById('paymentModalV3');
+        paymentModalV3 = new bootstrap.Modal(modalEl);
+        modalEl.addEventListener('hidden.bs.modal', closePayv2Preview);
+        const bodyEl = modalEl.querySelector('.modal-body');
+        if (bodyEl) bodyEl.addEventListener('scroll', closePayv2Preview);
+    }
+    paymentV3Tb = tb_name;
+    document.getElementById('paymentModalV3TbBadge').textContent = tb_name;
+    document.getElementById('paymentV3TableWrap').innerHTML = `
+        <div class="text-center text-muted py-4">
+            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+        </div>`;
+    document.getElementById('paymentV3WarnWrap').innerHTML = '';
+    paymentModalV3.show();
+
+    fetch(`/rub/api/worker-summary-v3/${tb_name}`)
+        .then(r => r.json())
+        .then(({ data, warnings }) => {
+            paymentV3WorkerData = data || [];
+            paymentV3Warnings   = warnings || [];
+            renderPaymentTableV3();
+            renderWarningsV3();
+        })
+        .catch(() => {
+            document.getElementById('paymentV3TableWrap').innerHTML =
+                '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+        });
+}
+
+/* เหมือน showPayv2GroupIds แต่อ่านจาก paymentV3WorkerData/payv3_rate_bonus — ใช้กล่องป๊อปอัพรายการไอดี (ensurePayv2IdListEl)
+   และชิปไอดี (payV2IdChips) ร่วมกับ V2 เพราะเป็นยูทิลิตี้ generic รับ tb เป็นพารามิเตอร์อยู่แล้ว */
+function showPayv3GroupIds(evt, workerIdx, group) {
+    evt.stopPropagation();
+    const worker = paymentV3WorkerData[workerIdx];
+    const g = worker && worker[group];
+    const ids = (g && g.ids) || [];
+    const el = ensurePayv2IdListEl();
+
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const popW = 260;
+    const left = Math.min(rect.left + window.scrollX, window.scrollX + window.innerWidth - popW - 12);
+    el.style.left = Math.max(8, left) + 'px';
+    el.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+    el.classList.remove('d-none');
+    el.querySelector('.payv2-idlist-title').textContent =
+        `${PAYV2_GROUP_LABELS[group] || group} — ${ids.length.toLocaleString('th-TH')} แปลง`;
+    el.querySelector('.payv2-idlist-body').innerHTML = ids.length
+        ? payV2IdChips(ids, paymentV3Tb)
+        : `<div class="text-muted small py-1">ไม่มีแปลง</div>`;
+
+    const footerEl = el.querySelector('.payv2-idlist-footer');
+    if (group === 'bonus' && ids.length > 0) {
+        const rateBonus = parseFloat(document.getElementById('payv3_rate_bonus').value) || 0;
+        const total = ids.length * rateBonus;
+        footerEl.innerHTML = `${ids.length.toLocaleString('th-TH')} แปลง &times; ${rateBonus.toLocaleString('th-TH')} บาท/แปลง =
+            <span class="fw-bold">${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท</span>`;
+        footerEl.classList.remove('d-none');
+    } else {
+        footerEl.classList.add('d-none');
+        footerEl.innerHTML = '';
+    }
+}
+
+/* เหมือน buildPayV2DetailHtml ทุกประการ (ใช้การ์ดแปลง/ตัวกรอง/ปุ่มขยายเต็มจอชุดเดียวกัน เพราะ payV2PlotDetailCard และ
+   ฟังก์ชันตัวกรองทั้งหมดเป็น generic รับพารามิเตอร์/ใช้ closest() ไม่ผูกกับเวอร์ชัน) ต่างกันแค่ datalist id ต้องแยก
+   prefix เป็น payv3_ กันชนกับของ V2 เวลาทั้งสองตารางถูก render ค้างอยู่ใน DOM พร้อมกัน (คนละ modal) */
+function buildPayV3DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
+    const plots = worker.plots || [];
+    const plotById = {};
+    plots.forEach(p => { plotById[p.id] = p; });
+
+    const entries = [];
+    const deedTypesSeen = [];
+    if (worker.ns4.plot_count > 0) deedTypesSeen.push('นส.4');
+    worker.ns4.ids.forEach(id => {
+        const p = plotById[id];
+        if (p) entries.push({ p, badgeClass: 'bg-success', deedLabel: 'นส.4' });
+    });
+    Object.entries(worker.other.by_deed_type).forEach(([dt, d]) => {
+        deedTypesSeen.push(dt);
+        d.ids.forEach(id => {
+            const p = plotById[id];
+            if (p) entries.push({ p, badgeClass: 'bg-info text-dark', deedLabel: dt });
+        });
+    });
+
+    if (entries.length === 0) {
+        return `<div class="text-center text-muted py-2">ไม่มีรายการที่คิดค่าจ้างได้</div>`;
+    }
+
+    const cards = entries.map((e, i) =>
+        payV2PlotDetailCard(e.p, e.badgeClass, e.deedLabel, rateNs4, rateOther, rateBonus, tb, i >= PAYV2_PLOT_BATCH, i + 1)
+    );
+
+    const fmt2 = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const grandTotal = entries.reduce((sum, e) => {
+        const rate = e.p.is_ns4 ? rateNs4 : rateOther;
+        const bonusPay = e.p.is_multi ? rateBonus : 0;
+        return sum + (e.p.area_rai * rate) + bonusPay;
+    }, 0);
+    const multiBonusTotal = worker.bonus.plot_count * rateBonus;
+    const summaryBannerHtml = `<i class="bi bi-cash-coin me-1"></i>
+        รวมทั้งหมด ${entries.length.toLocaleString('th-TH')} แปลง = <span class="fw-bold">${fmt2(grandTotal)} บาท</span>
+        <span class="payv2-summary-sep">|</span>
+        หลายคลาส ${worker.bonus.plot_count.toLocaleString('th-TH')} แปลง (โบนัส <span class="fw-bold">${fmt2(multiBonusTotal)} บาท</span>)`;
+
+    const rateLegendHtml = `<i class="bi bi-calculator me-1"></i>เรทที่ใช้คิด:
+        <b>นส.4</b> ${rateNs4.toLocaleString('th-TH')} บาท/ไร่ &nbsp;&middot;&nbsp;
+        <b>อื่นๆ</b> ${rateOther.toLocaleString('th-TH')} บาท/ไร่ &nbsp;&middot;&nbsp;
+        <b>โบนัสหลายคลาส</b> ${rateBonus.toLocaleString('th-TH')} บาท/แปลง`;
+
+    const multiByDeed = {};
+    entries.forEach(e => {
+        if (e.p.is_multi) multiByDeed[e.deedLabel] = (multiByDeed[e.deedLabel] || 0) + 1;
+    });
+    const multiTotal = Object.values(multiByDeed).reduce((a, b) => a + b, 0);
+    const multiDeedItems = deedTypesSeen
+        .filter(dt => (multiByDeed[dt] || 0) > 0)
+        .map(dt => `<li><a class="dropdown-item payv2-multi-deed-item" href="#" data-deed="${dt}" onclick="selectPayv2MultiDeed(event, this)">
+            ${dt} <span class="badge bg-light text-dark ms-1">${multiByDeed[dt].toLocaleString('th-TH')}</span>
+        </a></li>`)
+        .join('');
+
+    const pureRubberByDeed = {};
+    entries.forEach(e => {
+        if (!e.p.is_multi) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
+    });
+    const pureRubberTotal = Object.values(pureRubberByDeed).reduce((a, b) => a + b, 0);
+    const rubberDeedItems = deedTypesSeen
+        .filter(dt => (pureRubberByDeed[dt] || 0) > 0)
+        .map(dt => `<li><a class="dropdown-item payv2-rubber-deed-item" href="#" data-deed="${dt}" onclick="selectPayv2RubberDeed(event, this)">
+            ${dt} <span class="badge bg-light text-dark ms-1">${pureRubberByDeed[dt].toLocaleString('th-TH')}</span>
+        </a></li>`)
+        .join('');
+
+    const datalistId = `payv3_deedtypes_${idx}`;
+    const options = deedTypesSeen.map(dt => `<option value="${dt}">`).join('');
+    const remaining = entries.length - PAYV2_PLOT_BATCH;
+    const loadMoreBar = remaining > 0
+        ? `<div class="payv2-loadmore-bar">
+                <button type="button" class="btn btn-sm btn-outline-secondary payv2-loadmore-btn" onclick="payv2LoadMorePlots(this)">
+                    <i class="bi bi-chevron-down me-1"></i>แสดงเพิ่ม ${Math.min(PAYV2_PLOT_BATCH, remaining).toLocaleString('th-TH')} รายการ (เหลืออีก ${remaining.toLocaleString('th-TH')})
+                </button>
+                <button type="button" class="btn btn-sm btn-link payv2-loadall-btn" onclick="payv2LoadAllPlots(this)">
+                    แสดงทั้งหมด (${entries.length.toLocaleString('th-TH')} แปลง)
+                </button>
+           </div>`
+        : '';
+
+    return `
+    <div class="payv2-plot-detail-wrap">
+        <div class="payv2-plot-search-bar">
+            <i class="bi bi-search text-muted"></i>
+            <input type="text" class="form-control form-control-sm payv2-plot-search"
+                placeholder="ค้นหาประเภทโฉนด / ไอดีแปลง / พิมพ์ &quot;หลายคลาส&quot;..." list="${datalistId}" oninput="filterPayv2Plots(this)">
+            <datalist id="${datalistId}">${options}</datalist>
+            <div class="btn-group payv2-multi-dropdown">
+                <button type="button" class="btn btn-sm btn-outline-warning payv2-multi-toggle dropdown-toggle" data-deed=""
+                    data-bs-toggle="dropdown" aria-expanded="false"
+                    title="แสดงเฉพาะแปลงที่มีหลายคลาส (ได้โบนัส) เลือกแยกตามประเภทโฉนดได้">
+                    <i class="bi bi-layers"></i> <span class="payv2-multi-toggle-label">หลายคลาสเท่านั้น</span>
+                </button>
+                <ul class="dropdown-menu payv2-multi-dropdown-menu">
+                    <li><a class="dropdown-item payv2-multi-clear-item" href="#" onclick="selectPayv2MultiDeed(event, this)">
+                        <i class="bi bi-x-circle me-1"></i>ไม่กรอง (ปิด)
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item payv2-multi-deed-item" href="#" data-deed="" onclick="selectPayv2MultiDeed(event, this)">
+                        ทั้งหมด (ทุกประเภทโฉนด) <span class="badge bg-light text-dark ms-1">${multiTotal.toLocaleString('th-TH')}</span>
+                    </a></li>
+                    ${multiDeedItems}
+                </ul>
+            </div>
+            <div class="btn-group payv2-rubber-dropdown">
+                <button type="button" class="btn btn-sm btn-outline-success payv2-rubber-toggle dropdown-toggle" data-deed=""
+                    data-bs-toggle="dropdown" aria-expanded="false"
+                    title="แสดงเฉพาะแปลงคลาสเดียวที่เป็นยางพาราลงทะเบียนล้วน (ไม่ปนคลาสอื่น) เลือกแยกตามประเภทโฉนดได้">
+                    <i class="bi bi-tree"></i> <span class="payv2-rubber-toggle-label">คลาสยางพาราลงทะเบียนเท่านั้น</span>
+                </button>
+                <ul class="dropdown-menu payv2-rubber-dropdown-menu">
+                    <li><a class="dropdown-item payv2-rubber-clear-item" href="#" onclick="selectPayv2RubberDeed(event, this)">
+                        <i class="bi bi-x-circle me-1"></i>ไม่กรอง (ปิด)
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item payv2-rubber-deed-item" href="#" data-deed="" onclick="selectPayv2RubberDeed(event, this)">
+                        ทั้งหมด (ทุกประเภทโฉนด) <span class="badge bg-light text-dark ms-1">${pureRubberTotal.toLocaleString('th-TH')}</span>
+                    </a></li>
+                    ${rubberDeedItems}
+                </ul>
+            </div>
+            ${worker.bonus.plot_count > 0 ? `
+            <button type="button" class="btn btn-sm btn-outline-success" onclick="showPayv2BonusFullscreen(event)"
+                title="ดูแปลงที่ได้โบนัสหลายคลาสแบบเต็มหน้าจอ พร้อมรูปและยอดรวม">
+                <i class="bi bi-cash-coin"></i> สรุปโบนัส (${worker.bonus.plot_count.toLocaleString('th-TH')})
+            </button>` : ''}
+            <span class="payv2-plot-count-badge">${entries.length.toLocaleString('th-TH')} แปลง</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary payv2-fullscreen-toggle" onclick="togglePayv2Fullscreen(this)"
+                title="ขยายเต็มหน้าจอ">
+                <i class="bi bi-arrows-fullscreen"></i>
+            </button>
+        </div>
+        <div class="payv2-rate-legend">${rateLegendHtml}</div>
+        <div class="payv2-summary-banner">${summaryBannerHtml}</div>
+        <div class="payv2-plot-list">${cards.join('')}</div>
+        <div class="payv2-plot-empty d-none text-center text-muted py-2">ไม่พบแปลงที่ตรงกับคำค้นหา</div>
+        ${loadMoreBar}
+    </div>`;
+}
+
+function togglePayV3Detail(i) {
+    const row = document.getElementById(`payv3_detail_${i}`);
+    const icon = document.getElementById(`payv3_detail_icon_${i}`);
+    if (!row) return;
+    row.classList.toggle('d-none');
+    if (icon) icon.classList.toggle('bi-chevron-down');
+    if (icon) icon.classList.toggle('bi-chevron-up');
+}
+
+/* เหมือน renderPaymentTableV2 ทุกประการ ต่างกันแค่แหล่งข้อมูล/id ของธาตุ DOM ที่ผูกกับ V3 */
+function renderPaymentTableV3() {
+    payv2DestroyAllThumbMaps();
+    const rateNs4   = parseFloat(document.getElementById('payv3_rate_ns4').value) || 0;
+    const rateOther = parseFloat(document.getElementById('payv3_rate_other').value) || 0;
+    const rateBonus = parseFloat(document.getElementById('payv3_rate_bonus').value) || 0;
+    const wrap = document.getElementById('paymentV3TableWrap');
+    const data = paymentV3WorkerData;
+
+    if (!data || data.length === 0) {
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            ยังไม่มีข้อมูลจำแนกพื้นที่ (class_Area) ที่มีผู้ทำงานใน table นี้
+        </div>`;
+        return;
+    }
+
+    const avatarOf = (r) => r.photo
+        ? `<img src="${r.photo}" class="pay-avatar" referrerpolicy="no-referrer"
+            onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=EDE7F6&color=4527a0&rounded=true'">`
+        : `<img src="https://ui-avatars.com/api/?name=${encodeURIComponent(r.editor)}&background=EDE7F6&color=4527a0&rounded=true" class="pay-avatar">`;
+
+    let gNs4Plot = 0, gNs4Area = 0, gNs4Pay = 0;
+    let gOtherPlot = 0, gOtherArea = 0, gOtherPay = 0;
+    let gBonusPlot = 0, gBonusPay = 0;
+    let grandPay = 0;
+
+    const rows = data.map((worker, i) => {
+        const ns4Pay   = worker.ns4.area_rai   * rateNs4;
+        const otherPay = worker.other.area_rai * rateOther;
+        const bonusPay = worker.bonus.plot_count * rateBonus;
+        const totalPay = ns4Pay + otherPay + bonusPay;
+
+        gNs4Plot += worker.ns4.plot_count;     gNs4Area += worker.ns4.area_rai;     gNs4Pay += ns4Pay;
+        gOtherPlot += worker.other.plot_count; gOtherArea += worker.other.area_rai; gOtherPay += otherPay;
+        gBonusPlot += worker.bonus.plot_count; gBonusPay += bonusPay;
+        grandPay += totalPay;
+
+        const countCell = (count, group, unit) => count > 0
+            ? `<span class="payv2-count-link" onclick="showPayv3GroupIds(event, ${i}, '${group}')" title="ดูรายการไอดี">${count.toLocaleString('th-TH')}${unit ? ' ' + unit : ''}</span>`
+            : `${count.toLocaleString('th-TH')}${unit ? ' ' + unit : ''}`;
+
+        return `<tr>
+            <td class="text-center align-middle">${i + 1}</td>
+            <td class="align-middle">
+                <div class="d-flex align-items-center gap-2">
+                    ${avatarOf(worker)}
+                    <span class="fw-bold">${worker.editor}</span>
+                </div>
+            </td>
+            <td class="text-center align-middle">${countCell(worker.ns4.plot_count, 'ns4', 'แปลง')}<br><small class="text-muted">${worker.ns4.area_rai.toFixed(2)} ไร่</small></td>
+            <td class="text-end align-middle">${ns4Pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">${countCell(worker.other.plot_count, 'other', 'แปลง')}<br><small class="text-muted">${worker.other.area_rai.toFixed(2)} ไร่</small></td>
+            <td class="text-end align-middle">${otherPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">${countCell(worker.bonus.plot_count, 'bonus')}<br><small class="text-muted">แปลง</small></td>
+            <td class="text-end align-middle">${bonusPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-end align-middle fw-bold pay-amount">${totalPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+            <td class="text-center align-middle">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="payv3_detail_btn_${i}" onclick="togglePayV3Detail(${i})" title="ดูไอดีที่ทำ / ทุกประเภทโฉนด">
+                    <i class="bi bi-chevron-down" id="payv3_detail_icon_${i}"></i>
+                </button>
+            </td>
+        </tr>
+        <tr id="payv3_detail_${i}" class="d-none payv2-detail-row">
+            <td colspan="10">${buildPayV3DetailHtml(worker, rateNs4, rateOther, rateBonus, paymentV3Tb, i)}</td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+    <div class="table-responsive">
+        <table class="table table-hover payment-table">
+            <thead>
+                <tr>
+                    <th class="text-center align-middle" style="width:40px">#</th>
+                    <th class="align-middle">ชื่อผู้ทำงาน</th>
+                    <th class="text-center align-middle">นส.4<br><small class="fw-normal text-muted">แปลง / ไร่</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง นส.4</th>
+                    <th class="text-center align-middle">อื่นๆ<br><small class="fw-normal text-muted">แปลง / ไร่</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง อื่นๆ</th>
+                    <th class="text-center align-middle">โบนัสหลายคลาส<br><small class="fw-normal text-muted">แปลง</small></th>
+                    <th class="text-end align-middle">ค่าจ้าง โบนัส</th>
+                    <th class="text-end align-middle">รวมค่าจ้าง</th>
+                    <th class="text-center align-middle" style="width:60px">รายละเอียด</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr class="payment-total-row">
+                    <td colspan="2" class="fw-bold align-middle">รวมทั้งหมด</td>
+                    <td class="text-center fw-bold align-middle">${gNs4Plot.toLocaleString('th-TH')} แปลง<br><small class="text-muted">${gNs4Area.toFixed(2)} ไร่</small></td>
+                    <td class="text-end fw-bold align-middle">${gNs4Pay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-center fw-bold align-middle">${gOtherPlot.toLocaleString('th-TH')} แปลง<br><small class="text-muted">${gOtherArea.toFixed(2)} ไร่</small></td>
+                    <td class="text-end fw-bold align-middle">${gOtherPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-center fw-bold align-middle">${gBonusPlot.toLocaleString('th-TH')}<br><small class="text-muted">แปลง</small></td>
+                    <td class="text-end fw-bold align-middle">${gBonusPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td class="text-end fw-bold align-middle pay-total-amount">${grandPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>`;
+}
+
+function renderWarningsV3() {
+    const wrap = document.getElementById('paymentV3WarnWrap');
+    if (!paymentV3Warnings || paymentV3Warnings.length === 0) {
+        wrap.innerHTML = '';
+        return;
+    }
+    const ids = paymentV3Warnings.map(w => w.id);
+    const idText = compressIdRanges(ids);
+    const rows = paymentV3Warnings.map(w => `
+        <tr>
+            <td><span class="payv2-id-chip" onclick="showParcelPreview(event,'${paymentV3Tb}',${w.id})" title="ดูรูปแปลง/คลาส id ${w.id} เพื่อตรวจสอบ">${w.id}</span></td>
+            <td>${payv2ClassLabel(w.classtype)}</td>
+            <td>${w.deed_type}</td>
+            <td>${w.editor}</td>
+        </tr>`).join('');
+
+    wrap.innerHTML = `
+        <div class="alert alert-warning mb-0 payv2-warn-wrap">
+            <div class="fw-bold mb-1 d-flex align-items-start justify-content-between gap-2">
+                <span><i class="bi bi-exclamation-triangle-fill me-1"></i>
+                พบ ${paymentV3Warnings.length.toLocaleString('th-TH')} แปลง (id: ${idText}) ที่ไม่มีคลาสยางพาราลงทะเบียนหรือพื้นที่กันออกเลย (ไม่มีฐานไร่ให้คิดเรท) — ไม่ถูกนับในค่าจ้างข้างต้น กรุณาตรวจสอบ</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0 payv2-warn-fullscreen-toggle" onclick="togglePayv2WarnFullscreen(this)" title="ขยายเต็มหน้าจอ">
+                    <i class="bi bi-arrows-fullscreen"></i>
+                </button>
+            </div>
+            <div class="table-responsive payv2-warn-table-wrap" style="max-height:220px;overflow:auto;">
+                <table class="table table-sm table-bordered mb-0 bg-white">
+                    <thead><tr><th>ID</th><th>ประเภทคลาส</th><th>ประเภทโฉนด</th><th>ผู้ทำงาน</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+document.getElementById('btnCalcPayV3').addEventListener('click', renderPaymentTableV3);
+
+document.getElementById('btnPrintPaymentV3').addEventListener('click', () => {
+    const tb = document.getElementById('paymentModalV3TbBadge').textContent;
+    const tableHtml = document.getElementById('paymentV3TableWrap').innerHTML;
+    const warnHtml = document.getElementById('paymentV3WarnWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สรุปค่าจ้าง V3 – ${tb}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family: "Noto Sans Thai", sans-serif; padding: 20px; }
+  .pay-avatar { width:28px; height:28px; border-radius:50%; object-fit:cover; }
+  .pay-amount { color:#4527a0; }
+  .pay-total-amount { color:#311b92; font-size:1.1rem; }
+  .payment-total-row { background:#ede7f6; }
+  .pay-id-range { font-family: "Consolas", "SFMono-Regular", monospace; font-size:0.8rem; color:#2e7d32; word-break: break-all; }
+  .payv2-detail-row.d-none { display: table-row !important; }
+  .pay-id-cell .pay-id-clamp { max-height: none !important; }
+  .payv2-id-scroll { max-height: none !important; overflow: visible !important; }
+  .payv2-id-chip-wrap { display:flex; flex-wrap:wrap; gap:4px; }
+  .payv2-id-chip { font-family:"Consolas","SFMono-Regular",monospace; font-size:0.72rem; background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; border-radius:5px; padding:1px 6px; text-decoration:none; }
+  .payv2-plot-list { display:flex; flex-direction:column; gap:6px; max-height:none !important; overflow:visible !important; }
+  .payv2-plot-card { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; background:#fff; border:1px solid #d1c4e9; border-radius:8px; padding:8px 12px; font-size:0.82rem; }
+  .payv2-plot-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .payv2-plot-calc { color:#37474f; flex:1 1 240px; line-height:1.7; }
+  .payv2-plot-total { margin-left:auto; white-space:nowrap; color:#4527a0; }
+  .payv2-plot-card.is-multi { border-left:4px solid #f9a825; background:#fffbeb; }
+  .payv2-bonus-chip { display:inline-block; font-size:0.74rem; background:#fff3cd; color:#8a6100; border:1px solid #ffe08a; border-radius:10px; padding:1px 8px; margin-left:2px; }
+  .payv2-plot-search-bar { display:none !important; }
+  .payv2-plot-card.d-none, .payv2-plot-card.batch-hidden { display:flex !important; }
+  .payv2-plot-empty { display:none !important; }
+  .payv2-loadmore-bar { display:none !important; }
+  @media print { button { display:none; } }
+</style>
+</head>
+<body>
+<h4 style="color:#4527a0">สรุปค่าจ้างทีมงาน V3 (class_Area) – ${tb}</h4>
 <p class="text-muted mb-3">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH', {day:'2-digit',month:'long',year:'numeric'})}</p>
 ${tableHtml}
 <div class="mt-3">${warnHtml}</div>

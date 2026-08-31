@@ -1097,6 +1097,24 @@ a:hover {
     color: #fff !important;
 }
 
+.btn-payment-v3 {
+    background: linear-gradient(135deg, #7e57c2, #4527a0) !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600;
+    font-size: 0.82rem !important;
+    padding: 0.35rem 0.7rem !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(69, 39, 160, 0.22);
+    transition: all 0.22s ease;
+}
+.btn-payment-v3:hover {
+    background: linear-gradient(135deg, #9575cd, #311b92) !important;
+    box-shadow: 0 4px 14px rgba(69, 39, 160, 0.3) !important;
+    transform: translateY(-1px);
+    color: #fff !important;
+}
+
 .payv2-rate-bar {
     background: linear-gradient(135deg, #e0f2f1, #e0f7fa);
     border: 1px solid #80cbc4;
@@ -1600,6 +1618,12 @@ body.payv2-fullscreen-lock {
     font-size: 0.72rem;
     padding: 2px 4px;
     vertical-align: middle;
+}
+.payv2-preview-row-eligible {
+    background: #e8f5e9;
+}
+.payv2-preview-table tfoot .payv2-preview-row-eligible td {
+    color: #2e7d32;
 }
 
 .btn-checker-pay {
