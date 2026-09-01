@@ -142,6 +142,9 @@ const initApp = async () => {
                         <button class="btn btn-assign layer-btn assignBtn" data-tb="${tb_name}" title="มอบหมายงาน">
                             <i class="bi bi-people-fill me-1"></i>มอบหมายงาน
                         </button>
+                        <span class="overdue-count-badge overdueBadgeBtn" id="overdueBadge_${tb_name}" data-tb="${tb_name}" style="display:none;">
+                            <i class="bi bi-alarm-fill me-1"></i><span class="overdue-badge-count">0</span> เกินกำหนดส่ง
+                        </span>
                         <div class="dropdown d-inline-block mt-1">
                             <button class="btn btn-success dropdown-toggle layer-btn" type="button" id="dropdownMenuButton${tb_name}" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="bi bi-download me-1"></i>Download ข้อมูล
@@ -205,6 +208,7 @@ const initApp = async () => {
             await showChart(tb_name, tb_name);
             await loadAssignmentStrip(tb_name);
             await loadPendingReviewBadge(tb_name);
+            await loadOverdueBadge(tb_name);
         });
 
         await Promise.all(promises);
@@ -368,6 +372,14 @@ const initApp = async () => {
             btn.addEventListener('click', function () {
                 const tb = this.getAttribute('data-tb');
                 openPendingReviewModal(tb);
+            });
+        });
+
+        /* ── เกินกำหนดส่ง (badge) — คลิกเปิดหน้ามอบหมายงานตรงเลย ── */
+        document.querySelectorAll('.overdueBadgeBtn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const tb = this.getAttribute('data-tb');
+                openAssignModal(tb);
             });
         });
 
@@ -822,6 +834,7 @@ function resetAssignForm() {
     document.getElementById('assign_photo').value = '';
     document.getElementById('assign_id_from').value = '';
     document.getElementById('assign_id_to').value = '';
+    document.getElementById('assign_due_date').value = '';
     document.getElementById('assign_note').value = '';
     document.getElementById('assign_email_input').value = '';
     document.getElementById('emailLookupResult').innerHTML = '';
@@ -891,8 +904,12 @@ async function renderAssignmentList(tb_name) {
     listEl.innerHTML = '<div class="text-muted text-center py-2"><span class="spinner-border spinner-border-sm"></span></div>';
 
     try {
-        const res = await fetch(`/rub/api/task-assignments/${tb_name}`);
-        const { data } = await res.json();
+        const [assignRes, progressRes] = await Promise.all([
+            fetch(`/rub/api/task-assignments/${tb_name}`),
+            fetch(`/rub/api/task-progress/${tb_name}`)
+        ]);
+        const { data } = await assignRes.json();
+        const { data: progressData } = await progressRes.json();
 
         if (!data || data.length === 0) {
             listEl.innerHTML = `<div class="assign-empty">
@@ -901,6 +918,11 @@ async function renderAssignmentList(tb_name) {
             </div>`;
             return;
         }
+
+        // ผูก pct/due_status/days_left จาก task-progress (คำนวณจากความคืบหน้าจริง) เข้ากับ assignment แต่ละแถวด้วย id
+        const progressById = {};
+        (progressData || []).forEach(p => { progressById[p.id] = p; });
+        data.forEach(d => Object.assign(d, progressById[d.id] || {}));
 
         // Sort by id_from
         data.sort((a, b) => a.id_from - b.id_from);
@@ -993,6 +1015,7 @@ async function renderAssignmentList(tb_name) {
                     <div class="assign-row-range">
                         <span class="assign-badge" style="background:${color};">ID ${d.id_from} – ${d.id_to}</span>
                         <span class="assign-count">(${d.id_to - d.id_from + 1} รายการ)</span>
+                        ${dueBadgeHtml(d.due_status, d.days_left, d.due_date)}
                         ${d.note ? `<span class="assign-note-text">• ${d.note}</span>` : ''}
                     </div>
                 </div>
@@ -1024,6 +1047,7 @@ async function renderAssignmentList(tb_name) {
                 document.getElementById('assign_photo').value = d.assignee_photo || '';
                 document.getElementById('assign_id_from').value = d.id_from;
                 document.getElementById('assign_id_to').value = d.id_to;
+                document.getElementById('assign_due_date').value = d.due_date ? String(d.due_date).slice(0, 10) : '';
                 document.getElementById('assign_note').value = d.note || '';
                 document.getElementById('assignFormTitle').innerHTML =
                     '<i class="bi bi-pencil-fill me-1"></i>แก้ไขการมอบหมายงาน';
@@ -1051,6 +1075,7 @@ async function renderAssignmentList(tb_name) {
                     if (result.success) {
                         await renderAssignmentList(tb_name);
                         await loadAssignmentStrip(tb_name);
+                        await loadOverdueBadge(tb_name);
                     } else {
                         alert(`เกิดข้อผิดพลาด: ${result.error}`);
                     }
@@ -1075,6 +1100,7 @@ document.getElementById('btnSaveAssign').addEventListener('click', async () => {
     const photo = document.getElementById('assign_photo').value.trim();
     const id_from = document.getElementById('assign_id_from').value;
     const id_to = document.getElementById('assign_id_to').value;
+    const due_date = document.getElementById('assign_due_date').value;
     const note = document.getElementById('assign_note').value.trim();
 
     // ถ้ายังไม่ได้เลือก → ลองดึงจากช่องพิมพ์อีเมลก่อน save
@@ -1097,7 +1123,7 @@ document.getElementById('btnSaveAssign').addEventListener('click', async () => {
         const finalUserId = document.getElementById('assign_user_id').value.trim();
         const finalPhoto = document.getElementById('assign_photo').value.trim();
         const payload = { assignee_name: finalName, assignee_email: finalEmail, assignee_photo: finalPhoto,
-                          user_id: finalUserId || null, id_from, id_to, note };
+                          user_id: finalUserId || null, id_from, id_to, note, due_date: due_date || null };
         if (assignId) {
             res = await fetch(`/rub/api/task-assignments/${assignId}`, {
                 method: 'PUT',
@@ -1117,6 +1143,7 @@ document.getElementById('btnSaveAssign').addEventListener('click', async () => {
             renderAssigneePicker(null);
             await renderAssignmentList(tb_name);
             await loadAssignmentStrip(tb_name);
+            await loadOverdueBadge(tb_name);
         } else {
             alert(`เกิดข้อผิดพลาด: ${result.error}`);
         }
@@ -1135,6 +1162,30 @@ document.getElementById('btnCancelAssignEdit').addEventListener('click', () => {
 });
 
 /* ── Mini assignment strip inside layer card (with progress) ── */
+/* ── Helper: แปลง due_date เป็นข้อความไทยสั้นๆ + สร้าง badge สถานะกำหนดส่ง
+   ใช้ร่วมกันทั้ง mini strip ในการ์ด layer (loadAssignmentStrip) และรายการมอบหมายงานในโมดัล (renderAssignmentList)
+   ต้องมี due_status/days_left มาจาก /api/task-progress (backend คำนวณให้แล้ว) ── */
+function formatDueDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+function dueBadgeHtml(dueStatus, daysLeft, dueDate) {
+    if (!dueDate) return '';
+    const dateStr = formatDueDate(dueDate);
+    switch (dueStatus) {
+        case 'done':
+            return `<span class="due-badge due-badge-done"><i class="bi bi-check-circle-fill"></i>เสร็จแล้ว</span>`;
+        case 'overdue':
+            return `<span class="due-badge due-badge-overdue"><i class="bi bi-exclamation-triangle-fill"></i>เกินกำหนด ${Math.abs(daysLeft)} วัน (${dateStr})</span>`;
+        case 'due_soon':
+            return `<span class="due-badge due-badge-soon"><i class="bi bi-alarm"></i>ใกล้ครบกำหนด ${daysLeft} วัน (${dateStr})</span>`;
+        case 'on_track':
+            return `<span class="due-badge due-badge-ontrack"><i class="bi bi-calendar-event"></i>กำหนดส่ง ${dateStr}</span>`;
+        default:
+            return '';
+    }
+}
+
 async function loadAssignmentStrip(tb_name) {
     const stripEl = document.getElementById(`strip_${tb_name}`);
     if (!stripEl) return;
@@ -1177,6 +1228,7 @@ async function loadAssignmentStrip(tb_name) {
                 </div>
                 <div class="strip-progress-sub">${d.done}/${d.total} แปลง
                     ${d.last_editor ? `· แก้ล่าสุดโดย <b>${d.last_editor}</b>` : ''}
+                    ${d.due_date ? ` · ${dueBadgeHtml(d.due_status, d.days_left, d.due_date)}` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -1211,6 +1263,27 @@ async function loadPendingReviewBadge(tb_name) {
             badge.classList.add('pending-badge-done');
             badge.innerHTML = `<i class="bi bi-check-circle me-1"></i>ตรวจครบแล้ว`;
             badge.title = 'ตรวจครบทุกแปลงแล้ว';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (e) {
+        badge.style.display = 'none';
+    }
+}
+
+/* ── ป้ายบอกจำนวนคนที่เกินกำหนดส่งงาน ต่อโปรเจค (นับจาก due_status ที่ backend คำนวณให้ใน task-progress) ── */
+async function loadOverdueBadge(tb_name) {
+    const badge = document.getElementById(`overdueBadge_${tb_name}`);
+    if (!badge) return;
+
+    try {
+        const res = await fetch(`/rub/api/task-progress/${tb_name}`);
+        const { data } = await res.json();
+        const overdueCount = (data || []).filter(d => d.due_status === 'overdue').length;
+
+        if (overdueCount > 0) {
+            badge.style.display = 'inline-flex';
+            badge.querySelector('.overdue-badge-count').textContent = overdueCount.toLocaleString('th-TH');
         } else {
             badge.style.display = 'none';
         }

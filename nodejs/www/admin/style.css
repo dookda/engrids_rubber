@@ -1000,6 +1000,45 @@ a:hover {
     color: #78909c;
 }
 
+/* ── กำหนดส่งงาน (due date) — badge ใช้ร่วมกันทั้งรายการมอบหมายงานและ mini strip ── */
+.due-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.12rem 0.5rem;
+    border-radius: 20px;
+    white-space: nowrap;
+    gap: 0.2rem;
+}
+.due-badge-overdue { background: rgba(244,67,54,0.14); color: #c62828; }
+.due-badge-soon    { background: rgba(255,193,7,0.20); color: #8d6e00; }
+.due-badge-ontrack { background: rgba(0,0,0,0.045); color: #78909c; }
+.due-badge-done    { background: rgba(76,175,80,0.16); color: #2e7d32; }
+
+/* ── จำนวนคนเกินกำหนดส่ง ต่อโปรเจค — badge ข้างปุ่ม "มอบหมายงาน" ── */
+.overdue-count-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.74rem;
+    font-weight: 700;
+    padding: 0.22rem 0.6rem;
+    border-radius: 20px;
+    white-space: nowrap;
+    cursor: pointer;
+    vertical-align: middle;
+    border: none;
+    margin-left: 0.4rem;
+    background: linear-gradient(135deg, #ff7043, #d84315) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 6px rgba(216, 67, 21, 0.28);
+    transition: all 0.2s ease;
+}
+.overdue-count-badge:hover {
+    background: linear-gradient(135deg, #f4511e, #bf360c) !important;
+    transform: translateY(-1px);
+}
+
 /* ══════════════════════════════════════════
    TEAM OVERVIEW – Button & Worker Cards
 ══════════════════════════════════════════ */

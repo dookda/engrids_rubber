@@ -2120,6 +2120,8 @@ async function ensureUsersTable() {
 async function ensureTaskAssignmentColumns() {
     await pool.query(`ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS user_id INTEGER`);
     await pool.query(`ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS assignee_email TEXT`);
+    // กำหนดส่งงาน (ไม่บังคับ) — ผูกกับ assignment แต่ละช่วง ID ไม่ใช่ผูกกับคน เพราะคนเดียวกันอาจมีหลายช่วง ID คนละเดดไลน์
+    await pool.query(`ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS due_date DATE`);
     // Backfill user_id และ assignee_email สำหรับ assignment เก่าที่ยังไม่มีข้อมูล
     // (จับคู่ด้วย display_name เมื่อมีผู้ใช้ชื่อตรงกันเพียงคนเดียว)
     pool.query(`
@@ -3601,10 +3603,26 @@ async function ensureTaskAssignmentsTable() {
     `);
 }
 
+/* คำนวณสถานะกำหนดส่งของ 1 assignment จาก due_date + pct ความคืบหน้า
+   ไม่นับ "เกินกำหนด/ใกล้ครบกำหนด" ถ้าทำเสร็จแล้ว (pct=100) หรือไม่ได้ตั้งกำหนดส่งไว้ (due_date เป็น null) */
+function computeDueStatus(due_date, pct) {
+    if (pct >= 100) return { status: 'done', days_left: null };
+    if (!due_date) return { status: 'none', days_left: null };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(due_date);
+    due.setHours(0, 0, 0, 0);
+    const days_left = Math.round((due - today) / 86400000);
+    if (days_left < 0) return { status: 'overdue', days_left };
+    if (days_left <= 3) return { status: 'due_soon', days_left };
+    return { status: 'on_track', days_left };
+}
+
 /* GET /api/task-assignments/:tb  – ดึง assignments ของ table นั้น */
 app.get('/api/task-assignments/:tb', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
         const tb = req.params.tb.toLowerCase();
         const result = await pool.query(
             `SELECT * FROM task_assignments WHERE LOWER(tb_name) = $1 ORDER BY id_from`,
@@ -3621,6 +3639,7 @@ app.get('/api/task-assignments/:tb', async (req, res) => {
 app.get('/api/task-assignments-all', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
         const result = await pool.query(
             `SELECT * FROM task_assignments ORDER BY tb_name, id_from`
         );
@@ -3636,7 +3655,7 @@ app.post('/api/task-assignments', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
         await ensureTaskAssignmentColumns();
-        const { tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note } = req.body;
+        const { tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note, due_date } = req.body;
         if (!tb_name || !assignee_name || id_from == null || id_to == null) {
             return res.status(400).json({ error: 'tb_name, assignee_name, id_from, id_to are required' });
         }
@@ -3644,11 +3663,11 @@ app.post('/api/task-assignments', async (req, res) => {
             return res.status(400).json({ error: 'id_from must be <= id_to' });
         }
         const result = await pool.query(
-            `INSERT INTO task_assignments (tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `INSERT INTO task_assignments (tb_name, assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note, due_date)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING *`,
             [tb_name, assignee_name, assignee_email || null, assignee_photo || null,
-             user_id ? parseInt(user_id) : null, parseInt(id_from), parseInt(id_to), note || null]
+             user_id ? parseInt(user_id) : null, parseInt(id_from), parseInt(id_to), note || null, due_date || null]
         );
         res.json({ success: true, data: result.rows[0] });
     } catch (err) {
@@ -3663,7 +3682,7 @@ app.put('/api/task-assignments/:id', async (req, res) => {
         await ensureTaskAssignmentsTable();
         await ensureTaskAssignmentColumns();
         const { id } = req.params;
-        const { assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note } = req.body;
+        const { assignee_name, assignee_email, assignee_photo, user_id, id_from, id_to, note, due_date } = req.body;
         if (!assignee_name || id_from == null || id_to == null) {
             return res.status(400).json({ error: 'assignee_name, id_from, id_to are required' });
         }
@@ -3673,12 +3692,12 @@ app.put('/api/task-assignments/:id', async (req, res) => {
         const result = await pool.query(
             `UPDATE task_assignments
              SET assignee_name=$1, assignee_email=$2, assignee_photo=$3, user_id=$4,
-                 id_from=$5, id_to=$6, note=$7, updated_at=NOW()
-             WHERE id=$8
+                 id_from=$5, id_to=$6, note=$7, due_date=$8, updated_at=NOW()
+             WHERE id=$9
              RETURNING *`,
             [assignee_name, assignee_email || null, assignee_photo || null,
              user_id ? parseInt(user_id) : null,
-             parseInt(id_from), parseInt(id_to), note || null, parseInt(id)]
+             parseInt(id_from), parseInt(id_to), note || null, due_date || null, parseInt(id)]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Assignment not found' });
         res.json({ success: true, data: result.rows[0] });
@@ -3711,6 +3730,7 @@ app.delete('/api/task-assignments/:id', async (req, res) => {
 app.get('/api/task-progress/:tb', async (req, res) => {
     try {
         await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
         const tb = req.params.tb.toLowerCase();
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
             return res.status(400).json({ error: 'Invalid table name' });
@@ -3718,7 +3738,7 @@ app.get('/api/task-progress/:tb', async (req, res) => {
 
         // ดึง assignments ของ table นี้
         const assignRes = await pool.query(
-            `SELECT id, assignee_name, assignee_photo, id_from, id_to, note
+            `SELECT id, assignee_name, assignee_photo, id_from, id_to, note, due_date
              FROM task_assignments WHERE LOWER(tb_name) = $1 ORDER BY id_from`,
             [tb]
         );
@@ -3773,19 +3793,78 @@ app.get('/api/task-progress/:tb', async (req, res) => {
                 }
             }
 
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const { status: due_status, days_left } = computeDueStatus(a.due_date, pct);
+
             return {
                 ...a,
                 total,
                 done,
-                pct: total > 0 ? Math.round((done / total) * 100) : 0,
+                pct,
                 last_editor,
-                last_ts
+                last_ts,
+                due_status,
+                days_left
             };
         }));
 
         res.json({ success: true, data: progressData });
     } catch (err) {
         console.error('[TASK-PROGRESS]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/my-due-notifications
+   แจ้งเตือนกำหนดส่งงานของผู้ login อยู่ (ทุกโปรเจคที่ตัวเองได้รับมอบหมาย) — ใช้แสดงแบนเนอร์แจ้งเตือนในหน้า worker
+   คืนเฉพาะรายการที่ "เกินกำหนด" หรือ "ใกล้ครบกำหนด" (≤3 วัน) และยังทำไม่เสร็จเท่านั้น */
+app.get('/api/my-due-notifications', async (req, res) => {
+    try {
+        const sessionUser = req.session?.user;
+        if (!sessionUser || !sessionUser.email) return res.status(401).json({ error: 'Not authenticated' });
+
+        await ensureTaskAssignmentsTable();
+        await ensureTaskAssignmentColumns();
+
+        const assignRes = await pool.query(
+            `SELECT id, tb_name, id_from, id_to, due_date, note
+             FROM task_assignments
+             WHERE LOWER(assignee_email) = LOWER($1) AND due_date IS NOT NULL
+             ORDER BY due_date`,
+            [sessionUser.email]
+        );
+
+        const items = await Promise.all(assignRes.rows.map(async (a) => {
+            const tb = a.tb_name.toLowerCase();
+            const total = a.id_to - a.id_from + 1;
+            let done = 0;
+
+            if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) {
+                try {
+                    const colCheck = await pool.query(
+                        `SELECT column_name FROM information_schema.columns
+                         WHERE table_name=$1 AND column_name='classified'`, [tb]
+                    );
+                    if (colCheck.rowCount > 0) {
+                        const doneRes = await pool.query(
+                            `SELECT COUNT(*) AS cnt FROM ${tb}
+                             WHERE id >= $1 AND id <= $2 AND classified = TRUE`,
+                            [a.id_from, a.id_to]
+                        );
+                        done = parseInt(doneRes.rows[0].cnt) || 0;
+                    }
+                } catch (_) { /* table อาจถูกลบไปแล้ว ข้ามไปนับเป็น 0 */ }
+            }
+
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const { status: due_status, days_left } = computeDueStatus(a.due_date, pct);
+            return { ...a, total, done, pct, due_status, days_left };
+        }));
+
+        const notifications = items.filter(it => it.due_status === 'overdue' || it.due_status === 'due_soon');
+        res.json({ success: true, data: notifications });
+    } catch (err) {
+        console.error('[MY-DUE-NOTIFICATIONS]', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
