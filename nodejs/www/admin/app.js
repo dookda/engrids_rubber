@@ -404,6 +404,17 @@ const initApp = async () => {
     }
 };
 
+/* ── Helper: ดาวน์โหลดยางพาราลงทะเบียน+พื้นที่กันออกทั้งหมดของ "คนที่ทำ" คนเดียว (ใช้ในตารางคำนวณค่าจ้าง V1/V3)
+   กรองด้วย editor (คอลัมน์เดียวกับที่ worker-summary ใช้ group แถวในตาราง) จึงรวมงานของคนชื่อเดียวกันให้อัตโนมัติ
+   อยู่แล้ว แม้จะมีการมอบหมายงาน (task_assignments) ให้คนคนนั้นหลายช่วง ID ในโปรเจคเดียวกันก็ตาม ── */
+const downloadWorkerRubberData = (tb, editorName) => {
+    const safeName = editorName.replace(/[\\/:*?"<>|]/g, '_');
+    downloadFile(
+        `/rub/api/download/reshape/v_reclass_${tb}?type=rubber_and_ex&editor=${encodeURIComponent(editorName)}`,
+        `v_reclass_rubber_ex_${tb}_${safeName}.geojson`
+    );
+};
+
 /* ── Helper: trigger file download ── */
 const downloadFile = (url, filename) => {
     fetch(url)
@@ -1833,9 +1844,14 @@ function renderPaymentTable() {
                     <i class="bi bi-chevron-down" id="pay_detail_icon_${i}"></i>
                 </button>
             </td>
+            <td class="text-center align-middle">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="downloadWorkerRubberData('${paymentTb}', '${worker.editor.replace(/'/g, "\\'")}')" title="ดาวน์โหลดยางพาราลงทะเบียน+พื้นที่กันออกทั้งหมดของ ${worker.editor}">
+                    <i class="bi bi-download"></i>
+                </button>
+            </td>
         </tr>
         <tr id="pay_detail_${i}" class="d-none payv2-detail-row">
-            <td colspan="8">${buildPayPlotDetailHtml(worker, rateNs4, rateOther, paymentTb, i)}</td>
+            <td colspan="9">${buildPayPlotDetailHtml(worker, rateNs4, rateOther, paymentTb, i)}</td>
         </tr>`;
     }).join('');
 
@@ -1852,6 +1868,7 @@ function renderPaymentTable() {
                     <th class="text-end align-middle">ค่าจ้าง อื่นๆ</th>
                     <th class="text-end align-middle">รวมค่าจ้าง</th>
                     <th class="text-center align-middle" style="width:60px">รายละเอียด</th>
+                    <th class="text-center align-middle" style="width:60px">ดาวน์โหลด</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -1863,6 +1880,7 @@ function renderPaymentTable() {
                     <td class="text-center fw-bold align-middle">${gOtherPlot.toLocaleString('th-TH')} แปลง<br><small class="text-muted">${gOtherArea.toFixed(2)} ไร่</small></td>
                     <td class="text-end fw-bold align-middle">${gOtherPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
                     <td class="text-end fw-bold align-middle pay-total-amount">${grandPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td></td>
                     <td></td>
                 </tr>
             </tfoot>
@@ -3364,9 +3382,14 @@ function renderPaymentTableV3() {
                     <i class="bi bi-chevron-down" id="payv3_detail_icon_${i}"></i>
                 </button>
             </td>
+            <td class="text-center align-middle">
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="downloadWorkerRubberData('${paymentV3Tb}', '${worker.editor.replace(/'/g, "\\'")}')" title="ดาวน์โหลดยางพาราลงทะเบียน+พื้นที่กันออกทั้งหมดของ ${worker.editor}">
+                    <i class="bi bi-download"></i>
+                </button>
+            </td>
         </tr>
         <tr id="payv3_detail_${i}" class="d-none payv2-detail-row">
-            <td colspan="10">${buildPayV3DetailHtml(worker, rateNs4, rateOther, rateBonus, paymentV3Tb, i)}</td>
+            <td colspan="11">${buildPayV3DetailHtml(worker, rateNs4, rateOther, rateBonus, paymentV3Tb, i)}</td>
         </tr>`;
     }).join('');
 
@@ -3385,6 +3408,7 @@ function renderPaymentTableV3() {
                     <th class="text-end align-middle">ค่าจ้าง โบนัส</th>
                     <th class="text-end align-middle">รวมค่าจ้าง</th>
                     <th class="text-center align-middle" style="width:60px">รายละเอียด</th>
+                    <th class="text-center align-middle" style="width:60px">ดาวน์โหลด</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -3398,6 +3422,7 @@ function renderPaymentTableV3() {
                     <td class="text-center fw-bold align-middle">${gBonusPlot.toLocaleString('th-TH')}<br><small class="text-muted">แปลง</small></td>
                     <td class="text-end fw-bold align-middle">${gBonusPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
                     <td class="text-end fw-bold align-middle pay-total-amount">${grandPay.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})} บาท</td>
+                    <td></td>
                     <td></td>
                 </tr>
             </tfoot>
