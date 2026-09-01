@@ -56,6 +56,9 @@
                                 <button class="btn btn-light" id="createProjectBtn">
                                     <i class="bi bi-folder-plus me-1"></i>สร้าง Project
                                 </button>
+                                <button class="btn btn-dashboard-overview" id="btnDashboardOverview">
+                                    <i class="bi bi-speedometer2 me-1"></i>แดชบอร์ดภาพรวม
+                                </button>
                             </div>
                         </div>
                         <div class="mt-3" id="layerList"></div>
@@ -327,6 +330,108 @@
                 </div>
                 <div class="modal-footer justify-content-between">
                     <button class="btn btn-outline-secondary btn-sm" id="btnPrintTeam">
+                        <i class="bi bi-printer me-1"></i>พิมพ์รายงาน
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         MODAL: แดชบอร์ดภาพรวมทุกโปรเจค (ไม่แยกรายบุคคล)
+    ═══════════════════════════════════════════════════════ -->
+    <div class="modal fade" id="dashboardOverviewModal" tabindex="-1" aria-labelledby="dashboardOverviewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background:linear-gradient(135deg,#1e88e5,#0d47a1); color:#fff;">
+                    <h5 class="modal-title f" id="dashboardOverviewModalLabel">
+                        <i class="bi bi-speedometer2 me-2"></i>แดชบอร์ดภาพรวมทุกโปรเจค
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        คิดพื้นที่ใช้คำนวณเงินแบบเดียวกับ <strong>ค่าจ้าง V3</strong> — เฉพาะคลาส <strong>ยางพาราลงทะเบียน</strong> +
+                        <strong>พื้นที่กันออกทั้งหมด</strong> (class_Area) เทียบกับเนื้อที่เป้าหมายยางพารา <strong>Rubr_total</strong>
+                        รวมเป็นภาพรวมทั้งโปรเจค ไม่แยกว่าใครทำได้เท่าไหร่
+                    </div>
+
+                    <!-- Rate setting: อัตราต่อไร่ (นส.4 / อื่นๆ) + โบนัสต่อแปลงเมื่อมีหลายคลาส -->
+                    <div class="payment-rate-bar payv2-rate-bar mb-3">
+                        <div class="table-responsive">
+                            <table class="table table-sm payv2-rate-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>กลุ่ม</th>
+                                        <th>เงื่อนไข</th>
+                                        <th style="width:160px;">อัตรา</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="badge bg-success">นส.4</span></td>
+                                        <td>พื้นที่ยางพาราลงทะเบียน + พื้นที่กันออก ในแปลงโฉนดประเภท <strong>นส.4</strong></td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="dash_rate_ns4" class="form-control payment-rate-input"
+                                                    value="0.5" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/ไร่</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-info text-dark">อื่นๆ</span></td>
+                                        <td>พื้นที่ยางพาราลงทะเบียน + พื้นที่กันออก ในแปลงโฉนดประเภท<strong>อื่น</strong> (ไม่ใช่นส.4)</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="dash_rate_other" class="form-control payment-rate-input"
+                                                    value="1" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/ไร่</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-warning text-dark">โบนัสหลายคลาส</span></td>
+                                        <td>แปลงมี <strong>ตั้งแต่ 2 คลาสขึ้นไป</strong> — บวกเพิ่มแบบคงที่ต่อแปลง ไม่ใช่ต่อไร่</td>
+                                        <td>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" id="dash_rate_bonus" class="form-control payment-rate-input"
+                                                    value="0.5" min="0" step="0.1">
+                                                <span class="input-group-text">บาท/แปลง</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="dash_autorefresh" checked>
+                                <label class="form-check-label small" for="dash_autorefresh">รีเฟรชอัตโนมัติทุก 20 วินาที</label>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-muted small" id="dash_last_updated"></span>
+                                <button class="btn btn-primary btn-sm" id="btnCalcDashboard">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรชตอนนี้
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Grand summary cards -->
+                    <div id="dashboardGrandWrap" class="mb-4"></div>
+
+                    <!-- Per-project table -->
+                    <div id="dashboardOverviewWrap">
+                        <div class="text-center text-muted py-4">
+                            <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-between">
+                    <button class="btn btn-outline-secondary btn-sm" id="btnPrintDashboard">
                         <i class="bi bi-printer me-1"></i>พิมพ์รายงาน
                     </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>

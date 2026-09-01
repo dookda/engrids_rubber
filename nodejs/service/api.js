@@ -4448,6 +4448,12 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
                 e.bonus.ids.push(id);
             }
 
+            // ต่างจาก V2 (ที่บังคับให้ hasRubber ต้องมี classtype='rubber' อยู่จริง single-class จึงเป็น 'rubber' เสมอ) —
+            // V3 ยอมรับ eligibleRows ที่เป็น ex_* ล้วนด้วย ดังนั้นแปลงคลาสเดียว (is_multi=false) อาจเป็นพื้นที่กันออกล้วน
+            // ไม่ใช่ยางพาราจริงก็ได้ ต้องเช็ค classtype ตรง ๆ ว่าเป็น 'rubber' เท่านั้นถึงจะนับเป็น "ยางพาราลงทะเบียนล้วน"
+            // (ดู is_pure_rubber_class ในตาราง worker-summary ปกติที่ทำแบบเดียวกันอยู่แล้ว)
+            const isPureRubberClass = !isMulti && classRows[0].classtype === 'rubber';
+
             e.plots.push({
                 id,
                 deed_type: deedType,
@@ -4455,7 +4461,8 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
                 is_ns4: isNs4(deedType),
                 area_rai: parseFloat(payArea.toFixed(4)),
                 is_multi: isMulti,
-                class_count: cnt
+                class_count: cnt,
+                is_pure_rubber_class: isPureRubberClass
             });
         });
 
@@ -4476,6 +4483,182 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
         res.json({ success: true, data, warnings });
     } catch (err) {
         console.error('[WORKER-SUMMARY-V3]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/dashboard-overview
+   ภาพรวมทุกโปรเจค (ไม่แยกรายบุคคล) — สำหรับปุ่มแดชบอร์ดข้าง "สร้าง Project"
+   ต่อโปรเจค (tb) หนึ่งแถว บอก:
+     - target_rai: เนื้อที่เป้าหมายยางพารา รวมจากข้อมูลดิบ "Rubr_total" ในตารางหลัก
+     - drawn_rai (= ns4.area_rai + other.area_rai): เนื้อที่ที่วาด/จำแนกจริงแล้วที่ "เข้าเงื่อนไขคิดเงิน" จากตาราง reclass
+       ใช้กฎเดียวกับ PAYV3_ELIGIBLE_CLASSES ทุกประการ (ยางพาราลงทะเบียน 'rubber' + พื้นที่กันออกทุกชนิด 'ex_*')
+       ตัด 'not-rubber'/'Other' ออกเสมอ — แยกยอดย่อยเป็น rubber_rai (เฉพาะ rubber) กับ exclude_rai (เฉพาะ ex_*) ไว้อ้างอิง
+     - ns4/other/bonus/plots: โครงสร้างเดียวกับที่ /api/worker-summary-v3 คืนให้ต่อ "คนทำงาน" หนึ่งคนทุกประการ
+       (ids, by_deed_type, plots[]) เพียงแต่รวมทั้งโปรเจคเป็นก้อนเดียวไม่แยก editor — เพื่อให้ฝั่งหน้าเว็บใช้ฟังก์ชัน
+       buildPayV3DetailHtml เดิมสร้างการ์ดรายแปลง (พร้อมรูปย่อ/ตัวกรอง) ซ้ำได้เลยโดยไม่ต้องเขียนใหม่
+     - total_plots/classified_plots: ความคืบหน้าการจำแนกที่ดินของโปรเจค (จากคอลัมน์ classified ในตารางหลัก)
+   ไม่ผูกกับ editor เลย เพราะจุดประสงค์คือดูภาพรวมทั้งโปรเจค ไม่ใช่ค่าจ้างรายคน (ดู worker-summary-v3 สำหรับรายคน) */
+app.get('/api/dashboard-overview', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name, remark FROM layerlist ORDER BY created_at`);
+
+        const projects = [];
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const mainRes = await pool.query(`
+                SELECT COUNT(*) AS total_plots,
+                    COUNT(*) FILTER (WHERE classified = TRUE) AS classified_plots,
+                    ROUND(COALESCE(SUM("Rubr_total"), 0)::numeric, 4) AS target_rai,
+                    ROUND(COALESCE(SUM("Deed_total"), 0)::numeric, 4) AS deed_total_rai
+                FROM ${tb}
+            `).catch(() => ({ rows: [{ total_plots: 0, classified_plots: 0, target_rai: 0, deed_total_rai: 0 }] }));
+            const main = mainRes.rows[0];
+
+            const proj = {
+                tb_name: layer.tb_name,
+                remark: layer.remark || '',
+                total_plots: parseInt(main.total_plots) || 0,
+                classified_plots: parseInt(main.classified_plots) || 0,
+                target_rai: parseFloat(main.target_rai) || 0,
+                deed_total_rai: parseFloat(main.deed_total_rai) || 0,
+                rubber_rai: 0,
+                exclude_rai: 0,
+                drawn_sqm: 0, // ตร.ม.จริงจาก shpsplit_sqm — ไม่ใช้ drawn_rai*1600 เพราะ class_Area ถูกปัดเศษเป็นไร่ 2 ตำแหน่งไว้ตั้งแต่ตอนสร้าง คูณกลับจะเพี้ยน
+                ns4: { plot_count: 0, area_rai: 0, ids: [] },
+                other: { plot_count: 0, area_rai: 0, ids: [], by_deed_type: {} },
+                bonus: { plot_count: 0, sub_plot_count: 0, ids: [] },
+                plots: [],
+                ineligible_plot_count: 0
+            };
+
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+
+            if (reclassExists.rows[0].exists) {
+                const rowsRes = await pool.query(`
+                    WITH class_counts AS (
+                        SELECT id, COUNT(*) AS cnt
+                        FROM reclass_${tb}
+                        GROUP BY id
+                    )
+                    SELECT r.id, r.classtype,
+                        ROUND(COALESCE(r."class_Area", 0)::numeric, 4) AS class_area_rai,
+                        ROUND(COALESCE(r.shpsplit_sqm, 0)::numeric, 2) AS class_area_sqm,
+                        cc.cnt,
+                        COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type,
+                        COALESCE(m."Regis_No", '') AS regis_no
+                    FROM reclass_${tb} r
+                    JOIN class_counts cc ON cc.id = r.id
+                    LEFT JOIN ${tb} m ON m.id = r.id
+                `);
+
+                const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+                const idGroups = {};
+                rowsRes.rows.forEach(row => {
+                    if (!idGroups[row.id]) {
+                        idGroups[row.id] = {
+                            id: row.id, deedType: row.deed_type, regisNo: row.regis_no,
+                            cnt: parseInt(row.cnt), classRows: []
+                        };
+                    }
+                    idGroups[row.id].classRows.push({
+                        classtype: (row.classtype || '').trim().toLowerCase(),
+                        area: parseFloat(row.class_area_rai) || 0,
+                        sqm: parseFloat(row.class_area_sqm) || 0
+                    });
+                });
+
+                Object.values(idGroups).forEach(g => {
+                    const { id, deedType, regisNo, cnt, classRows } = g;
+                    const isMulti = cnt > 1;
+                    const eligibleRows = classRows.filter(c => PAYV3_ELIGIBLE_CLASSES.includes(c.classtype));
+                    const hasEligible = eligibleRows.length > 0;
+                    const payArea = eligibleRows.reduce((sum, c) => sum + c.area, 0);
+                    const payAreaSqm = eligibleRows.reduce((sum, c) => sum + c.sqm, 0);
+                    const rubberArea = eligibleRows
+                        .filter(c => c.classtype === 'rubber')
+                        .reduce((sum, c) => sum + c.area, 0);
+
+                    if (!hasEligible) {
+                        if (!isMulti && classRows[0].classtype === 'point') return;
+                        proj.ineligible_plot_count += 1;
+                        return;
+                    }
+
+                    proj.rubber_rai += rubberArea;
+                    proj.exclude_rai += (payArea - rubberArea);
+                    proj.drawn_sqm += payAreaSqm;
+
+                    const plotIsNs4 = isNs4(deedType);
+                    if (plotIsNs4) {
+                        proj.ns4.plot_count += 1;
+                        proj.ns4.area_rai += payArea;
+                        proj.ns4.ids.push(id);
+                    } else {
+                        proj.other.plot_count += 1;
+                        proj.other.area_rai += payArea;
+                        proj.other.ids.push(id);
+                        if (!proj.other.by_deed_type[deedType]) {
+                            proj.other.by_deed_type[deedType] = { plot_count: 0, area_rai: 0, ids: [] };
+                        }
+                        proj.other.by_deed_type[deedType].plot_count += 1;
+                        proj.other.by_deed_type[deedType].area_rai += payArea;
+                        proj.other.by_deed_type[deedType].ids.push(id);
+                    }
+
+                    if (isMulti) {
+                        proj.bonus.plot_count += 1;
+                        proj.bonus.sub_plot_count += cnt;
+                        proj.bonus.ids.push(id);
+                    }
+
+                    // แปลงคลาสเดียว (is_multi=false) อาจเป็นพื้นที่กันออกล้วนก็ได้ (ไม่ใช่ยางพาราจริง) เพราะ V3/แดชบอร์ด
+                    // ยอมรับ eligibleRows ที่เป็น ex_* ล้วนด้วย — ต้องเช็ค classtype ตรง ๆ ว่าเป็น 'rubber' เท่านั้น
+                    const isPureRubberClass = !isMulti && classRows[0].classtype === 'rubber';
+
+                    proj.plots.push({
+                        id,
+                        deed_type: deedType,
+                        regis_no: regisNo,
+                        is_ns4: plotIsNs4,
+                        area_rai: parseFloat(payArea.toFixed(4)),
+                        is_multi: isMulti,
+                        class_count: cnt,
+                        is_pure_rubber_class: isPureRubberClass
+                    });
+                });
+            }
+
+            proj.target_rai = parseFloat(proj.target_rai.toFixed(4));
+            proj.deed_total_rai = parseFloat(proj.deed_total_rai.toFixed(4));
+            proj.rubber_rai = parseFloat(proj.rubber_rai.toFixed(4));
+            proj.exclude_rai = parseFloat(proj.exclude_rai.toFixed(4));
+            proj.drawn_sqm = parseFloat(proj.drawn_sqm.toFixed(2));
+            proj.ns4.area_rai = parseFloat(proj.ns4.area_rai.toFixed(4));
+            proj.ns4.ids.sort((a, b) => a - b);
+            proj.other.area_rai = parseFloat(proj.other.area_rai.toFixed(4));
+            proj.other.ids.sort((a, b) => a - b);
+            Object.values(proj.other.by_deed_type).forEach(d => {
+                d.area_rai = parseFloat(d.area_rai.toFixed(4));
+                d.ids.sort((a, b) => a - b);
+            });
+            proj.bonus.ids.sort((a, b) => a - b);
+            proj.plots.sort((a, b) => a.id - b.id);
+            proj.drawn_rai = parseFloat((proj.ns4.area_rai + proj.other.area_rai).toFixed(4));
+
+            projects.push(proj);
+        }
+
+        res.json({ success: true, projects });
+    } catch (err) {
+        console.error('[DASHBOARD-OVERVIEW]', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
