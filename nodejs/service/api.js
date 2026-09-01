@@ -1950,9 +1950,12 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
     try {
         const tb = req.params.tb.toLowerCase();
         const typeFilter = req.query.type; // 'rubber' or 'all_rubber'
+        // ผู้ทำงาน (editor) ที่ต้องการกรองเฉพาะแปลงของคนนั้น — ใช้ตอน Download รายคนจากหน้าคำนวณค่าจ้าง (V1/V3)
+        const editorFilter = req.query.editor ? String(req.query.editor).trim() : '';
         if (!tb) return res.status(400).json({ error: 'Table name is required' });
 
         let sql;
+        const params = [];
         // ─── Case 1: Download reclassify (v_reclass_xxx) ───────────────────────────
         if (tb.startsWith('v_reclass_')) {
             const baseTb = tb.replace('v_reclass_', '');
@@ -1961,6 +1964,11 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                 extraTypeCondition = `AND LOWER(TRIM(r.classtype)) = 'rubber'`;
             } else if (typeFilter === 'rubber_and_ex') {
                 extraTypeCondition = `AND LOWER(TRIM(r.classtype)) IN ('rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other')`;
+            }
+            let extraEditorCondition = '';
+            if (editorFilter) {
+                params.push(editorFilter);
+                extraEditorCondition = `AND r.editor = $${params.length}`;
             }
 
             sql = `
@@ -2020,7 +2028,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
                     m."Regis_No" AS regis_no
                     FROM reclass_${baseTb} r
                     JOIN ${baseTb} m ON r.id = m.id
-                    WHERE r.geom IS NOT NULL AND r.classtype IS NOT NULL AND TRIM(r.classtype) <> '' ${extraTypeCondition}
+                    WHERE r.geom IS NOT NULL AND r.classtype IS NOT NULL AND TRIM(r.classtype) <> '' ${extraTypeCondition} ${extraEditorCondition}
                 ) f;
             `;
         }
@@ -2074,7 +2082,7 @@ app.get('/api/download/reshape/:tb', async (req, res) => {
             `;
         }
 
-        const { rows } = await pool.query(sql);
+        const { rows } = await pool.query(sql, params);
         const geojson = rows[0]?.geojson || { type: 'FeatureCollection', features: [] };
 
         res.setHeader('Content-Type', 'application/json');
