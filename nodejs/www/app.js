@@ -41,6 +41,80 @@ const initUser = async () => {
     }
 };
 
+/* ── Helper: badge สถานะกำหนดส่งงาน (ใช้กับข้อมูลจาก task-progress ที่มี due_date/due_status/days_left มาให้แล้ว)
+   ใช้ร่วมกันทั้งการ์ดโปรเจคหน้าแรก (loadAssignmentHome) และ modal เลือกคนทำงาน (showAssigneeSelect) ── */
+function formatDueDate(dateStr) {
+    return new Date(dateStr).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+/* ── ใช้เฉพาะจุดที่มีแค่ due_date ดิบ ไม่มี pct ความคืบหน้ามาด้วย (เช่น รายการ "งานของฉัน" ก่อนเลือกเข้าทำงาน)
+   จึงคำนวณสถานะจากวันที่อย่างเดียว ไม่ตัดสถานะ "เสร็จแล้ว" ให้ (ดู computeDueStatus ฝั่ง backend สำหรับสูตรเต็มที่รวม pct) ── */
+function clientDueStatus(dueDate) {
+    if (!dueDate) return { status: 'none', daysLeft: null };
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate); due.setHours(0, 0, 0, 0);
+    const daysLeft = Math.round((due - today) / 86400000);
+    if (daysLeft < 0) return { status: 'overdue', daysLeft };
+    if (daysLeft <= 3) return { status: 'due_soon', daysLeft };
+    return { status: 'on_track', daysLeft };
+}
+
+function dueBadgeHtml(dueStatus, daysLeft, dueDate) {
+    if (!dueDate) return '';
+    const dateStr = formatDueDate(dueDate);
+    switch (dueStatus) {
+        case 'done':
+            return `<span class="due-badge due-badge-done"><i class="bi bi-check-circle-fill"></i>เสร็จแล้ว</span>`;
+        case 'overdue':
+            return `<span class="due-badge due-badge-overdue"><i class="bi bi-exclamation-triangle-fill"></i>เกินกำหนด ${Math.abs(daysLeft)} วัน</span>`;
+        case 'due_soon':
+            return `<span class="due-badge due-badge-soon"><i class="bi bi-alarm"></i>เหลือ ${daysLeft} วัน</span>`;
+        case 'on_track':
+            return `<span class="due-badge due-badge-ontrack"><i class="bi bi-calendar-event"></i>กำหนดส่ง ${dateStr}</span>`;
+        default:
+            return '';
+    }
+}
+
+/* ── แจ้งเตือนงานที่ใกล้ครบกำหนด/เกินกำหนดส่งของผู้ login อยู่ — แสดงเป็นแบนเนอร์บนสุดของหน้าแรก
+   ปิดแล้วจะไม่โผล่ซ้ำจนกว่าจะ reload หน้าใหม่ (เตือนซ้ำทุกครั้งที่เข้าใช้งาน ตราบใดที่ยังไม่เสร็จ/ยังไม่เกินกำหนดหมดอายุ) ── */
+async function loadMyDueNotifications() {
+    const bar = document.getElementById('dueNotificationBar');
+    if (!bar) return;
+
+    try {
+        const res = await fetch('/rub/api/my-due-notifications');
+        if (!res.ok) { bar.innerHTML = ''; return; }
+        const { data } = await res.json();
+        if (!data || data.length === 0) { bar.innerHTML = ''; return; }
+
+        const overdueItems = data.filter(d => d.due_status === 'overdue');
+        const soonItems = data.filter(d => d.due_status === 'due_soon');
+
+        const itemLine = (d) => `
+            <div class="due-noti-item">
+                <span>โครงการ <b>${d.tb_name}</b> — ID ${d.id_from}–${d.id_to} (${d.done}/${d.total} แปลง)</span>
+                <a href="javascript:void(0);" onclick="showAssigneeSelect(event, '${d.tb_name}', 'reshape')">ไปทำงานนี้ &raquo;</a>
+            </div>`;
+
+        const banner = (kind, title, items) => `
+            <div class="due-noti-banner ${kind}">
+                <i class="bi ${kind === 'overdue' ? 'bi-exclamation-triangle-fill' : 'bi-alarm-fill'} due-noti-icon"></i>
+                <div class="flex-grow-1">
+                    <div class="due-noti-title">${title}</div>
+                    <div class="due-noti-list">${items.map(itemLine).join('')}</div>
+                </div>
+                <button type="button" class="due-noti-close" onclick="this.closest('.due-noti-banner').remove()">&times;</button>
+            </div>`;
+
+        bar.innerHTML =
+            (overdueItems.length ? banner('overdue', `⚠️ คุณมีงานเกินกำหนดส่ง ${overdueItems.length} รายการ`, overdueItems) : '') +
+            (soonItems.length ? banner('due_soon', `⏰ คุณมีงานใกล้ครบกำหนดส่ง ${soonItems.length} รายการ`, soonItems) : '');
+    } catch (e) {
+        bar.innerHTML = '';
+    }
+}
+
 /**
  * Show a selection modal for assignees before going to Reshape or Dashboard
  * - worker: auto-navigate ตรงไปที่ assignment ของตัวเอง
@@ -99,7 +173,9 @@ async function showAssigneeSelect(event, tb, targetType) {
                         <i class="bi bi-list-task" style="font-size:1.1rem;"></i>
                     </div>
                     <div class="flex-grow-1">
-                        <div class="fw-bold" style="color:#2d3e2d;">ID ${item.id_from} – ${item.id_to}</div>
+                        <div class="fw-bold" style="color:#2d3e2d;">ID ${item.id_from} – ${item.id_to}
+                            ${(() => { const s = clientDueStatus(item.due_date); return dueBadgeHtml(s.status, s.daysLeft, item.due_date); })()}
+                        </div>
                         ${item.note ? `<div class="small text-muted" style="font-size:0.72rem;">${item.note}</div>` : ''}
                     </div>
                     <i class="bi bi-chevron-right ms-2" style="color:#4a7c59;font-size:1.1rem;"></i>
@@ -237,6 +313,7 @@ async function showAssigneeSelect(event, tb, targetType) {
                             <span>ID: ${item.id_from}-${item.id_to}</span>
                             <span>เสร็จแล้ว ${item.done || 0}/${item.total || 0}</span>
                         </div>
+                        ${item.due_date ? `<div class="mt-1">${dueBadgeHtml(item.due_status, item.days_left, item.due_date)}</div>` : ''}
                     </div>
                 </div>
                 <i class="bi bi-chevron-right ms-2" style="${isMe ? 'color:rgba(255,255,255,0.8);' : 'color:#4a7c59;'}font-size:1.1rem;"></i>
@@ -293,6 +370,7 @@ async function loadAssignmentHome(tb_name) {
                                  aria-valuenow="${d.pct || 0}" aria-valuemin="0" aria-valuemax="100"></div>
                         </div>
                         <span class="ha-range" style="font-size: 0.65rem;">ID ${d.id_from}-${d.id_to} (${d.done}/${d.total})</span>
+                        ${dueBadgeHtml(d.due_status, d.days_left, d.due_date)}
                     </div>`;
 
         }).join('')}
@@ -591,6 +669,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     console.error('Logout failed:', err);
                 }
             });
+
+            await loadMyDueNotifications();
         }
         await initApp();
         await initUser();
