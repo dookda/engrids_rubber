@@ -60,7 +60,7 @@ function renderSummary(summary) {
     `).join('');
 }
 
-function renderItemRow(item, tb) {
+function renderItemRow(item, isFirstInGroup, groupSize, groupIndex) {
     const statusBadge = item.fixed_pending_review
         ? `<span class="badge wk-badge-pending"><i class="bi bi-arrow-repeat me-1"></i>แก้แล้ว รอตรวจซ้ำ</span>`
         : `<span class="badge wk-badge-notfixed"><i class="bi bi-hourglass-split me-1"></i>ยังไม่ได้แก้ไข</span>`;
@@ -70,9 +70,15 @@ function renderItemRow(item, tb) {
         item.check_shape === 'ไม่ผ่าน' ? `<span class="badge wk-badge-fail me-1">ตรวจสอบการจำแนกประเภทไม่ผ่าน</span>` : ''
     ].join('');
 
+    // ID ของแปลงเดียวกัน (หลาย sub_id) รวมเป็นแถวเดียวด้วย rowspan ให้เห็นเป็นกลุ่มก้อนเดียวกันชัดเจน ไม่ต้องขึ้นซ้ำทุกแถว
+    const idCell = isFirstInGroup
+        ? `<td rowspan="${groupSize}" class="wk-id-group-cell align-middle">${esc(item.id)}</td>`
+        : '';
+
     return `
-        <tr>
-            <td>${esc(item.id)}${item.sub_id ? `<div class="small text-muted">sub: ${esc(item.sub_id)}</div>` : ''}</td>
+        <tr class="wk-id-group-${groupIndex % 2}${isFirstInGroup ? ' wk-id-group-start' : ''}">
+            ${idCell}
+            <td class="small text-muted">${item.sub_id ? esc(item.sub_id) : '-'}</td>
             <td>${esc(item.farm_name) || '<span class="text-muted">-</span>'}</td>
             <td>${checkBadges}</td>
             <td>${item.remark ? esc(item.remark) : '<span class="text-muted">-</span>'}</td>
@@ -80,6 +86,23 @@ function renderItemRow(item, tb) {
             <td>${statusBadge}</td>
         </tr>
     `;
+}
+
+// รวม items ที่ id เดียวกัน (เรียงมาจาก backend แล้ว) ให้อยู่ติดกันเป็นกลุ่ม พร้อมสลับสีพื้นหลังทีละกลุ่มกันงง
+function renderItemRows(items) {
+    const rows = [];
+    let groupIndex = 0;
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const isFirstInGroup = i === 0 || items[i - 1].id !== item.id;
+        if (isFirstInGroup && i !== 0) groupIndex++;
+        let groupSize = 1;
+        if (isFirstInGroup) {
+            while (items[i + groupSize] && items[i + groupSize].id === item.id) groupSize++;
+        }
+        rows.push(renderItemRow(item, isFirstInGroup, groupSize, groupIndex));
+    }
+    return rows.join('');
 }
 
 function renderProjectBlock(editorKey, proj) {
@@ -103,6 +126,7 @@ function renderProjectBlock(editorKey, proj) {
                         <thead>
                             <tr>
                                 <th>ID</th>
+                                <th>Sub</th>
                                 <th>เจ้าของแปลง</th>
                                 <th>สถานะตรวจ</th>
                                 <th>หมายเหตุแอดมิน</th>
@@ -111,7 +135,7 @@ function renderProjectBlock(editorKey, proj) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${proj.items.map(it => renderItemRow(it, proj.tb_name)).join('')}
+                            ${renderItemRows(proj.items)}
                         </tbody>
                     </table>
                 </div>

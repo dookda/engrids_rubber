@@ -108,6 +108,24 @@ body {
     font-size: 0.82rem;
 }
 
+/* ── กลุ่มแถวของ id เดียวกัน: สลับสีพื้นหลังทีละกลุ่ม + เส้นคั่นหนาระหว่างกลุ่ม ให้แยกจากกันชัดเจน ── */
+.wk-item-table .wk-id-group-0 {
+    background-color: #ffffff;
+}
+
+.wk-item-table .wk-id-group-1 {
+    background-color: #f3f8f3;
+}
+
+.wk-item-table .wk-id-group-start td {
+    border-top: 2px solid #a8c9a8;
+}
+
+.wk-item-table .wk-id-group-cell {
+    font-weight: 700;
+    border-right: 2px solid #a8c9a8;
+}
+
 /* ── Badges ── */
 .wk-badge-notfixed {
     background: #dc3545;
