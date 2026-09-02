@@ -4888,8 +4888,10 @@ app.get('/api/needs-fix-all', async (req, res) => {
             }
             return editorMap[name];
         };
+        // นับเป็น "id" (โฉนดรวม) ไม่ใช่ต่อแถว sub_id — โฉนดเดียวกันอาจถูกตัดแยกเป็นหลาย sub_id
+        // นับทุกแถวจะทำให้ตัวเลขบวมกว่าจำนวนแปลงจริงและดูงงว่าทำไมนับได้ไม่ตรงกับรายการที่เห็น
         const ensureProject = (e, tb, tbNameOriginal) => {
-            if (!e.projects[tb]) e.projects[tb] = { tb_name: tbNameOriginal, items: [], not_fixed: 0, fixed_pending_review: 0 };
+            if (!e.projects[tb]) e.projects[tb] = { tb_name: tbNameOriginal, items: [], not_fixed: 0, fixed_pending_review: 0, _notFixedIds: new Set(), _pendingIds: new Set() };
             return e.projects[tb];
         };
 
@@ -4932,7 +4934,7 @@ app.get('/api/needs-fix-all', async (req, res) => {
                     user_remark_ts: r.user_remark_ts,
                     fixed_pending_review: false
                 });
-                e.total_items++; e.total_not_fixed++; p.not_fixed++;
+                p._notFixedIds.add(r.id);
             }
 
             // ── แก้ไขแล้ว รอตรวจซ้ำ: ตอนนี้ยังไม่มีคนตรวจ (reviewer เป็น NULL) แต่ครั้งล่าสุดที่เคยตรวจ (จาก review_history) คือ "ไม่ผ่าน"
@@ -4971,7 +4973,24 @@ app.get('/api/needs-fix-all', async (req, res) => {
                     user_remark_ts: r.user_remark_ts,
                     fixed_pending_review: true
                 });
-                e.total_items++; e.total_fixed_pending_review++; p.fixed_pending_review++;
+                p._pendingIds.add(r.id);
+            }
+        }
+
+        // สรุปยอดต่อ id: ถ้า id นั้นยังมี sub_id ค้าง "ไม่ผ่าน" อยู่จริงอย่างน้อย 1 อัน ให้นับเป็น "ยังไม่แก้" ก่อน
+        // (ยังไม่ถือว่าเสร็จจนกว่าจะแก้ครบทุก sub_id ของโฉนดนั้น) ที่เหลือค่อยนับเป็น "รอตรวจซ้ำ"
+        for (const e of Object.values(editorMap)) {
+            e.total_items = 0; e.total_not_fixed = 0; e.total_fixed_pending_review = 0;
+            for (const p of Object.values(e.projects)) {
+                p.not_fixed = p._notFixedIds.size;
+                p.fixed_pending_review = [...p._pendingIds].filter(id => !p._notFixedIds.has(id)).length;
+                delete p._notFixedIds;
+                delete p._pendingIds;
+                // เรียงตาม id ก่อน (แล้วค่อย sub_id) ให้ sub_id ของ id เดียวกันอยู่ติดกันเป็นกลุ่ม ไม่สลับกันจนงง
+                p.items.sort((a, b) => a.id - b.id || String(a.sub_id).localeCompare(String(b.sub_id)));
+                e.total_not_fixed += p.not_fixed;
+                e.total_fixed_pending_review += p.fixed_pending_review;
+                e.total_items += p.not_fixed + p.fixed_pending_review;
             }
         }
 
