@@ -1965,10 +1965,10 @@ tfoot .area-col-selected {
     height: 10px;
 }
 .dash-project-progress .progress-bar {
-    background: linear-gradient(135deg, #42a5f5, #1565c0) !important;
+    background: linear-gradient(135deg, #ef5350, #c62828) !important;
 }
-.dash-project-progress .progress-bar.is-over {
-    background: linear-gradient(135deg, #ffa726, #ef6c00) !important;
+.dash-project-progress .progress-bar.is-complete {
+    background: linear-gradient(135deg, #66bb6a, #2e7d32) !important;
 }
 .dash-stat-chip {
     display: inline-flex;
