@@ -1872,4 +1872,125 @@ tfoot .area-col-selected {
 .area-selected-text {
     color: #e65100 !important;
 }
+
+/* ══════════════════════════════════════════
+   DASHBOARD OVERVIEW – Button, Grand Cards & Project Rows
+══════════════════════════════════════════ */
+.btn-dashboard-overview {
+    background: linear-gradient(135deg, #42a5f5, #0d47a1) !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(13, 71, 161, 0.25);
+    transition: all 0.22s ease;
+}
+.btn-dashboard-overview:hover {
+    background: linear-gradient(135deg, #64b5f6, #1565c0) !important;
+    transform: translateY(-1px);
+    color: #fff !important;
+}
+
+.dash-grand-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+@media (max-width: 900px) {
+    .dash-grand-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+    .dash-grand-row { grid-template-columns: 1fr; }
+}
+.dash-grand-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 76px;
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    background: #fff;
+    border: 1px solid rgba(13, 71, 161, 0.12);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dash-grand-card:hover {
+    box-shadow: 0 4px 14px rgba(13, 71, 161, 0.1);
+    transform: translateY(-1px);
+}
+.dash-grand-card.is-highlight {
+    background: linear-gradient(135deg, #f1f8f4, #ffffff);
+    border-color: rgba(46, 125, 50, 0.25);
+}
+.dash-grand-label {
+    font-size: 0.7rem;
+    color: #78909c;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 2px;
+}
+.dash-grand-val {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #0d47a1;
+    line-height: 1.3;
+}
+.dash-grand-val.is-money { color: #2e7d32; }
+.dash-grand-sub {
+    font-size: 0.72rem;
+    color: #90a4ae;
+}
+
+.dash-project-card {
+    border: 1px solid rgba(13, 71, 161, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.65rem;
+    transition: box-shadow 0.2s ease;
+}
+.dash-project-card:hover {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+.dash-project-name {
+    font-weight: 700;
+    font-size: 0.98rem;
+    color: #263238;
+}
+.dash-project-progress-label {
+    font-size: 0.72rem;
+    color: #78909c;
+    white-space: nowrap;
+}
+.dash-project-progress .progress {
+    height: 10px;
+}
+.dash-project-progress .progress-bar {
+    background: linear-gradient(135deg, #42a5f5, #1565c0) !important;
+}
+.dash-project-progress .progress-bar.is-over {
+    background: linear-gradient(135deg, #ffa726, #ef6c00) !important;
+}
+.dash-stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.76rem;
+    color: #546e7a;
+    background: #f5f7fa;
+    border-radius: 8px;
+    padding: 3px 9px;
+}
+.dash-stat-chip b { color: #263238; }
+.dash-pay-total {
+    font-weight: 800;
+    font-size: 1.05rem;
+    color: #2e7d32;
+}
+.dash-warn-chip {
+    font-size: 0.72rem;
+    color: #ef6c00;
+    background: #fff3e0;
+    border-radius: 8px;
+    padding: 2px 8px;
+}
 

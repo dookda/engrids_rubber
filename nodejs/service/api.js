@@ -4448,6 +4448,12 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
                 e.bonus.ids.push(id);
             }
 
+            // ต่างจาก V2 (ที่บังคับให้ hasRubber ต้องมี classtype='rubber' อยู่จริง single-class จึงเป็น 'rubber' เสมอ) —
+            // V3 ยอมรับ eligibleRows ที่เป็น ex_* ล้วนด้วย ดังนั้นแปลงคลาสเดียว (is_multi=false) อาจเป็นพื้นที่กันออกล้วน
+            // ไม่ใช่ยางพาราจริงก็ได้ ต้องเช็ค classtype ตรง ๆ ว่าเป็น 'rubber' เท่านั้นถึงจะนับเป็น "ยางพาราลงทะเบียนล้วน"
+            // (ดู is_pure_rubber_class ในตาราง worker-summary ปกติที่ทำแบบเดียวกันอยู่แล้ว)
+            const isPureRubberClass = !isMulti && classRows[0].classtype === 'rubber';
+
             e.plots.push({
                 id,
                 deed_type: deedType,
@@ -4455,7 +4461,8 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
                 is_ns4: isNs4(deedType),
                 area_rai: parseFloat(payArea.toFixed(4)),
                 is_multi: isMulti,
-                class_count: cnt
+                class_count: cnt,
+                is_pure_rubber_class: isPureRubberClass
             });
         });
 
@@ -4476,6 +4483,182 @@ app.get('/api/worker-summary-v3/:tb', async (req, res) => {
         res.json({ success: true, data, warnings });
     } catch (err) {
         console.error('[WORKER-SUMMARY-V3]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/dashboard-overview
+   ภาพรวมทุกโปรเจค (ไม่แยกรายบุคคล) — สำหรับปุ่มแดชบอร์ดข้าง "สร้าง Project"
+   ต่อโปรเจค (tb) หนึ่งแถว บอก:
+     - target_rai: เนื้อที่เป้าหมายยางพารา รวมจากข้อมูลดิบ "Rubr_total" ในตารางหลัก
+     - drawn_rai (= ns4.area_rai + other.area_rai): เนื้อที่ที่วาด/จำแนกจริงแล้วที่ "เข้าเงื่อนไขคิดเงิน" จากตาราง reclass
+       ใช้กฎเดียวกับ PAYV3_ELIGIBLE_CLASSES ทุกประการ (ยางพาราลงทะเบียน 'rubber' + พื้นที่กันออกทุกชนิด 'ex_*')
+       ตัด 'not-rubber'/'Other' ออกเสมอ — แยกยอดย่อยเป็น rubber_rai (เฉพาะ rubber) กับ exclude_rai (เฉพาะ ex_*) ไว้อ้างอิง
+     - ns4/other/bonus/plots: โครงสร้างเดียวกับที่ /api/worker-summary-v3 คืนให้ต่อ "คนทำงาน" หนึ่งคนทุกประการ
+       (ids, by_deed_type, plots[]) เพียงแต่รวมทั้งโปรเจคเป็นก้อนเดียวไม่แยก editor — เพื่อให้ฝั่งหน้าเว็บใช้ฟังก์ชัน
+       buildPayV3DetailHtml เดิมสร้างการ์ดรายแปลง (พร้อมรูปย่อ/ตัวกรอง) ซ้ำได้เลยโดยไม่ต้องเขียนใหม่
+     - total_plots/classified_plots: ความคืบหน้าการจำแนกที่ดินของโปรเจค (จากคอลัมน์ classified ในตารางหลัก)
+   ไม่ผูกกับ editor เลย เพราะจุดประสงค์คือดูภาพรวมทั้งโปรเจค ไม่ใช่ค่าจ้างรายคน (ดู worker-summary-v3 สำหรับรายคน) */
+app.get('/api/dashboard-overview', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name, remark FROM layerlist ORDER BY created_at`);
+
+        const projects = [];
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const mainRes = await pool.query(`
+                SELECT COUNT(*) AS total_plots,
+                    COUNT(*) FILTER (WHERE classified = TRUE) AS classified_plots,
+                    ROUND(COALESCE(SUM("Rubr_total"), 0)::numeric, 4) AS target_rai,
+                    ROUND(COALESCE(SUM("Deed_total"), 0)::numeric, 4) AS deed_total_rai
+                FROM ${tb}
+            `).catch(() => ({ rows: [{ total_plots: 0, classified_plots: 0, target_rai: 0, deed_total_rai: 0 }] }));
+            const main = mainRes.rows[0];
+
+            const proj = {
+                tb_name: layer.tb_name,
+                remark: layer.remark || '',
+                total_plots: parseInt(main.total_plots) || 0,
+                classified_plots: parseInt(main.classified_plots) || 0,
+                target_rai: parseFloat(main.target_rai) || 0,
+                deed_total_rai: parseFloat(main.deed_total_rai) || 0,
+                rubber_rai: 0,
+                exclude_rai: 0,
+                drawn_sqm: 0, // ตร.ม.จริงจาก shpsplit_sqm — ไม่ใช้ drawn_rai*1600 เพราะ class_Area ถูกปัดเศษเป็นไร่ 2 ตำแหน่งไว้ตั้งแต่ตอนสร้าง คูณกลับจะเพี้ยน
+                ns4: { plot_count: 0, area_rai: 0, ids: [] },
+                other: { plot_count: 0, area_rai: 0, ids: [], by_deed_type: {} },
+                bonus: { plot_count: 0, sub_plot_count: 0, ids: [] },
+                plots: [],
+                ineligible_plot_count: 0
+            };
+
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+
+            if (reclassExists.rows[0].exists) {
+                const rowsRes = await pool.query(`
+                    WITH class_counts AS (
+                        SELECT id, COUNT(*) AS cnt
+                        FROM reclass_${tb}
+                        GROUP BY id
+                    )
+                    SELECT r.id, r.classtype,
+                        ROUND(COALESCE(r."class_Area", 0)::numeric, 4) AS class_area_rai,
+                        ROUND(COALESCE(r.shpsplit_sqm, 0)::numeric, 2) AS class_area_sqm,
+                        cc.cnt,
+                        COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type,
+                        COALESCE(m."Regis_No", '') AS regis_no
+                    FROM reclass_${tb} r
+                    JOIN class_counts cc ON cc.id = r.id
+                    LEFT JOIN ${tb} m ON m.id = r.id
+                `);
+
+                const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+                const idGroups = {};
+                rowsRes.rows.forEach(row => {
+                    if (!idGroups[row.id]) {
+                        idGroups[row.id] = {
+                            id: row.id, deedType: row.deed_type, regisNo: row.regis_no,
+                            cnt: parseInt(row.cnt), classRows: []
+                        };
+                    }
+                    idGroups[row.id].classRows.push({
+                        classtype: (row.classtype || '').trim().toLowerCase(),
+                        area: parseFloat(row.class_area_rai) || 0,
+                        sqm: parseFloat(row.class_area_sqm) || 0
+                    });
+                });
+
+                Object.values(idGroups).forEach(g => {
+                    const { id, deedType, regisNo, cnt, classRows } = g;
+                    const isMulti = cnt > 1;
+                    const eligibleRows = classRows.filter(c => PAYV3_ELIGIBLE_CLASSES.includes(c.classtype));
+                    const hasEligible = eligibleRows.length > 0;
+                    const payArea = eligibleRows.reduce((sum, c) => sum + c.area, 0);
+                    const payAreaSqm = eligibleRows.reduce((sum, c) => sum + c.sqm, 0);
+                    const rubberArea = eligibleRows
+                        .filter(c => c.classtype === 'rubber')
+                        .reduce((sum, c) => sum + c.area, 0);
+
+                    if (!hasEligible) {
+                        if (!isMulti && classRows[0].classtype === 'point') return;
+                        proj.ineligible_plot_count += 1;
+                        return;
+                    }
+
+                    proj.rubber_rai += rubberArea;
+                    proj.exclude_rai += (payArea - rubberArea);
+                    proj.drawn_sqm += payAreaSqm;
+
+                    const plotIsNs4 = isNs4(deedType);
+                    if (plotIsNs4) {
+                        proj.ns4.plot_count += 1;
+                        proj.ns4.area_rai += payArea;
+                        proj.ns4.ids.push(id);
+                    } else {
+                        proj.other.plot_count += 1;
+                        proj.other.area_rai += payArea;
+                        proj.other.ids.push(id);
+                        if (!proj.other.by_deed_type[deedType]) {
+                            proj.other.by_deed_type[deedType] = { plot_count: 0, area_rai: 0, ids: [] };
+                        }
+                        proj.other.by_deed_type[deedType].plot_count += 1;
+                        proj.other.by_deed_type[deedType].area_rai += payArea;
+                        proj.other.by_deed_type[deedType].ids.push(id);
+                    }
+
+                    if (isMulti) {
+                        proj.bonus.plot_count += 1;
+                        proj.bonus.sub_plot_count += cnt;
+                        proj.bonus.ids.push(id);
+                    }
+
+                    // แปลงคลาสเดียว (is_multi=false) อาจเป็นพื้นที่กันออกล้วนก็ได้ (ไม่ใช่ยางพาราจริง) เพราะ V3/แดชบอร์ด
+                    // ยอมรับ eligibleRows ที่เป็น ex_* ล้วนด้วย — ต้องเช็ค classtype ตรง ๆ ว่าเป็น 'rubber' เท่านั้น
+                    const isPureRubberClass = !isMulti && classRows[0].classtype === 'rubber';
+
+                    proj.plots.push({
+                        id,
+                        deed_type: deedType,
+                        regis_no: regisNo,
+                        is_ns4: plotIsNs4,
+                        area_rai: parseFloat(payArea.toFixed(4)),
+                        is_multi: isMulti,
+                        class_count: cnt,
+                        is_pure_rubber_class: isPureRubberClass
+                    });
+                });
+            }
+
+            proj.target_rai = parseFloat(proj.target_rai.toFixed(4));
+            proj.deed_total_rai = parseFloat(proj.deed_total_rai.toFixed(4));
+            proj.rubber_rai = parseFloat(proj.rubber_rai.toFixed(4));
+            proj.exclude_rai = parseFloat(proj.exclude_rai.toFixed(4));
+            proj.drawn_sqm = parseFloat(proj.drawn_sqm.toFixed(2));
+            proj.ns4.area_rai = parseFloat(proj.ns4.area_rai.toFixed(4));
+            proj.ns4.ids.sort((a, b) => a - b);
+            proj.other.area_rai = parseFloat(proj.other.area_rai.toFixed(4));
+            proj.other.ids.sort((a, b) => a - b);
+            Object.values(proj.other.by_deed_type).forEach(d => {
+                d.area_rai = parseFloat(d.area_rai.toFixed(4));
+                d.ids.sort((a, b) => a - b);
+            });
+            proj.bonus.ids.sort((a, b) => a - b);
+            proj.plots.sort((a, b) => a.id - b.id);
+            proj.drawn_rai = parseFloat((proj.ns4.area_rai + proj.other.area_rai).toFixed(4));
+
+            projects.push(proj);
+        }
+
+        res.json({ success: true, projects });
+    } catch (err) {
+        console.error('[DASHBOARD-OVERVIEW]', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -4667,6 +4850,144 @@ app.get('/api/pending-review/:tb', async (req, res) => {
         });
     } catch (err) {
         console.error('[PENDING-REVIEW]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/needs-fix-all
+   สรุปแปลงที่แอดมินตรวจแล้วแต่ "ไม่ผ่าน" (check_area/check_shape) ข้ามทุกโปรเจคใน layerlist
+   จัดกลุ่มตาม editor (คนแก้ไขแปลง) เพื่อให้เห็นภาพรวมว่าของใคร โปรเจคไหน ต้องแก้ไข โดยไม่ต้องเข้าไปดูทีละโปรเจค
+   ใช้กับหน้า worker ที่ต้อง auto-refresh แบบเรียลไทม์
+
+   หมายเหตุ: ตอน worker แก้ไข landuse/geometry จริง (update_landuse, update_geometry) ระบบจะ "รีเซต"
+   check_area/check_shape/reviewer/review_ts ของแถวนั้นกลับเป็น NULL ทันที (ดู saveReviewHistoryBySubId
+   ก่อนรีเซตในทั้งสอง endpoint) เพื่อบังคับให้แอดมินตรวจซ้ำ — แถวที่แก้แล้วจึงไม่มีค่า 'ไม่ผ่าน' ค้างอยู่ให้เห็นอีกต่อไป
+   ต้องอาศัย review_history (snapshot ก่อนรีเซตทุกครั้ง) เพื่อรู้ว่าแถวที่ตอนนี้ reviewer เป็น NULL อยู่
+   เคย "ไม่ผ่าน" มาก่อนหรือไม่ ถึงจะนับเป็น "แก้ไขแล้ว รอตรวจซ้ำ" ได้ถูกต้อง (ไม่ใช่แค่แถวที่ยังไม่เคยตรวจเลย) */
+app.get('/api/needs-fix-all', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name FROM layerlist ORDER BY created_at`);
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        await ensureReviewHistoryTable();
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    total_items: 0,
+                    total_not_fixed: 0,
+                    total_fixed_pending_review: 0,
+                    projects: {}
+                };
+            }
+            return editorMap[name];
+        };
+        const ensureProject = (e, tb, tbNameOriginal) => {
+            if (!e.projects[tb]) e.projects[tb] = { tb_name: tbNameOriginal, items: [], not_fixed: 0, fixed_pending_review: 0 };
+            return e.projects[tb];
+        };
+
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+            if (!reclassExists.rows[0].exists) continue;
+
+            await ensureReclassReviewColumns(tb);
+
+            // ── ยังไม่ได้แก้ไข: แถวที่ยังค้างสถานะ "ไม่ผ่าน" อยู่ตอนนี้ (worker ยังไม่ได้แตะข้อมูลเลยตั้งแต่แอดมินตรวจ) ──
+            const notFixedRes = await pool.query(`
+                SELECT a.id, a.sub_id, a.editor, a.check_area, a.check_shape, a.remark,
+                    a.reviewer, a.review_ts, a.user_remark, a.user_remark_ts,
+                    COALESCE(NULLIF(b."Full_nam", ''), CONCAT_WS(' ', b."F_name", b."L_name")) AS farm_name
+                FROM reclass_${tb} a
+                LEFT JOIN ${tb} b ON a.id = b.id
+                WHERE a.check_area = 'ไม่ผ่าน' OR a.check_shape = 'ไม่ผ่าน'
+            `).catch(() => ({ rows: [] }));
+
+            for (const r of notFixedRes.rows) {
+                const e = ensureEditor(r.editor || 'ไม่ทราบผู้แก้ไข');
+                const p = ensureProject(e, tb, layer.tb_name);
+                p.items.push({
+                    id: r.id,
+                    sub_id: r.sub_id,
+                    farm_name: r.farm_name,
+                    check_area: r.check_area,
+                    check_shape: r.check_shape,
+                    remark: r.remark,
+                    reviewer: r.reviewer,
+                    review_ts: r.review_ts,
+                    user_remark: r.user_remark,
+                    user_remark_ts: r.user_remark_ts,
+                    fixed_pending_review: false
+                });
+                e.total_items++; e.total_not_fixed++; p.not_fixed++;
+            }
+
+            // ── แก้ไขแล้ว รอตรวจซ้ำ: ตอนนี้ยังไม่มีคนตรวจ (reviewer เป็น NULL) แต่ครั้งล่าสุดที่เคยตรวจ (จาก review_history) คือ "ไม่ผ่าน"
+            //    แปลว่ามีคนแก้ไข landuse/geometry ไปแล้วหลังโดนตีกลับ กำลังรอแอดมินตรวจซ้ำ ──
+            const pendingFixRes = await pool.query(`
+                WITH latest_hist AS (
+                    SELECT DISTINCT ON (sub_id) sub_id, check_area, check_shape, reviewer, review_ts
+                    FROM review_history
+                    WHERE tb_name = $1
+                    ORDER BY sub_id, reset_ts DESC
+                )
+                SELECT a.id, a.sub_id, a.editor, a.remark, a.user_remark, a.user_remark_ts,
+                    h.check_area, h.check_shape, h.reviewer, h.review_ts,
+                    COALESCE(NULLIF(b."Full_nam", ''), CONCAT_WS(' ', b."F_name", b."L_name")) AS farm_name
+                FROM reclass_${tb} a
+                JOIN latest_hist h ON h.sub_id = a.sub_id
+                LEFT JOIN ${tb} b ON a.id = b.id
+                WHERE (a.reviewer IS NULL OR a.reviewer = '')
+                  AND (h.check_area = 'ไม่ผ่าน' OR h.check_shape = 'ไม่ผ่าน')
+            `, [tb]).catch(() => ({ rows: [] }));
+
+            for (const r of pendingFixRes.rows) {
+                const e = ensureEditor(r.editor || 'ไม่ทราบผู้แก้ไข');
+                const p = ensureProject(e, tb, layer.tb_name);
+                p.items.push({
+                    id: r.id,
+                    sub_id: r.sub_id,
+                    farm_name: r.farm_name,
+                    // เก็บสถานะที่เคย "ไม่ผ่าน" จาก history ไว้แสดงผลว่าติดจุดไหน (ค่าจริงในตารางตอนนี้ถูกรีเซตเป็น NULL แล้ว)
+                    check_area: r.check_area,
+                    check_shape: r.check_shape,
+                    remark: r.remark,
+                    reviewer: r.reviewer,
+                    review_ts: r.review_ts,
+                    user_remark: r.user_remark,
+                    user_remark_ts: r.user_remark_ts,
+                    fixed_pending_review: true
+                });
+                e.total_items++; e.total_fixed_pending_review++; p.fixed_pending_review++;
+            }
+        }
+
+        const data = Object.values(editorMap)
+            .map(e => ({ ...e, projects: Object.values(e.projects) }))
+            .sort((a, b) => b.total_not_fixed - a.total_not_fixed || b.total_items - a.total_items);
+
+        const summary = {
+            total_items:               data.reduce((s, e) => s + e.total_items, 0),
+            total_not_fixed:           data.reduce((s, e) => s + e.total_not_fixed, 0),
+            total_fixed_pending_review: data.reduce((s, e) => s + e.total_fixed_pending_review, 0),
+            editor_count:              data.length
+        };
+
+        res.json({ success: true, summary, data });
+    } catch (err) {
+        console.error('[NEEDS-FIX-ALL]', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });

@@ -1476,6 +1476,311 @@ ${bodyHtml}
 });
 
 /* ═════════════════════════════════════════════════════════════
+   MODAL – แดชบอร์ดภาพรวมทุกโปรเจค (ไม่แยกรายบุคคล)
+   ใช้กฎคิดพื้นที่/เงินแบบเดียวกับค่าจ้าง V3 (ดู /api/dashboard-overview ฝั่ง api.js) — เฉพาะคลาสยางพาราลงทะเบียน
+   + พื้นที่กันออกทั้งหมด (class_Area) เทียบกับเนื้อที่เป้าหมาย Rubr_total แต่รวมทั้งโปรเจคเป็นก้อนเดียว ไม่แยกรายคน
+   auto-refresh ทุก 20 วิเมื่อเปิดโมดัลค้างไว้ให้ดูความคืบหน้าแบบเรียลไทม์ */
+
+let dashboardOverviewModal = null;
+let dashboardOverviewData = [];
+let dashboardRefreshTimer = null;
+let dashboardOpenDetailIdx = new Set();
+const DASHBOARD_REFRESH_MS = 20000;
+
+document.getElementById('btnDashboardOverview').addEventListener('click', () => {
+    if (!dashboardOverviewModal) {
+        dashboardOverviewModal = new bootstrap.Modal(document.getElementById('dashboardOverviewModal'));
+        document.getElementById('dashboardOverviewModal').addEventListener('hidden.bs.modal', stopDashboardAutoRefresh);
+    }
+    dashboardOverviewModal.show();
+    loadDashboardOverview(false);
+    startDashboardAutoRefresh();
+});
+
+function startDashboardAutoRefresh() {
+    stopDashboardAutoRefresh();
+    dashboardRefreshTimer = setInterval(() => {
+        if (!document.getElementById('dash_autorefresh').checked) return;
+        loadDashboardOverview(true);
+    }, DASHBOARD_REFRESH_MS);
+}
+
+function stopDashboardAutoRefresh() {
+    if (dashboardRefreshTimer) {
+        clearInterval(dashboardRefreshTimer);
+        dashboardRefreshTimer = null;
+    }
+}
+
+/* ผู้ใช้กำลังเปิดดูรายละเอียดแปลงแบบเต็มจอของโปรเจคไหนอยู่หรือเปล่า — ใช้กันไม่ให้รีเฟรช (อัตโนมัติ/กดเอง/แก้เรท)
+   มารื้อ DOM ทับตอนกำลังดูอยู่ จนกล่องเต็มจอปิดตัวเองกลางคันแบบงงๆ (ดู renderDashboardOverview) */
+function isDashboardFullscreenActive() {
+    return !!document.querySelector('#dashboardOverviewWrap .payv2-fullscreen');
+}
+
+function loadDashboardOverview(isAutoRefresh) {
+    if (!isAutoRefresh && !isDashboardFullscreenActive()) {
+        document.getElementById('dashboardOverviewWrap').innerHTML = `
+            <div class="text-center text-muted py-4">
+                <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+            </div>`;
+    }
+    fetch('/rub/api/dashboard-overview')
+        .then(r => r.json())
+        .then(({ projects }) => {
+            dashboardOverviewData = projects || [];
+            renderDashboardOverview();
+            if (!isDashboardFullscreenActive()) {
+                document.getElementById('dash_last_updated').textContent =
+                    'อัปเดตล่าสุด ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            }
+        })
+        .catch(() => {
+            if (!isDashboardFullscreenActive()) {
+                document.getElementById('dashboardOverviewWrap').innerHTML =
+                    '<div class="alert alert-danger">โหลดข้อมูลไม่สำเร็จ</div>';
+            }
+        });
+}
+
+function renderDashboardOverview() {
+    // ผู้ใช้กำลังเปิดดูรายละเอียดแปลงแบบเต็มจออยู่ — ห้ามรื้อ DOM ทับตอนนี้เด็ดขาด ไม่งั้นกล่องเต็มจอจะปิดตัวเองกลางคัน
+    // (ปุ่มรีเฟรชอัตโนมัติ/กดรีเฟรชเอง/แก้เรท ล้วนเรียกฟังก์ชันนี้ ถ้าปล่อยให้รื้อระหว่างเปิดเต็มจอ จะโดนปิดเองแบบงงๆ)
+    // รอให้ผู้ใช้กดย่อออกจากเต็มจอก่อน ค่อยอัปเดตรอบถัดไปแทน
+    if (isDashboardFullscreenActive()) return;
+    payv2DestroyAllThumbMaps(); // การ์ดทั้งหมดกำลังจะถูกสร้างใหม่ เคลียร์แผนที่ย่อเก่าก่อนกันรั่ว/อ้างอิง container ที่หายไปแล้ว
+    const rateNs4   = parseFloat(document.getElementById('dash_rate_ns4').value) || 0;
+    const rateOther = parseFloat(document.getElementById('dash_rate_other').value) || 0;
+    const rateBonus = parseFloat(document.getElementById('dash_rate_bonus').value) || 0;
+    const data = dashboardOverviewData;
+    const wrap = document.getElementById('dashboardOverviewWrap');
+    const grandWrap = document.getElementById('dashboardGrandWrap');
+
+    if (!data || data.length === 0) {
+        grandWrap.innerHTML = '';
+        wrap.innerHTML = `<div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>ยังไม่มีโปรเจคในระบบ
+        </div>`;
+        return;
+    }
+
+    const fmt2 = (n) => (n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (n) => (n || 0).toLocaleString('th-TH');
+    // 1 ไร่ = 1600 ตร.ม. พอดี — ใช้กับ Rubr_total (เป้าหมาย) เพราะเป็นค่าไร่ตรงจากข้อมูลดิบ ไม่ได้ปัดเศษมาจาก sqm ก่อน
+    const fmtSqmFromRai = (rai) => Math.round((rai || 0) * 1600).toLocaleString('th-TH') + ' ตร.ม.';
+    // ใช้กับเนื้อที่ใช้คิดเงิน (class_Area) เพราะคอลัมน์นั้นถูกปัดเศษเป็นไร่ 2 ตำแหน่งไว้ตั้งแต่ตอนสร้างแล้ว
+    // เอาไร่ที่ปัดแล้วคูณ 1600 กลับจะเพี้ยนจากค่าจริง (เช่น 4.26×1600=6,816 แต่ ตร.ม.จริงคือ 6,810) จึงต้องใช้ drawn_sqm ที่ backend รวมจาก shpsplit_sqm ตรง ๆ แทน
+    const fmtSqmExact = (sqm) => Math.round(sqm || 0).toLocaleString('th-TH') + ' ตร.ม.';
+
+    let gTarget = 0, gDrawn = 0, gPay = 0, gTotalPlots = 0, gClassifiedPlots = 0, gBonusPlot = 0, gDeedTotal = 0;
+
+    const rows = data.map((p, i) => {
+        const areaPay = (p.ns4.area_rai * rateNs4) + (p.other.area_rai * rateOther);
+        const bonusPay = p.bonus.plot_count * rateBonus;
+        const pay = areaPay + bonusPay;
+        const progressPct = p.target_rai > 0 ? Math.min(100, (p.drawn_rai / p.target_rai) * 100) : (p.drawn_rai > 0 ? 100 : 0);
+        const isOver = p.target_rai > 0 && p.drawn_rai > p.target_rai;
+        const classifyPct = p.total_plots > 0 ? Math.round((p.classified_plots / p.total_plots) * 100) : 0;
+        const isOpen = dashboardOpenDetailIdx.has(i);
+        const plotCount = (p.plots || []).length;
+
+        gTarget += p.target_rai;
+        gDrawn += p.drawn_rai;
+        gPay += pay;
+        gTotalPlots += p.total_plots;
+        gClassifiedPlots += p.classified_plots;
+        gBonusPlot += p.bonus.plot_count;
+        gDeedTotal += p.deed_total_rai;
+
+        return `
+        <div class="dash-project-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <span class="dash-project-name"><i class="bi bi-folder2-open me-1 text-primary"></i>${p.tb_name}</span>
+                <span class="dash-pay-total" title="ค่าพื้นที่ ${fmt2(areaPay)} บาท + โบนัสหลายคลาส ${fmt2(bonusPay)} บาท">${fmt2(pay)} บาท</span>
+            </div>
+            <div class="dash-project-progress mb-2">
+                <div class="d-flex justify-content-between flex-wrap gap-1 dash-project-progress-label mb-1">
+                    <span title="จากเป้าหมายยางพาราลงทะเบียนทั้งหมด ${fmt2(p.target_rai)} ไร่ (${fmtSqmFromRai(p.target_rai)}) (รวมแปลงที่ยังไม่จำแนก)">
+                        เนื้อที่ใช้คิดเงิน ${fmt2(p.drawn_rai)} ไร่ (${fmtSqmExact(p.drawn_sqm)}) (เฉพาะแปลงที่จำแนกคลาสแล้ว) = ${fmt2(areaPay)} บาท
+                        ${p.bonus.plot_count > 0 ? `+ โบนัส ${fmt2(bonusPay)} บาท` : ''} = รวม <b>${fmt2(pay)} บาท</b>
+                    </span>
+                    <span>${progressPct.toFixed(0)}%</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar ${isOver ? 'is-over' : ''}" style="width:${progressPct}%"></div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span class="dash-stat-chip" title="เนื้อที่ตามโฉนดทั้งหมด (Deed_total) ของทุกแปลงในโปรเจคนี้ ไม่ว่าจะจำแนกคลาสแล้วหรือยัง"><i class="bi bi-file-earmark-text"></i> เนื้อที่โฉนด <b>${fmt2(p.deed_total_rai)}</b> ไร่</span>
+                <span class="dash-stat-chip" title="ยางพาราลงทะเบียน (classtype=rubber)"><i class="bi bi-tree text-success"></i> ยางพารา <b>${fmt2(p.rubber_rai)}</b> ไร่</span>
+                <span class="dash-stat-chip" title="พื้นที่กันออกทุกชนิด (ex_*)"><i class="bi bi-dash-circle text-warning"></i> กันออก <b>${fmt2(p.exclude_rai)}</b> ไร่</span>
+                <span class="dash-stat-chip"><span class="badge bg-success me-1">นส.4</span><b>${fmt0(p.ns4.plot_count)}</b> แปลง / ${fmt2(p.ns4.area_rai)} ไร่</span>
+                <span class="dash-stat-chip"><span class="badge bg-info text-dark me-1">อื่นๆ</span><b>${fmt0(p.other.plot_count)}</b> แปลง / ${fmt2(p.other.area_rai)} ไร่</span>
+                <span class="dash-stat-chip" title="แปลงที่มีตั้งแต่ 2 คลาสขึ้นไป ได้โบนัสคงที่ต่อแปลงเพิ่มจากค่าพื้นที่ (ดูยอดโบนัสที่บรรทัดค่าพื้นที่ด้านบน)"><span class="badge bg-warning text-dark me-1">หลายคลาส</span><b>${fmt0(p.bonus.plot_count)}</b> แปลง</span>
+                <span class="dash-stat-chip"><i class="bi bi-check2-square"></i> จำแนกแล้ว <b>${fmt0(p.classified_plots)}</b>/${fmt0(p.total_plots)} แปลง (${classifyPct}%)</span>
+                ${p.ineligible_plot_count > 0 ? `<span class="dash-warn-chip" title="แปลงที่จำแนกแล้วแต่ไม่มีคลาสยางพาราลงทะเบียน/พื้นที่กันออกเลย ไม่ถูกนับในเนื้อที่คิดเงิน"><i class="bi bi-exclamation-triangle me-1"></i>${fmt0(p.ineligible_plot_count)} แปลงไม่มีฐานคิดเงิน</span>` : ''}
+                ${plotCount > 0 ? `
+                <button type="button" class="btn btn-sm btn-outline-primary ms-auto" id="dash_detail_btn_${i}" onclick="toggleDashboardDetail(${i})"
+                    title="ดูรายแปลงที่ใช้คิดเงิน (class_Area) แยกยางพาราลงทะเบียน/พื้นที่กันออก พร้อมรูปแปลง">
+                    <i class="bi bi-list-ul me-1"></i>ดูรายละเอียดแปลง (${fmt0(plotCount)})
+                    <i class="bi ${isOpen ? 'bi-chevron-up' : 'bi-chevron-down'} ms-1" id="dash_detail_icon_${i}"></i>
+                </button>` : ''}
+            </div>
+            <div class="${isOpen ? '' : 'd-none'} mt-2" id="dash_detail_${i}"></div>
+        </div>`;
+    }).join('');
+
+    const gProgressPct = gTarget > 0 ? Math.min(100, (gDrawn / gTarget) * 100) : 0;
+    const gClassifyPct = gTotalPlots > 0 ? Math.round((gClassifiedPlots / gTotalPlots) * 100) : 0;
+
+    grandWrap.innerHTML = `
+        <div class="dash-grand-row mb-2">
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">โปรเจคทั้งหมด</div>
+                <div class="dash-grand-val">${fmt0(data.length)}</div>
+            </div>
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">เนื้อที่โฉนด (Deed_total)</div>
+                <div class="dash-grand-val">${fmt2(gDeedTotal)}</div>
+                <div class="dash-grand-sub">ไร่</div>
+            </div>
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">เป้าหมายยางพารา (Rubr_total)</div>
+                <div class="dash-grand-val">${fmt2(gTarget)}</div>
+                <div class="dash-grand-sub">ไร่</div>
+            </div>
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">เนื้อที่ใช้คิดเงิน (class_Area)</div>
+                <div class="dash-grand-val">${fmt2(gDrawn)}</div>
+                <div class="dash-grand-sub">ไร่ · ${gProgressPct.toFixed(0)}% ของเป้าหมาย</div>
+            </div>
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">จำแนกแล้ว</div>
+                <div class="dash-grand-val">${gClassifyPct}%</div>
+                <div class="dash-grand-sub">${fmt0(gClassifiedPlots)}/${fmt0(gTotalPlots)} แปลง</div>
+            </div>
+            <div class="dash-grand-card">
+                <div class="dash-grand-label">หลายคลาส (โบนัส)</div>
+                <div class="dash-grand-val">${fmt0(gBonusPlot)}</div>
+                <div class="dash-grand-sub">แปลง</div>
+            </div>
+            <div class="dash-grand-card is-highlight">
+                <div class="dash-grand-label">ประมาณการค่าจ้างรวม</div>
+                <div class="dash-grand-val is-money">${fmt2(gPay)}</div>
+                <div class="dash-grand-sub">บาท</div>
+            </div>
+        </div>
+        <div class="dash-project-progress mb-1">
+            <div class="progress">
+                <div class="progress-bar ${gTarget > 0 && gDrawn > gTarget ? 'is-over' : ''}" style="width:${gProgressPct}%"></div>
+            </div>
+        </div>`;
+
+    wrap.innerHTML = rows;
+    reopenDashboardDetails();
+}
+
+/* สร้าง/รีเฟรชการ์ดรายแปลง (class_Area) ของโปรเจคที่ i — ใช้ buildPayV3DetailHtml เดิมซ้ำได้เลย เพราะโครงสร้าง
+   ns4/other.by_deed_type/bonus/plots ของ dashboardOverviewData[i] เหมือนกับ "worker" ที่ V3 ใช้ทุกประการ
+   (ต่างกันแค่รวมทั้งโปรเจคเป็นก้อนเดียว ไม่แยก editor) — ได้ตัวกรอง/ค้นหา/ปุ่มเต็มจอ/รูปย่อแปลงมาฟรีโดยไม่ต้องเขียนใหม่
+   ใช้ idx = "dash{i}" กันชนกับ idx ตัวเลขล้วนที่โมดัล V3 ปกติใช้ เผื่อเปิดพร้อมกัน */
+function renderDashboardDetailRow(i) {
+    const row = document.getElementById(`dash_detail_${i}`);
+    const p = dashboardOverviewData[i];
+    if (!row || !p) return;
+    payv2DestroyAllThumbMaps(); // เนื้อหาการ์ดกำลังถูกสร้างใหม่ทับของเดิม เคลียร์แผนที่ย่อเก่ากันอ้างอิง container ที่หายไป
+    const rateNs4   = parseFloat(document.getElementById('dash_rate_ns4').value) || 0;
+    const rateOther = parseFloat(document.getElementById('dash_rate_other').value) || 0;
+    const rateBonus = parseFloat(document.getElementById('dash_rate_bonus').value) || 0;
+    row.innerHTML = buildPayV3DetailHtml(p, rateNs4, rateOther, rateBonus, p.tb_name, `dash${i}`);
+}
+
+/* กดปุ่ม "ดูรายละเอียดแปลง" ที่การ์ดโปรเจค i — เปิด/ปิดพร้อมจำสถานะไว้ใน dashboardOpenDetailIdx
+   เพื่อให้เปิดค้างข้ามการรีเฟรช/เปลี่ยนอัตราได้ (ดู reopenDashboardDetails) */
+function toggleDashboardDetail(i) {
+    const row = document.getElementById(`dash_detail_${i}`);
+    const icon = document.getElementById(`dash_detail_icon_${i}`);
+    if (!row) return;
+    const willShow = row.classList.contains('d-none');
+    row.classList.toggle('d-none');
+    if (icon) { icon.classList.toggle('bi-chevron-down'); icon.classList.toggle('bi-chevron-up'); }
+    if (willShow) {
+        dashboardOpenDetailIdx.add(i);
+        renderDashboardDetailRow(i);
+    } else {
+        dashboardOpenDetailIdx.delete(i);
+    }
+}
+
+/* เรียกหลังสร้างการ์ดโปรเจคใหม่ทั้งหมด (รีเฟรช/เปลี่ยนอัตรา) — เปิดพาแนลรายละเอียดที่ผู้ใช้เปิดค้างไว้กลับมาใหม่
+   พร้อมคำนวณยอดด้วยอัตราล่าสุดเสมอ ไม่ต้องกดเปิดซ้ำเองทุกครั้งที่ข้อมูลรีเฟรช */
+function reopenDashboardDetails() {
+    dashboardOpenDetailIdx.forEach(i => renderDashboardDetailRow(i));
+}
+
+['dash_rate_ns4', 'dash_rate_other', 'dash_rate_bonus'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderDashboardOverview);
+});
+
+document.getElementById('btnCalcDashboard').addEventListener('click', () => loadDashboardOverview(false));
+
+document.getElementById('btnPrintDashboard').addEventListener('click', () => {
+    const grandHtml = document.getElementById('dashboardGrandWrap').innerHTML;
+    const bodyHtml = document.getElementById('dashboardOverviewWrap').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>แดชบอร์ดภาพรวมทุกโปรเจค</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css">
+<style>
+  body { font-family:"Noto Sans Thai",sans-serif; padding:20px; }
+  .dash-grand-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+  .dash-grand-card{border:1px solid #ddd;border-radius:10px;padding:12px;}
+  .dash-grand-label{font-size:0.72rem;color:#78909c;text-transform:uppercase;}
+  .dash-grand-val{font-size:1.3rem;font-weight:800;color:#0d47a1;}
+  .dash-grand-val.is-money{color:#2e7d32;}
+  .dash-grand-sub{font-size:0.75rem;color:#90a4ae;}
+  .dash-project-card{border:1px solid #ddd;border-radius:10px;padding:12px;margin-bottom:10px;}
+  .dash-project-name{font-weight:700;}
+  .dash-pay-total{font-weight:800;color:#2e7d32;}
+  .dash-stat-chip{display:inline-flex;gap:4px;font-size:0.8rem;background:#f5f7fa;border-radius:8px;padding:3px 9px;margin:2px;}
+  .dash-warn-chip{font-size:0.75rem;color:#ef6c00;background:#fff3e0;border-radius:8px;padding:2px 8px;margin:2px;}
+  .progress{height:10px;border-radius:8px;background:#e3ecfa;overflow:hidden;margin-top:4px;}
+  .progress-bar{background:linear-gradient(135deg,#42a5f5,#1565c0);height:100%;}
+  .pay-amount { color:#1565c0; }
+  .payv2-summary-sep { margin:0 6px; color:#cfd8dc; }
+  .payv2-rate-legend { font-size:0.78rem; color:#546e7a; margin:6px 0; }
+  .payv2-summary-banner { font-size:0.85rem; background:#e3f2fd; border-radius:8px; padding:6px 10px; margin-bottom:8px; }
+  .payv2-id-range { font-family:"Consolas","SFMono-Regular",monospace; font-size:0.8rem; color:#2e7d32; word-break:break-all; }
+  .payv2-plot-list { display:flex; flex-direction:column; gap:6px; max-height:none !important; overflow:visible !important; }
+  .payv2-plot-card { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; background:#fff; border:1px solid #bbdefb; border-radius:8px; padding:8px 12px; font-size:0.82rem; }
+  .payv2-plot-head { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .payv2-plot-calc { color:#37474f; flex:1 1 240px; line-height:1.7; }
+  .payv2-plot-total { margin-left:auto; white-space:nowrap; color:#1565c0; }
+  .payv2-plot-card.is-multi { border-left:4px solid #f9a825; background:#fffbeb; }
+  .payv2-bonus-chip { display:inline-block; font-size:0.74rem; background:#fff3cd; color:#8a6100; border:1px solid #ffe08a; border-radius:10px; padding:1px 8px; margin-left:2px; }
+  .payv2-plot-search-bar { display:none !important; }
+  .payv2-plot-card.batch-hidden { display:flex !important; }
+  .payv2-plot-empty { display:none !important; }
+  .payv2-loadmore-bar { display:none !important; }
+  .payv2-plot-thumb-wrap { display:none !important; }
+  @media print { button,.btn { display:none; } }
+</style>
+</head>
+<body>
+<h4 style="color:#0d47a1">แดชบอร์ดภาพรวมทุกโปรเจค</h4>
+<p class="text-muted mb-3">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH',{day:'2-digit',month:'long',year:'numeric'})}</p>
+${grandHtml}
+<div class="mt-3">${bodyHtml}</div>
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`);
+    win.document.close();
+});
+
+/* ═════════════════════════════════════════════════════════════
    MODAL 5 – คำนวณค่าจ้างรายโปรเจค (Payment per Layer)
 ═════════════════════════════════════════════════════════════ */
 
@@ -1578,12 +1883,15 @@ function payPlotDetailCard(plot, tb, rateNs4, rateOther, hidden, displayIndex) {
     const totalPay = plot.area_rai * rate;
     const fmt = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const searchText = `${plot.deed_type} ${plot.id}${plot.is_multi ? ' หลายคลาส multi' : ''}`.toLowerCase();
+    // แปลงคลาสเดียว (is_multi=false) ในนี้ไม่ได้การันตีว่าคลาสนั้นคือ 'rubber' เสมอไป (V1 ไม่ได้กรองด้วยคลาสเลย
+    // คิดเงินจาก Rubr_total ล้วน) จึงต้องเช็ค is_pure_rubber_class จริงแทนการเดาจาก is_multi เฉย ๆ
+    const isPureRubber = plot.is_pure_rubber_class !== false;
     const cls = ['payv2-plot-card'];
     if (plot.is_multi) cls.push('is-multi');
     if (hidden) cls.push('batch-hidden');
     return `
     <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}"
-        data-deed="${plot.deed_type}" data-total="${totalPay}">
+        data-pure-rubber="${isPureRubber ? '1' : '0'}" data-deed="${plot.deed_type}" data-total="${totalPay}">
         <div class="payv2-plot-head">
             <span class="payv2-plot-index">${displayIndex}</span>
             ${payV2IdChips([plot.id], tb, 'rubr_total')}
@@ -1826,7 +2134,7 @@ function pay1ApplyPlotFilter(wrap) {
     wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
         const textMatch = !q || card.dataset.search.includes(q);
         const multiMatch = !multiOnly || (card.dataset.multi === '1' && (!multiDeed || card.dataset.deed === multiDeed));
-        const rubberMatch = !rubberOnly || (card.dataset.multi === '0' && (!rubberDeed || card.dataset.deed === rubberDeed));
+        const rubberMatch = !rubberOnly || (card.dataset.pureRubber === '1' && (!rubberDeed || card.dataset.deed === rubberDeed));
         const match = textMatch && multiMatch && rubberMatch;
         card.classList.toggle('d-none', !match);
         if (match) {
@@ -2419,6 +2727,11 @@ function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, ra
     const bonusPay = plot.is_multi ? rateBonus : 0;
     const totalPay = areaPay + bonusPay;
     const fmt = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // แปลงคลาสเดียว (is_multi=false) จาก V3/แดชบอร์ด อาจเป็นพื้นที่กันออกล้วนก็ได้ ไม่ใช่ยางพาราจริงเสมอไป
+    // (V2 ไม่ส่ง is_pure_rubber_class มา เพราะฝั่ง V2 ถ้าคลาสเดียวก็การันตีเป็น 'rubber' อยู่แล้ว จึง default เป็น true
+    // เมื่อไม่ใช่หลายคลาส — ต้องกัน !plot.is_multi ไว้ด้วย ไม่งั้นแปลงหลายคลาสของ V2 จะเข้าเงื่อนไข "ยางพาราล้วน" ผิดๆ)
+    const isPureRubber = !plot.is_multi && plot.is_pure_rubber_class !== false;
+    const areaLabel = plot.is_multi ? 'ไร่รวม' : (isPureRubber ? 'ไร่ยาง' : 'ไร่กันออก');
     // data-search รวมประเภทโฉนด + ไอดี + เลขทะเบียน + คำว่า "หลายคลาส"/"multi" ไว้ในช่องเดียว เพื่อให้พิมพ์ค้นหาคำไหนก็เจอ
     const searchText = `${deedLabel} ${plot.id} ${plot.regis_no || ''}${plot.is_multi ? ' หลายคลาส multi' : ''}`.toLowerCase();
     const cls = ['payv2-plot-card'];
@@ -2426,16 +2739,17 @@ function payV2PlotDetailCard(plot, badgeClass, deedLabel, rateNs4, rateOther, ra
     if (hidden) cls.push('batch-hidden');
     return `
     <div class="${cls.join(' ')}" data-search="${searchText}" data-multi="${plot.is_multi ? '1' : '0'}"
-        data-deed="${deedLabel}" data-total="${totalPay}" data-bonus="${bonusPay}">
+        data-pure-rubber="${isPureRubber ? '1' : '0'}" data-deed="${deedLabel}" data-total="${totalPay}" data-bonus="${bonusPay}">
         <div class="payv2-plot-head">
             <span class="payv2-plot-index">${displayIndex}</span>
             ${payV2IdChips([plot.id], tb, basis)}
             <span class="badge ${badgeClass}">${deedLabel}</span>
             ${plot.is_multi ? `<span class="badge bg-warning text-dark">หลายคลาส (${plot.class_count} คลาส)</span>` : ''}
+            ${!plot.is_multi && !isPureRubber ? `<span class="badge bg-secondary" title="แปลงนี้ไม่มีคลาสยางพาราลงทะเบียนเลย มีแต่พื้นที่กันออก แต่ยังเข้าเงื่อนไขคิดเงิน V3 ได้">พื้นที่กันออกล้วน</span>` : ''}
         </div>
         ${plot.regis_no ? `<div class="payv2-plot-regis"><i class="bi bi-person-vcard me-1"></i>เลขทะเบียน ${plot.regis_no}</div>` : ''}
         <div class="payv2-plot-calc">
-            ${plot.area_rai.toFixed(2)} ${plot.is_multi ? 'ไร่รวม' : 'ไร่ยาง'} &times; ${rate.toLocaleString('th-TH')} บาท/ไร่ = ${fmt(areaPay)} บาท${plot.is_multi ? ` <span class="payv2-bonus-chip">+ โบนัส ${fmt(bonusPay)} บาท</span>` : ''}
+            ${plot.area_rai.toFixed(2)} ${areaLabel} &times; ${rate.toLocaleString('th-TH')} บาท/ไร่ = ${fmt(areaPay)} บาท${plot.is_multi ? ` <span class="payv2-bonus-chip">+ โบนัส ${fmt(bonusPay)} บาท</span>` : ''}
         </div>
         <div class="payv2-plot-total">รวม <span class="pay-amount fw-bold">${fmt(totalPay)}</span> บาท</div>
         <div class="payv2-plot-thumb-wrap">
@@ -2514,7 +2828,7 @@ function buildPayV2DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
     // เลือกกรองเจาะจงประเภทโฉนดได้ ไม่ใช่กรองรวมทุกประเภทอย่างเดียว
     const pureRubberByDeed = {};
     entries.forEach(e => {
-        if (!e.p.is_multi) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
+        if (!e.p.is_multi && e.p.is_pure_rubber_class !== false) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
     });
     const pureRubberTotal = Object.values(pureRubberByDeed).reduce((a, b) => a + b, 0);
     const rubberDeedItems = deedTypesSeen
@@ -2776,7 +3090,7 @@ function applyPayv2PlotFilter(wrap) {
     wrap.querySelectorAll('.payv2-plot-card').forEach(card => {
         const textMatch = !q || card.dataset.search.includes(q);
         const multiMatch = !multiOnly || (card.dataset.multi === '1' && (!multiDeed || card.dataset.deed === multiDeed));
-        const rubberMatch = !rubberOnly || (card.dataset.multi === '0' && (!rubberDeed || card.dataset.deed === rubberDeed));
+        const rubberMatch = !rubberOnly || (card.dataset.pureRubber === '1' && (!rubberDeed || card.dataset.deed === rubberDeed));
         const match = textMatch && multiMatch && rubberMatch;
         card.classList.toggle('d-none', !match);
         if (match) {
@@ -3300,7 +3614,7 @@ function buildPayV3DetailHtml(worker, rateNs4, rateOther, rateBonus, tb, idx) {
 
     const pureRubberByDeed = {};
     entries.forEach(e => {
-        if (!e.p.is_multi) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
+        if (!e.p.is_multi && e.p.is_pure_rubber_class !== false) pureRubberByDeed[e.deedLabel] = (pureRubberByDeed[e.deedLabel] || 0) + 1;
     });
     const pureRubberTotal = Object.values(pureRubberByDeed).reduce((a, b) => a + b, 0);
     const rubberDeedItems = deedTypesSeen

@@ -463,16 +463,24 @@ hr {
 }
 
 .ah-list {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.5rem;
+}
+
+@media (max-width: 768px) {
+    .ah-list {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 .home-assignee-card {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.35rem 0.65rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    min-width: 0;
+    padding: 0.45rem 0.65rem;
     background: #fff;
     border: 1px solid rgba(0,0,0,0.06);
     border-radius: 12px;
@@ -503,20 +511,27 @@ hr {
     height: 24px;
     border-radius: 50%;
     object-fit: cover;
+    flex-shrink: 0;
 }
 
 .ha-range {
+    align-self: flex-start;
     font-size: 0.72rem;
     color: #78909c;
     background: rgba(0,0,0,0.04);
     padding: 1px 6px;
     border-radius: 20px;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .is-me .ha-range {
     background: rgba(74, 124, 89, 0.1);
     color: #4a7c59;
+}
+
+.home-assignee-card .due-badge {
+    margin-left: 0;
 }
 
 .btn-work-now {
@@ -590,46 +605,9 @@ hr {
     opacity: 0.8;
 }
 
-.home-assignee-card {
-    display: inline-flex;
-    align-items: center;
-    background: white;
-    padding: 6px 12px;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    margin-right: 12px;
-    margin-bottom: 8px;
-    border: 1px solid rgba(0,0,0,0.05);
-    transition: all 0.2s;
-    cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-
-.home-assignee-card:hover {
-    box-shadow: 0 3px 8px rgba(0,0,0,0.08);
-    transform: translateY(-1px);
-}
-
-.ha-avatar {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    margin-right: 10px;
-    color: #444;
-}
-
-.ha-range {
-    margin-left: 10px;
-    font-size: 0.72rem;
-    background: #f1f3f5;
-    padding: 2px 8px;
-    border-radius: 6px;
-    color: #666;
-    font-weight: 500;
-}
-
 /* ===== Due date badges + notification banner (กำหนดส่งงาน) ===== */
 .due-badge {
+    align-self: flex-start;
     display: inline-flex;
     align-items: center;
     gap: 4px;
