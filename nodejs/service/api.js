@@ -4854,5 +4854,143 @@ app.get('/api/pending-review/:tb', async (req, res) => {
     }
 });
 
+/* GET /api/needs-fix-all
+   สรุปแปลงที่แอดมินตรวจแล้วแต่ "ไม่ผ่าน" (check_area/check_shape) ข้ามทุกโปรเจคใน layerlist
+   จัดกลุ่มตาม editor (คนแก้ไขแปลง) เพื่อให้เห็นภาพรวมว่าของใคร โปรเจคไหน ต้องแก้ไข โดยไม่ต้องเข้าไปดูทีละโปรเจค
+   ใช้กับหน้า worker ที่ต้อง auto-refresh แบบเรียลไทม์
+
+   หมายเหตุ: ตอน worker แก้ไข landuse/geometry จริง (update_landuse, update_geometry) ระบบจะ "รีเซต"
+   check_area/check_shape/reviewer/review_ts ของแถวนั้นกลับเป็น NULL ทันที (ดู saveReviewHistoryBySubId
+   ก่อนรีเซตในทั้งสอง endpoint) เพื่อบังคับให้แอดมินตรวจซ้ำ — แถวที่แก้แล้วจึงไม่มีค่า 'ไม่ผ่าน' ค้างอยู่ให้เห็นอีกต่อไป
+   ต้องอาศัย review_history (snapshot ก่อนรีเซตทุกครั้ง) เพื่อรู้ว่าแถวที่ตอนนี้ reviewer เป็น NULL อยู่
+   เคย "ไม่ผ่าน" มาก่อนหรือไม่ ถึงจะนับเป็น "แก้ไขแล้ว รอตรวจซ้ำ" ได้ถูกต้อง (ไม่ใช่แค่แถวที่ยังไม่เคยตรวจเลย) */
+app.get('/api/needs-fix-all', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name FROM layerlist ORDER BY created_at`);
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        await ensureReviewHistoryTable();
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    total_items: 0,
+                    total_not_fixed: 0,
+                    total_fixed_pending_review: 0,
+                    projects: {}
+                };
+            }
+            return editorMap[name];
+        };
+        const ensureProject = (e, tb, tbNameOriginal) => {
+            if (!e.projects[tb]) e.projects[tb] = { tb_name: tbNameOriginal, items: [], not_fixed: 0, fixed_pending_review: 0 };
+            return e.projects[tb];
+        };
+
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+            if (!reclassExists.rows[0].exists) continue;
+
+            await ensureReclassReviewColumns(tb);
+
+            // ── ยังไม่ได้แก้ไข: แถวที่ยังค้างสถานะ "ไม่ผ่าน" อยู่ตอนนี้ (worker ยังไม่ได้แตะข้อมูลเลยตั้งแต่แอดมินตรวจ) ──
+            const notFixedRes = await pool.query(`
+                SELECT a.id, a.sub_id, a.editor, a.check_area, a.check_shape, a.remark,
+                    a.reviewer, a.review_ts, a.user_remark, a.user_remark_ts,
+                    COALESCE(NULLIF(b."Full_nam", ''), CONCAT_WS(' ', b."F_name", b."L_name")) AS farm_name
+                FROM reclass_${tb} a
+                LEFT JOIN ${tb} b ON a.id = b.id
+                WHERE a.check_area = 'ไม่ผ่าน' OR a.check_shape = 'ไม่ผ่าน'
+            `).catch(() => ({ rows: [] }));
+
+            for (const r of notFixedRes.rows) {
+                const e = ensureEditor(r.editor || 'ไม่ทราบผู้แก้ไข');
+                const p = ensureProject(e, tb, layer.tb_name);
+                p.items.push({
+                    id: r.id,
+                    sub_id: r.sub_id,
+                    farm_name: r.farm_name,
+                    check_area: r.check_area,
+                    check_shape: r.check_shape,
+                    remark: r.remark,
+                    reviewer: r.reviewer,
+                    review_ts: r.review_ts,
+                    user_remark: r.user_remark,
+                    user_remark_ts: r.user_remark_ts,
+                    fixed_pending_review: false
+                });
+                e.total_items++; e.total_not_fixed++; p.not_fixed++;
+            }
+
+            // ── แก้ไขแล้ว รอตรวจซ้ำ: ตอนนี้ยังไม่มีคนตรวจ (reviewer เป็น NULL) แต่ครั้งล่าสุดที่เคยตรวจ (จาก review_history) คือ "ไม่ผ่าน"
+            //    แปลว่ามีคนแก้ไข landuse/geometry ไปแล้วหลังโดนตีกลับ กำลังรอแอดมินตรวจซ้ำ ──
+            const pendingFixRes = await pool.query(`
+                WITH latest_hist AS (
+                    SELECT DISTINCT ON (sub_id) sub_id, check_area, check_shape, reviewer, review_ts
+                    FROM review_history
+                    WHERE tb_name = $1
+                    ORDER BY sub_id, reset_ts DESC
+                )
+                SELECT a.id, a.sub_id, a.editor, a.remark, a.user_remark, a.user_remark_ts,
+                    h.check_area, h.check_shape, h.reviewer, h.review_ts,
+                    COALESCE(NULLIF(b."Full_nam", ''), CONCAT_WS(' ', b."F_name", b."L_name")) AS farm_name
+                FROM reclass_${tb} a
+                JOIN latest_hist h ON h.sub_id = a.sub_id
+                LEFT JOIN ${tb} b ON a.id = b.id
+                WHERE (a.reviewer IS NULL OR a.reviewer = '')
+                  AND (h.check_area = 'ไม่ผ่าน' OR h.check_shape = 'ไม่ผ่าน')
+            `, [tb]).catch(() => ({ rows: [] }));
+
+            for (const r of pendingFixRes.rows) {
+                const e = ensureEditor(r.editor || 'ไม่ทราบผู้แก้ไข');
+                const p = ensureProject(e, tb, layer.tb_name);
+                p.items.push({
+                    id: r.id,
+                    sub_id: r.sub_id,
+                    farm_name: r.farm_name,
+                    // เก็บสถานะที่เคย "ไม่ผ่าน" จาก history ไว้แสดงผลว่าติดจุดไหน (ค่าจริงในตารางตอนนี้ถูกรีเซตเป็น NULL แล้ว)
+                    check_area: r.check_area,
+                    check_shape: r.check_shape,
+                    remark: r.remark,
+                    reviewer: r.reviewer,
+                    review_ts: r.review_ts,
+                    user_remark: r.user_remark,
+                    user_remark_ts: r.user_remark_ts,
+                    fixed_pending_review: true
+                });
+                e.total_items++; e.total_fixed_pending_review++; p.fixed_pending_review++;
+            }
+        }
+
+        const data = Object.values(editorMap)
+            .map(e => ({ ...e, projects: Object.values(e.projects) }))
+            .sort((a, b) => b.total_not_fixed - a.total_not_fixed || b.total_items - a.total_items);
+
+        const summary = {
+            total_items:               data.reduce((s, e) => s + e.total_items, 0),
+            total_not_fixed:           data.reduce((s, e) => s + e.total_not_fixed, 0),
+            total_fixed_pending_review: data.reduce((s, e) => s + e.total_fixed_pending_review, 0),
+            editor_count:              data.length
+        };
+
+        res.json({ success: true, summary, data });
+    } catch (err) {
+        console.error('[NEEDS-FIX-ALL]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = app;
 

@@ -3395,6 +3395,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await loadTaskProgress(tb, currentUser);
             }
 
+            // Deep-link จากหน้า worker (ภาพรวมงานที่ต้องแก้ไขข้ามโปรเจค) — เปิดมาแล้วกรองเฉพาะแปลง "ไม่ผ่าน" ทันที
+            // ต้องกรองหลังรู้ role แล้วเท่านั้น เพราะ admin/worker ใช้กลไกกรองคนละชุด (แผงข้อมูลคนละอันถูกซ่อน/แสดงตาม role)
+            if (urlParams.get('filter') === 'fail') {
+                if (_userRole === 'admin') {
+                    $('.btn-filter-status[data-filter="fail"]').trigger('click');
+                } else {
+                    $('#workerStatusFilter .worker-status-card[data-filter="fail"]').trigger('click');
+                }
+            }
+
             // Logout handler
             document.getElementById('logout-link').addEventListener('click', async (e) => {
                 e.preventDefault();

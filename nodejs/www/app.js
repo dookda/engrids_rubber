@@ -652,6 +652,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             document.getElementById('display-name').textContent = user.displayName;
 
+            // ปุ่ม "งานที่ต้องแก้ไข" — สรุปแปลงที่แอดมินตรวจแล้วไม่ผ่านของทุกคน ทุกโปรเจค แสดงให้ผู้ login ทุก role เห็น
+            document.getElementById('btnNeedsFixAll').style.display = '';
+
             // แสดง role badge
             const roleBadgeColors = { admin: '#dc3545', worker: '#198754' };
             const roleEl = document.createElement('span');
