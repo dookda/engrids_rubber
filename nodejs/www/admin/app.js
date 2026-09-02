@@ -1579,7 +1579,7 @@ function renderDashboardOverview() {
         const bonusPay = p.bonus.plot_count * rateBonus;
         const pay = areaPay + bonusPay;
         const progressPct = p.target_rai > 0 ? Math.min(100, (p.drawn_rai / p.target_rai) * 100) : (p.drawn_rai > 0 ? 100 : 0);
-        const isOver = p.target_rai > 0 && p.drawn_rai > p.target_rai;
+        const isComplete = progressPct >= 100;
         const classifyPct = p.total_plots > 0 ? Math.round((p.classified_plots / p.total_plots) * 100) : 0;
         const isOpen = dashboardOpenDetailIdx.has(i);
         const plotCount = (p.plots || []).length;
@@ -1607,7 +1607,7 @@ function renderDashboardOverview() {
                     <span>${progressPct.toFixed(0)}%</span>
                 </div>
                 <div class="progress">
-                    <div class="progress-bar ${isOver ? 'is-over' : ''}" style="width:${progressPct}%"></div>
+                    <div class="progress-bar ${isComplete ? 'is-complete' : ''}" style="width:${progressPct}%"></div>
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -1672,7 +1672,7 @@ function renderDashboardOverview() {
         </div>
         <div class="dash-project-progress mb-1">
             <div class="progress">
-                <div class="progress-bar ${gTarget > 0 && gDrawn > gTarget ? 'is-over' : ''}" style="width:${gProgressPct}%"></div>
+                <div class="progress-bar ${gProgressPct >= 100 ? 'is-complete' : ''}" style="width:${gProgressPct}%"></div>
             </div>
         </div>`;
 
@@ -1748,8 +1748,9 @@ document.getElementById('btnPrintDashboard').addEventListener('click', () => {
   .dash-pay-total{font-weight:800;color:#2e7d32;}
   .dash-stat-chip{display:inline-flex;gap:4px;font-size:0.8rem;background:#f5f7fa;border-radius:8px;padding:3px 9px;margin:2px;}
   .dash-warn-chip{font-size:0.75rem;color:#ef6c00;background:#fff3e0;border-radius:8px;padding:2px 8px;margin:2px;}
-  .progress{height:10px;border-radius:8px;background:#e3ecfa;overflow:hidden;margin-top:4px;}
-  .progress-bar{background:linear-gradient(135deg,#42a5f5,#1565c0);height:100%;}
+  .progress{height:10px;border-radius:8px;background:#fdecea;overflow:hidden;margin-top:4px;}
+  .progress-bar{background:linear-gradient(135deg,#ef5350,#c62828);height:100%;}
+  .progress-bar.is-complete{background:linear-gradient(135deg,#66bb6a,#2e7d32);}
   .pay-amount { color:#1565c0; }
   .payv2-summary-sep { margin:0 6px; color:#cfd8dc; }
   .payv2-rate-legend { font-size:0.78rem; color:#546e7a; margin:6px 0; }
