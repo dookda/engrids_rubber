@@ -94,10 +94,6 @@ function renderProjectBlock(editorKey, proj) {
                     ${proj.fixed_pending_review ? `<span class="badge wk-badge-pending">${proj.fixed_pending_review} รอตรวจซ้ำ</span>` : ''}
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    <a href="../reclassdash/index.html?tb=${encodeURIComponent(proj.tb_name)}&filter=fail"
-                       class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();">
-                        <i class="bi bi-box-arrow-up-right me-1"></i>ไปดู/แก้ไข
-                    </a>
                     <i class="bi bi-chevron-down"></i>
                 </div>
             </div>

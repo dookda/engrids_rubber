@@ -139,6 +139,7 @@ async function ensureReclassReviewColumns(tb) {
         { name: 'topology_status',     type: 'text' },
         { name: 'topology_detail',     type: 'json' },
         { name: 'topology_checked_ts', type: 'timestamp without time zone' },
+        { name: 'editor',          type: 'text' },
     ];
     for (const col of cols) {
         await pool.query(`
