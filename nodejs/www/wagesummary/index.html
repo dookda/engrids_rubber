@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สรุปค่าจ้างรวม – ทุกโปรเจค</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@100..900&display=swap">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css"
+        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.12.1/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="./../assets/bootstrap.min.css">
+    <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+    <div class="container-fluid mt-5 px-4">
+        <input type="hidden" id="chkLogin">
+
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="page-header d-flex align-items-center gap-3">
+                <div class="page-icon"><i class="bi bi-cash-coin"></i></div>
+                <div>
+                    <h1 class="mb-0" style="font-size:1.6rem;">สรุปค่าจ้างรวม</h1>
+                    <p class="text-muted mb-0">รวมค่าจ้างของแต่ละคนจากทุกโปรเจค เปรียบเทียบ 2 วิธีคิดแยกอิสระจากกัน</p>
+                </div>
+            </div>
+            <div id="user-panel" class="d-flex align-items-center">
+                <div id="profile-section" class="dropdown d-flex align-items-center" style="display: none !important;">
+                    <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        <img id="profile-image" class="rounded-circle me-2"
+                            style="width: 32px; height: 32px; object-fit: cover" alt="Profile picture">
+                        <span id="display-name" class="fw-medium"></span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="/rub/index.html"><i class="bi bi-speedometer2 me-1"></i> แดชบอร์ด</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="#" id="logout-link">Logout</a></li>
+                    </ul>
+                </div>
+                <a href="/rub/auth/google" id="google-login-link">
+                    <img src="https://developers.google.com/identity/images/btn_google_signin_dark_normal_web.png"
+                        alt="Sign in with Google">
+                </a>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <a href="/rub/admin/index.html" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>กลับหน้าแอดมิน
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span id="lastUpdated" class="small text-muted"></span>
+                <button class="btn btn-success btn-sm" id="btnRefreshNow">
+                    <i class="bi bi-arrow-clockwise me-1"></i>รีเฟรชเลย
+                </button>
+            </div>
+        </div>
+
+        <!-- 2 ฝั่ง: คำนวณค่าจ้าง (V1) ซ้าย / คำนวณค่าจ้าง V3 ขวา — คิดแยกเป็นอิสระจากกันโดยสิ้นเชิง -->
+        <div class="row g-3">
+            <div class="col-lg-6">
+                <div class="ws-method-panel ws-theme-v1">
+                    <div class="ws-method-header">
+                        <i class="bi bi-calculator-fill me-2"></i>คำนวณค่าจ้าง
+                        <span class="ws-method-sub">คิดจาก Rubr_total (ข้อมูลดิบ ไม่มีโบนัสหลายคลาส)</span>
+                    </div>
+                    <div class="ws-method-body">
+                        <div class="ws-rate-bar mb-3">
+                            <div class="table-responsive">
+                                <table class="table table-sm ws-rate-table mb-0">
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge bg-success">นส.4</span></td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" id="ws_rate_ns4_v1" class="form-control" value="0.5" min="0" step="0.1">
+                                                    <span class="input-group-text">บาท/ไร่</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-info text-dark">อื่นๆ</span></td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" id="ws_rate_other_v1" class="form-control" value="1" min="0" step="0.1">
+                                                    <span class="input-group-text">บาท/ไร่</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="text-end mt-2">
+                                <button class="btn btn-sm ws-calc-btn ws-calc-btn-v1" id="btnCalcWageV1">
+                                    <i class="bi bi-calculator me-1"></i>คำนวณ
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3" id="summaryCardsV1"></div>
+                        <div id="wageListWrapV1">
+                            <div class="text-center text-muted py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="ws-method-panel ws-theme-v3">
+                    <div class="ws-method-header">
+                        <i class="bi bi-calculator-fill me-2"></i>คำนวณค่าจ้าง V3
+                        <span class="ws-method-sub">คิดจาก class_Area เฉพาะยางลงทะเบียน + พื้นที่กันออก มีโบนัสหลายคลาส</span>
+                    </div>
+                    <div class="ws-method-body">
+                        <div class="ws-rate-bar mb-3">
+                            <div class="table-responsive">
+                                <table class="table table-sm ws-rate-table mb-0">
+                                    <tbody>
+                                        <tr>
+                                            <td><span class="badge bg-success">นส.4</span></td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" id="ws_rate_ns4_v3" class="form-control" value="0.5" min="0" step="0.1">
+                                                    <span class="input-group-text">บาท/ไร่</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-info text-dark">อื่นๆ</span></td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" id="ws_rate_other_v3" class="form-control" value="1" min="0" step="0.1">
+                                                    <span class="input-group-text">บาท/ไร่</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td><span class="badge bg-warning text-dark">โบนัส</span></td>
+                                            <td>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" id="ws_rate_bonus_v3" class="form-control" value="0.5" min="0" step="0.1">
+                                                    <span class="input-group-text">บาท/แปลง</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="text-end mt-2">
+                                <button class="btn btn-sm ws-calc-btn ws-calc-btn-v3" id="btnCalcWageV3">
+                                    <i class="bi bi-calculator me-1"></i>คำนวณ
+                                </button>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3" id="summaryCardsV3"></div>
+                        <div id="wageListWrapV3">
+                            <div class="text-center text-muted py-4">
+                                <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลดข้อมูล...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+        crossorigin="anonymous"></script>
+    <script src="./app.js"></script>
+</body>
+
+</html>
