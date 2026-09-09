@@ -5012,5 +5012,217 @@ app.get('/api/needs-fix-all', async (req, res) => {
     }
 });
 
+/* GET /api/wage-summary-v1-all
+   สรุปค่าจ้าง V1 (คิดจาก Rubr_total ข้อมูลดิบ ไม่ใช่ class_Area จากตาราง reclass) รวมทุกโปรเจคใน layerlist
+   ใช้กฎเดียวกับ /api/worker-summary/:tb ทุกประการ — แยกกลุ่ม ns4/other ตามประเภทโฉนด ไม่มีโบนัสหลายคลาส
+   นับเฉพาะแปลงที่ classified = TRUE และมี Rubr_total > 0 เท่านั้น — อ่านคอลัมน์ editor จากตารางหลัก <tb> โดยตรง
+   (คนละแหล่งข้อมูลกับ wage-summary-v3-all ที่อ่านจาก reclass_<tb>.editor) ตั้งใจแยกเป็นคนละ endpoint กันคนละชุด
+   เพื่อให้สองวิธีคิดเงิน (V1/V3) เป็นอิสระต่อกันอย่างสมบูรณ์ ไม่ปนกัน ให้แอดมินเทียบผลสองแบบพร้อมกันได้ */
+app.get('/api/wage-summary-v1-all', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name FROM layerlist ORDER BY created_at`);
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    ns4: { plot_count: 0, area_rai: 0 },
+                    other: { plot_count: 0, area_rai: 0 },
+                    projects: {}
+                };
+            }
+            return editorMap[name];
+        };
+        const ensureProject = (e, tb, tbNameOriginal) => {
+            if (!e.projects[tb]) {
+                e.projects[tb] = {
+                    tb_name: tbNameOriginal,
+                    ns4: { plot_count: 0, area_rai: 0 },
+                    other: { plot_count: 0, area_rai: 0 }
+                };
+            }
+            return e.projects[tb];
+        };
+
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const detailsRes = await pool.query(`
+                SELECT editor, COALESCE("Deed_Type", 'ไม่ระบุ') AS deed_type,
+                    ROUND(COALESCE("Rubr_total", 0)::numeric, 4) AS total_rai
+                FROM ${tb}
+                WHERE editor IS NOT NULL AND editor != ''
+                    AND "Rubr_total" IS NOT NULL AND "Rubr_total" > 0
+                    AND classified = TRUE
+            `).catch(() => ({ rows: [] }));
+
+            detailsRes.rows.forEach(r => {
+                const rai = parseFloat(r.total_rai) || 0;
+                const e = ensureEditor(r.editor);
+                const p = ensureProject(e, tb, layer.tb_name);
+                const tier = isNs4(r.deed_type) ? 'ns4' : 'other';
+                e[tier].plot_count += 1;
+                e[tier].area_rai += rai;
+                p[tier].plot_count += 1;
+                p[tier].area_rai += rai;
+            });
+        }
+
+        const data = Object.values(editorMap).map(e => {
+            e.ns4.area_rai = parseFloat(e.ns4.area_rai.toFixed(4));
+            e.other.area_rai = parseFloat(e.other.area_rai.toFixed(4));
+            const projects = Object.values(e.projects)
+                .map(p => {
+                    p.ns4.area_rai = parseFloat(p.ns4.area_rai.toFixed(4));
+                    p.other.area_rai = parseFloat(p.other.area_rai.toFixed(4));
+                    return p;
+                })
+                .sort((a, b) => (b.ns4.area_rai + b.other.area_rai) - (a.ns4.area_rai + a.other.area_rai));
+            return { ...e, projects };
+        }).sort((a, b) => (b.ns4.area_rai + b.other.area_rai) - (a.ns4.area_rai + a.other.area_rai));
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[WAGE-SUMMARY-V1-ALL]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+/* GET /api/wage-summary-v3-all
+   สรุปค่าจ้าง V3 รวมทุกโปรเจคใน layerlist — ใช้กฎการนับพื้นที่คิดเงินเดียวกับ /api/worker-summary-v3/:tb ทุกประการ
+   (PAYV3_ELIGIBLE_CLASSES, แยกเรทตามประเภทโฉนดเป็น ns4/other, โบนัสต่อแปลงเมื่อแปลงมีมากกว่า 1 คลาส)
+   ต่างกันแค่วนลูปทุกโปรเจคแล้วรวมยอดต่อ "editor" ข้ามโปรเจค พร้อมแตกยอดย่อยเป็นรายโปรเจคไว้ดูประกอบ
+   ไม่คืนรายละเอียดระดับแปลง (ids/plots) เหมือน worker-summary-v3 เพราะข้อมูลจะใหญ่เกินไปเมื่อรวมทุกโปรเจคพร้อมกัน —
+   หน้าเว็บใช้เพื่อดูสรุปภาพรวมว่าแต่ละคนได้ค่าจ้างรวมเท่าไหร่ ถ้าต้องการรายละเอียดรายแปลงให้เปิดปุ่มคำนวณค่าจ้าง V3 ต่อโปรเจคแทน
+   เรทยังปรับได้ฝั่งหน้าเว็บ (ไม่ผูกกับ backend) เหมือนหน้า V3 เดิม เพื่อให้แอดมินลองเปลี่ยนเรทดูผลรวมได้ทันที */
+app.get('/api/wage-summary-v3-all', async (req, res) => {
+    try {
+        const layersRes = await pool.query(`SELECT tb_name FROM layerlist ORDER BY created_at`);
+        const usersRes = await pool.query(`SELECT display_name, photo FROM users`);
+        const photoMap = {};
+        usersRes.rows.forEach(u => { photoMap[u.display_name] = u.photo; });
+
+        const isNs4 = (deedType) => /^นส4[ก-ฮ]?$/.test((deedType || '').replace(/[.\s]/g, ''));
+
+        const editorMap = {};
+        const ensureEditor = (name) => {
+            if (!editorMap[name]) {
+                editorMap[name] = {
+                    editor: name,
+                    photo: photoMap[name] || null,
+                    ns4: { plot_count: 0, area_rai: 0 },
+                    other: { plot_count: 0, area_rai: 0 },
+                    bonus: { plot_count: 0 },
+                    projects: {}
+                };
+            }
+            return editorMap[name];
+        };
+        const ensureProject = (e, tb, tbNameOriginal) => {
+            if (!e.projects[tb]) {
+                e.projects[tb] = {
+                    tb_name: tbNameOriginal,
+                    ns4: { plot_count: 0, area_rai: 0 },
+                    other: { plot_count: 0, area_rai: 0 },
+                    bonus: { plot_count: 0 }
+                };
+            }
+            return e.projects[tb];
+        };
+
+        for (const layer of layersRes.rows) {
+            const tb = layer.tb_name.toLowerCase();
+            if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tb)) continue;
+
+            const reclassExists = await pool.query(
+                `SELECT EXISTS(SELECT 1 FROM information_schema.tables
+                  WHERE table_schema='public' AND table_name=$1)`,
+                [`reclass_${tb}`]
+            );
+            if (!reclassExists.rows[0].exists) continue;
+
+            const rowsRes = await pool.query(`
+                WITH class_counts AS (
+                    SELECT id, COUNT(*) AS cnt
+                    FROM reclass_${tb}
+                    GROUP BY id
+                )
+                SELECT r.id, r.editor, r.classtype,
+                    ROUND(COALESCE(r."class_Area", 0)::numeric, 4) AS class_area_rai,
+                    cc.cnt,
+                    COALESCE(m."Deed_Type", 'ไม่ระบุ') AS deed_type
+                FROM reclass_${tb} r
+                JOIN class_counts cc ON cc.id = r.id
+                LEFT JOIN ${tb} m ON m.id = r.id
+                ORDER BY r.id
+            `).catch(() => ({ rows: [] }));
+
+            const idGroups = {};
+            rowsRes.rows.forEach(row => {
+                if (!idGroups[row.id]) {
+                    idGroups[row.id] = {
+                        editor: row.editor,
+                        deedType: row.deed_type,
+                        cnt: parseInt(row.cnt),
+                        classRows: []
+                    };
+                }
+                idGroups[row.id].classRows.push({
+                    classtype: (row.classtype || '').trim().toLowerCase(),
+                    area: parseFloat(row.class_area_rai) || 0
+                });
+            });
+
+            Object.values(idGroups).forEach(g => {
+                const { editor, deedType, cnt, classRows } = g;
+                if (!editor) return;
+                const isMulti = cnt > 1;
+                const eligibleRows = classRows.filter(c => PAYV3_ELIGIBLE_CLASSES.includes(c.classtype));
+                if (eligibleRows.length === 0) return;
+                const payArea = eligibleRows.reduce((sum, c) => sum + c.area, 0);
+
+                const e = ensureEditor(editor);
+                const p = ensureProject(e, tb, layer.tb_name);
+                const tier = isNs4(deedType) ? 'ns4' : 'other';
+                e[tier].plot_count += 1;
+                e[tier].area_rai += payArea;
+                p[tier].plot_count += 1;
+                p[tier].area_rai += payArea;
+
+                if (isMulti) {
+                    e.bonus.plot_count += 1;
+                    p.bonus.plot_count += 1;
+                }
+            });
+        }
+
+        const data = Object.values(editorMap).map(e => {
+            e.ns4.area_rai = parseFloat(e.ns4.area_rai.toFixed(4));
+            e.other.area_rai = parseFloat(e.other.area_rai.toFixed(4));
+            const projects = Object.values(e.projects)
+                .map(p => {
+                    p.ns4.area_rai = parseFloat(p.ns4.area_rai.toFixed(4));
+                    p.other.area_rai = parseFloat(p.other.area_rai.toFixed(4));
+                    return p;
+                })
+                .sort((a, b) => (b.ns4.area_rai + b.other.area_rai) - (a.ns4.area_rai + a.other.area_rai));
+            return { ...e, projects };
+        }).sort((a, b) => (b.ns4.area_rai + b.other.area_rai) - (a.ns4.area_rai + a.other.area_rai));
+
+        res.json({ success: true, data });
+    } catch (err) {
+        console.error('[WAGE-SUMMARY-V3-ALL]', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = app;
 
