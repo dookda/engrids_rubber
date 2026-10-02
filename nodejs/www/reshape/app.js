@@ -193,6 +193,40 @@ const shpallLabelToggle = L.layerGroup();
 shpallLabelToggle.on('add', () => document.getElementById('map').classList.add('shpall-labels-on'));
 shpallLabelToggle.on('remove', () => document.getElementById('map').classList.remove('shpall-labels-on'));
 
+// ===== ตรวจเช็กแปลงตัวอย่าง (shpck) — ชุดข้อมูลเล็กทั่วประเทศ (~144 แปลง) =====
+// โหลดครั้งเดียวตอนเปิดชั้นข้อมูล ไม่ต้อง bbox-filter แบบ shpall เพราะข้อมูลมีน้อย
+const shpckLayer = L.featureGroup();
+let _shpckLoaded = false;
+
+function _shpckStyle() {
+    return { color: '#ffd600', weight: 3, opacity: 1, fillColor: '#ffd600', fillOpacity: 0.22, dashArray: '4,3' };
+}
+
+async function loadShpckLayer() {
+    if (_shpckLoaded) return;
+    try {
+        const res = await fetch('/rub/api/shpck');
+        const data = await res.json();
+        if (data.success && data.features && data.features.length > 0) {
+            L.geoJSON({ type: 'FeatureCollection', features: data.features }, {
+                interactive: false, pmIgnore: true, snapIgnore: true, style: _shpckStyle,
+                onEachFeature: (feature, layer) => {
+                    const code = (feature.properties || {}).code;
+                    layer.bindTooltip(code || '-', {
+                        permanent: true, direction: 'center', className: 'shpck-tooltip'
+                    });
+                }
+            }).addTo(shpckLayer);
+            _shpckLoaded = true;
+            console.log(`shpck: แสดง ${data.features.length} แปลงตัวอย่าง`);
+        }
+    } catch (err) {
+        console.error('shpck load error:', err);
+    }
+}
+
+shpckLayer.on('add', loadShpckLayer);
+
 // ===== ค้นหาแปลงยางเดิม (shpall) จากชื่อเกษตรกร =====
 const shpallSearchHighlightGroup = L.featureGroup().addTo(map);
 
@@ -312,6 +346,7 @@ const overlayMaps = {
     "จุดอ้างอิงเดิม (GPS)": pointRefFeatureGroup, // ปิดไว้เป็นค่าเริ่มต้น — ผู้ใช้เปิดดูเองตอนต้องการเทียบกับโพลิกอนที่วาด
     "แปลงยาง (เดิม)": shpallLayer,
     "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
+    "ตรวจเช็กแปลงตัวอย่าง": shpckLayer,
     "Longdo Map": longdoLayer.addTo(map),
 };
 
