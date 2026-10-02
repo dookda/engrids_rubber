@@ -137,5 +137,8 @@ dist
 
 gee-key.json
 *.sql
+# shpck.sql is tiny (~144 sample plots, ~46KB) — track it directly so servers
+# get it via git pull instead of a manual copy, unlike the huge shpall.sql dump.
+!postgis/shpck.sql
 
 backups/

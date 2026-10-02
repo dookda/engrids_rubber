@@ -166,6 +166,51 @@ const shpallLayer = new ol.layer.Vector({
 });
 
 
+// ตรวจเช็กแปลงตัวอย่าง (shpck) — ชุดข้อมูลเล็กทั่วประเทศ (~144 แปลง)
+// โหลดครั้งเดียวตอนเปิดชั้นข้อมูล ไม่ต้อง bbox-strategy แบบ shpall เพราะข้อมูลมีน้อย
+const shpckSource = new ol.source.Vector();
+let _shpckLoaded = false;
+
+async function loadShpckLayer() {
+    if (_shpckLoaded) return;
+    try {
+        const res = await fetch('/rub/api/shpck');
+        const data = await res.json();
+        if (data.success && data.features && data.features.length > 0) {
+            const features = new ol.format.GeoJSON().readFeatures(
+                { type: 'FeatureCollection', features: data.features },
+                { dataProjection: EPSG4326, featureProjection: EPSG3857 }
+            );
+            shpckSource.addFeatures(features);
+            _shpckLoaded = true;
+            console.log(`shpck: แสดง ${data.features.length} แปลงตัวอย่าง`);
+        }
+    } catch (err) {
+        console.error('shpck load error:', err);
+    }
+}
+
+const shpckLayer = new ol.layer.Vector({
+    source: shpckSource,
+    title: 'ตรวจเช็กแปลงตัวอย่าง',
+    visible: false,
+    zIndex: 6,
+    style: function(feature) {
+        return new ol.style.Style({
+            stroke: new ol.style.Stroke({ color: '#ffd600', width: 3, lineDash: [6, 4] }),
+            fill: new ol.style.Fill({ color: 'rgba(255, 214, 0, 0.22)' }),
+            text: new ol.style.Text({
+                text: feature.get('code') || '-',
+                font: '600 10px "Noto Sans Thai", sans-serif',
+                fill: new ol.style.Fill({ color: '#7a5c00' }),
+                stroke: new ol.style.Stroke({ color: '#ffffff', width: 2.5 }),
+                overflow: true
+            })
+        });
+    }
+});
+shpckLayer.on('change:visible', () => { if (shpckLayer.getVisible()) loadShpckLayer(); });
+
 // Other plots (every other id in this tb) — read-only red background, shown as context
 // and as a snap target so the user can tell whether the plot being digitized touches a neighbor
 const othersSource = new ol.source.Vector();
@@ -286,7 +331,7 @@ const pointRefLayer = new ol.layer.Vector({
 const map = new ol.Map({
     target: 'map',
     layers: [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer,
-        ndviWms, shpallLayer, othersLayer, vectorLayer, pointRefLayer, splitLineLayer],
+        ndviWms, shpallLayer, shpckLayer, othersLayer, vectorLayer, pointRefLayer, splitLineLayer],
     view: new ol.View({
         center: ol.proj.fromLonLat([100.8784385963758, 18.819620993471577]),
         zoom: 13,
@@ -1936,7 +1981,7 @@ function buildLegend() {
 
 // ── 19. Layer switcher (base=radio, overlay=checkbox) ────
 const BASE_LAYERS = [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer];
-const OVERLAY_LAYERS = [ndviWms, shpallLayer];
+const OVERLAY_LAYERS = [ndviWms, shpallLayer, shpckLayer];
 
 function buildLayerSwitcher() {
     const ctrl = document.createElement('div');
@@ -1998,6 +2043,7 @@ function buildLayerSwitcher() {
         { layer: pointRefLayer, label: 'จุดอ้างอิงเดิม (GPS)' },
         { layer: shpallLayer, label: 'แปลง (เดิม)' },
         { layer: shpallLabelToggle, label: 'ชื่อแปลง (เดิม)' },
+        { layer: shpckLayer, label: 'ตรวจเช็กแปลงตัวอย่าง' },
     ];
 
     const sep = document.createElement('div');

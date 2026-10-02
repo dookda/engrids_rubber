@@ -1276,6 +1276,34 @@ app.get('/api/shpall/:tb/search', async (req, res) => {
     }
 });
 
+// GET แปลงตัวอย่าง (shpck) — จุดตรวจเช็กแปลงตัวอย่างทั่วประเทศ ชุดข้อมูลเล็ก (~144 แปลง)
+// ส่งทั้งหมดในครั้งเดียว ไม่ต้อง bbox-filter เหมือน shpall ที่มีข้อมูลจำนวนมาก
+app.get('/api/shpck', async (req, res) => {
+    try {
+        const sql = `
+            SELECT ST_AsGeoJSON(geom) AS geom_json, code, src_region
+            FROM public.shpck
+            ORDER BY code
+        `;
+        const result = await pool.query(sql);
+        const features = result.rows
+            .filter(row => row.geom_json)
+            .map(row => ({
+                type: 'Feature',
+                geometry: JSON.parse(row.geom_json),
+                properties: {
+                    code: row.code,
+                    src_region: row.src_region
+                }
+            }));
+
+        res.status(200).json({ success: true, type: 'FeatureCollection', features });
+    } catch (err) {
+        console.error('Error in /api/shpck:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET reshape polygon data for reclassdash map overlay
 app.get('/api/getreshapefeatures/:tb', async (req, res) => {
     try {

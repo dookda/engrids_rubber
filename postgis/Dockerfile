@@ -4,3 +4,4 @@ FROM postgis/postgis:17-3.5
 # Files run in alphabetical order on fresh database (docker compose down -v).
 COPY rub2.sql /docker-entrypoint-initdb.d/01_schema.sql
 COPY shpall.sql      /docker-entrypoint-initdb.d/02_shpall.sql
+COPY shpck.sql       /docker-entrypoint-initdb.d/03_shpck.sql
