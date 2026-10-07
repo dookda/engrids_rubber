@@ -83,12 +83,13 @@ const _sumRubberAndExcluded = (id) => {
     return { rubberSqm, exSqm, total: rubberSqm + exSqm };
 };
 
-// ส่วนต่างเทียบกับเป้าหมาย — เขียว ±600 m² ถือว่าตรง, แดงถ้าเกิน (ใช้ร่วมกันทั้งตารางและแผงตรวจ)
-const _areaDiffHtml = (cur, target) => {
+// ส่วนต่างเทียบกับเป้าหมาย — เขียวถ้าอยู่ในเกณฑ์ที่กำหนด, แดงถ้าเกิน (ใช้ร่วมกันทั้งตารางและแผงตรวจ)
+// โฉนด: เกณฑ์ ±100 m² | ยางพารา: เกณฑ์ ±600 m² (ค่าเริ่มต้น)
+const _areaDiffHtml = (cur, target, threshold = 600) => {
     if (!target || target <= 0) return '';
     const diff = Math.round(cur - target);
     const sign = diff >= 0 ? '+' : '';
-    const color = Math.abs(diff) <= 600 ? 'green' : 'red';
+    const color = Math.abs(diff) <= threshold ? 'green' : 'red';
     return ` <small style="color:${color}">(${sign}${diff.toLocaleString('th-TH')})</small>`;
 };
 
@@ -1459,7 +1460,7 @@ const showFeaturePanel = (feature, layer) => {
                     <div class="check-section-title">เนื้อที่ขณะนี้ (ประกอบการตรวจสอบ)</div>
                     <div class="area-recap-row">
                         <span class="area-recap-label"><i class="bi bi-geo-alt-fill"></i> โฉนด</span>
-                        <span class="area-num">${deedCurrentSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²${_areaDiffHtml(deedCurrentSqm, deedTargetSqm)}</span>
+                        <span class="area-num">${deedCurrentSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²${_areaDiffHtml(deedCurrentSqm, deedTargetSqm, 100)}</span>
                     </div>
                     <div class="area-recap-target">เป้าหมาย: ${deedTargetSqm.toLocaleString('th-TH', { maximumFractionDigits: 0 })} m²</div>
                     ${hasRubber ? `
@@ -1873,7 +1874,7 @@ const loadGeoData = async () => {
                         const deedSqm = Number(row.deed_sqm || 0);
                         const rubrSqm = Number(row.rubr_sqm || 0);
                         const target = deedSqm > 0 ? deedSqm : rubrSqm;
-                        return `<span class="area-num">${cur.toLocaleString('th-TH', { maximumFractionDigits: 0 })}${_areaDiffHtml(cur, target)}</span>`;
+                        return `<span class="area-num">${cur.toLocaleString('th-TH', { maximumFractionDigits: 0 })}${_areaDiffHtml(cur, target, 100)}</span>`;
                     }
                 },
                 {
