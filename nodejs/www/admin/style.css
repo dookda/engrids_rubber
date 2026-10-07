@@ -1993,4 +1993,160 @@ tfoot .area-col-selected {
     border-radius: 8px;
     padding: 2px 8px;
 }
+
+/* ═════ Modal เช็คยางติด/ซ้อนทับ (rubberCheck) ═════ */
+/* .modal-header ทั่วไปตั้ง background !important ไว้พื้นอ่อน — ต้องชนะด้วย selector ที่จำเพาะกว่า */
+.modal-header.rck-header {
+    background: linear-gradient(135deg, #2e7d32, #1b5e20) !important;
+    color: #fff !important;
+}
+.rck-header .modal-title {
+    color: #fff !important;
+}
+.rck-modal-content {
+    position: relative;
+    overflow: visible !important; /* ให้ปุ่มลอยกลางขอบบนโผล่พ้นมุมโค้งได้ */
+}
+
+/* ปุ่มขยายเต็มจอ ลอยตรงกลางขอบบนของ modal ให้เห็นเด่นและกดง่าย */
+.rck-float-expand {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    background: linear-gradient(135deg, #66bb6a, #2e7d32);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+    cursor: pointer;
+    z-index: 5;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.rck-float-expand:hover {
+    transform: translate(-50%, -50%) scale(1.08);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* legend แถบสี */
+.rck-legend {
+    padding: 10px 14px 8px;
+    background: linear-gradient(135deg, rgba(232, 245, 233, 0.7), rgba(241, 248, 233, 0.7));
+    border-bottom: 1px solid rgba(76, 175, 80, 0.15);
+}
+.rck-legend-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.rck-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 0.76rem;
+    color: #333;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.rck-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+    flex: none;
+}
+.rck-legend-note {
+    font-size: 0.78rem;
+    color: #444;
+}
+
+/* แถบปุ่มกรอง ซ้อนทับ/ติดกันแล้ว/ไม่มีเพื่อนบ้าน */
+.rck-filter-bar {
+    gap: 8px;
+    padding: 10px 14px;
+    background: #fafafa;
+    border-bottom: 1px solid #e5e5e5;
+}
+.rck-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    color: #555;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.rck-filter-btn:hover {
+    border-color: #aaa;
+}
+.rck-filter-count {
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-weight: 700;
+}
+.rck-filter-btn.active {
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.rck-filter-btn.rck-filter-all.active      { background: linear-gradient(135deg, #607d8b, #455a64); }
+.rck-filter-btn.rck-filter-overlap.active  { background: linear-gradient(135deg, #ef5350, #c62828); }
+.rck-filter-btn.rck-filter-touching.active { background: linear-gradient(135deg, #66bb6a, #2e7d32); }
+.rck-filter-btn.rck-filter-none.active     { background: linear-gradient(135deg, #90a4ae, #607d8b); }
+.rck-filter-btn.active .rck-filter-count {
+    background: rgba(255, 255, 255, 0.25);
+    color: #fff;
+}
+
+/* สรุปยอดที่ footer */
+.rck-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.82rem;
+    color: #555;
+}
+.rck-summary b {
+    font-weight: 700;
+}
+.rck-summary-sep {
+    color: #ccc;
+}
+
+/* แถวในตารางเช็คยาง — เน้นแถวที่ซ้อนทับให้สะดุดตากว่าปกติ */
+.rubber-check-row:hover {
+    background: #f1f8e9 !important;
+}
+/* สลับสีพื้นเป็นกลุ่มตาม id (ไม่ใช่สลับทุกแถว) ให้เห็นว่า sub_id ไหนอยู่โฉนดเดียวกัน */
+.rck-group-1 {
+    background: #fafafa;
+}
+/* เส้นคั่นบนของแถวแรกในแต่ละกลุ่ม id ให้แยกกลุ่มออกจากกันชัดเจน */
+.rck-group-start td {
+    border-top: 2px solid #dde3dd;
+}
+.rck-id-cell {
+    font-weight: 700;
+    color: #2e7d32;
+    background: #f1f8e9;
+    text-align: center;
+    border-left: 3px solid #a5d6a7;
+}
 

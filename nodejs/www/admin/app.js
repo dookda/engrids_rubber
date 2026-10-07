@@ -139,6 +139,9 @@ const initApp = async () => {
                         <button class="btn btn-secondary layer-btn dashboard" data-tb="${tb_name}">
                             Dashboard
                         </button>
+                        <button class="btn btn-secondary layer-btn rubberOnlyBtn" data-tb="${tb_name}" title="ดูเฉพาะยางพาราลงทะเบียน เพื่อเช็คแปลงติดกัน/ซ้อนทับ">
+                            <i class="bi bi-tree-fill me-1"></i>เช็คยางติด/ซ้อนทับ
+                        </button>
                         <button class="btn btn-assign layer-btn assignBtn" data-tb="${tb_name}" title="มอบหมายงาน">
                             <i class="bi bi-people-fill me-1"></i>มอบหมายงาน
                         </button>
@@ -280,6 +283,15 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 window.location.href = `./../reclassdash/index.html?tb=${tb}`;
+            });
+        });
+
+        /* ── เช็คยางติด/ซ้อนทับ — เปิด modal แสดงเฉพาะคลาสยางพาราลงทะเบียนบนแผนที่ ในหน้าแอดมินเลย ── */
+        document.querySelectorAll('.rubberOnlyBtn').forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                const tb = this.getAttribute('data-tb');
+                openRubberCheckModal(tb);
             });
         });
 
@@ -788,6 +800,297 @@ async function openAssignModal(tb_name) {
 
     assignModal.show();
 }
+
+/* ═════ Modal: เช็คยางติด/ซ้อนทับ — โหลดเฉพาะคลาสยางพาราลงทะเบียนของโปรเจคขึ้นแผนที่ ให้ดูว่าแปลงติดกัน/ซ้อนทับกันมั้ย ═════ */
+let rubberCheckModal = null;
+let rubberCheckMapInstance = null;
+let rubberCheckLayerGroup = null;
+let rubberCheckLayersBySub = {}; // sub_id -> L.geoJson layer บนแผนที่ — ใช้ให้คลิกแถวในตารางแล้วโฟกัสแปลง
+let rubberCheckAllRows = [];     // ทุกแถวของรอบเปิดล่าสุด (ไม่กรอง) — ใช้คำนวณนับ/กรองซ้ำโดยไม่ต้องยิง API ใหม่
+let rubberCheckActiveFilter = 'all'; // 'all' | 'overlap' | 'touching' | 'none'
+
+const RUBBER_CHECK_CLASS_LABEL = {
+    rubber: 'ยางพาราลงทะเบียน',
+    ex_age_rubber: 'กันออก (ยางพาราต่างอายุ)',
+    ex_building: 'กันออก (สิ่งปลูกสร้าง)',
+    ex_pond: 'กันออก (บ่อน้ำ)',
+    ex_cr_area: 'กันออก (ถนนคอนกรีต)',
+    ex_ar_area: 'กันออก (ถนนลาดยาง)',
+    ex_other: 'กันออก (เพิ่มเติม)'
+};
+
+// สีเดียวกับ legend ของหน้า reclassdash (getFeatureStyle) — ให้สองหน้าตรงกัน
+const RUBBER_CHECK_CLASS_COLOR = {
+    rubber: '#006d2c',
+    ex_age_rubber: '#00ff0d',
+    ex_building: '#ff00d4',
+    ex_pond: '#00fff2',
+    ex_cr_area: '#ffff00',
+    ex_ar_area: '#00008b',
+    ex_other: '#AACDDC'
+};
+
+function ensureRubberCheckMap() {
+    if (rubberCheckMapInstance) return rubberCheckMapInstance;
+    rubberCheckMapInstance = L.map('rubberCheckMap', { maxZoom: 22 }).setView([18.819620993471577, 100.8784385963758], 13);
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        subdomains: ['0', '1', '2', '3'], maxZoom: 21, attribution: 'Google'
+    }).addTo(rubberCheckMapInstance);
+    rubberCheckLayerGroup = L.featureGroup().addTo(rubberCheckMapInstance);
+    return rubberCheckMapInstance;
+}
+
+async function openRubberCheckModal(tb) {
+    if (!rubberCheckModal) {
+        rubberCheckModal = new bootstrap.Modal(document.getElementById('rubberCheckModal'));
+    }
+    document.getElementById('rubberCheckModalTb').textContent = tb;
+    document.getElementById('rubberCheckCount').innerHTML = '';
+    document.getElementById('rubberCheckMap').style.display = 'none';
+    document.getElementById('rubberCheckTableWrap').style.display = 'none';
+    document.getElementById('rubberCheckTableWrap').innerHTML = '';
+    document.getElementById('rubberCheckFilterBar').style.display = 'none';
+    document.getElementById('rubberCheckFilterBar').innerHTML = '';
+    document.getElementById('rubberCheckMapLoading').style.display = '';
+    rubberCheckActiveFilter = 'all';
+    rubberCheckModal.show();
+
+    const map = ensureRubberCheckMap();
+    setTimeout(() => map.invalidateSize(), 200); // modal เพิ่งเปลี่ยนจากซ่อนเป็นแสดง ต้องบอก Leaflet คำนวณขนาด container ใหม่
+
+    try {
+        const [featRes, topoRes] = await Promise.all([
+            fetch(`/rub/api/getreclassfeatures/${tb}`),
+            fetch(`/rub/api/check_adjacency/${tb}?tolerance=0.1`)
+        ]);
+        const result = await featRes.json();
+        if (!result.success || !result.data) throw new Error(result.error || 'โหลดข้อมูลไม่สำเร็จ');
+        const topoResult = await topoRes.json();
+        // เช็ค topology ล้มเหลวได้โดยไม่ขวางการแสดงแผนที่ — แค่ไม่มีสีแดง/เขียวให้ดู
+        const topoBySub = {};
+        if (topoResult.success) {
+            (topoResult.results || []).forEach(r => { topoBySub[r.sub_id] = r; });
+        }
+
+        rubberCheckLayerGroup.clearLayers();
+        rubberCheckLayersBySub = {};
+        // รวมคลาสยางพาราลงทะเบียน + พื้นที่กันออกทั้งหมด (ex_*) เหมือนเกณฑ์คำนวณค่าจ้าง V3
+        const isExcluded = (ct) => String(ct || '').startsWith('ex_');
+        const checkRows = result.data.filter(r => r.classtype === 'rubber' || isExcluded(r.classtype));
+        let rubberCount = 0, exCount = 0, overlapCount = 0, touchingCount = 0;
+        const tableRows = [];
+        checkRows.forEach(row => {
+            let geom = row.geom;
+            if (typeof geom === 'string') { try { geom = JSON.parse(geom); } catch (_) { geom = null; } }
+            if (!geom) return;
+            const excluded = isExcluded(row.classtype);
+            if (excluded) exCount++; else rubberCount++;
+
+            const topo = topoBySub[row.sub_id];
+            const status = topo?.status === 'overlap' ? 'overlap' : topo?.status === 'touching' ? 'touching' : 'none';
+            // สีเติม (fill) = ตามประเภทคลาส เหมือน legend reclassdash เสมอ — ไม่เปลี่ยนตามสถานะ
+            const fillColor = RUBBER_CHECK_CLASS_COLOR[row.classtype] || '#999999';
+            // สีขอบ (border) = ตามสถานะติด/ซ้อนทับ แยกออกจากสีเติมเพื่อไม่ให้ชนกับสีคลาส
+            let borderColor = fillColor, weight = 2, fillOpacity = 0.45;
+            if (status === 'overlap') {
+                borderColor = '#ff1744'; weight = 4; overlapCount++;
+            } else if (status === 'touching') {
+                borderColor = '#ffffff'; weight = 3.5; touchingCount++;
+            }
+
+            const geoLayer = L.geoJson({ type: 'Feature', geometry: geom, properties: { id: row.id, sub_id: row.sub_id, classtype: row.classtype } }, {
+                style: () => ({ color: borderColor, weight, opacity: 1, fillColor, fillOpacity }),
+                onEachFeature: (feature, layer) => {
+                    const label = excluded ? `กันออก (${feature.properties.classtype})` : 'ยางพาราลงทะเบียน';
+                    let popup = `${label}<br>แปลง #${feature.properties.sub_id} (id ${feature.properties.id})`;
+                    if (status === 'overlap') {
+                        const n = topo.neighbors.filter(x => x.type === 'overlap');
+                        popup += `<br><span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> ซ้อนทับกับ ${n.map(x => `#${x.sub_id} (${x.overlap_sqm} m²)`).join(', ')}</span>`;
+                    } else if (status === 'touching') {
+                        const n = topo.neighbors.filter(x => x.type === 'touching');
+                        popup += `<br><span class="text-success"><i class="bi bi-check-circle-fill"></i> ติดกับ ${n.map(x => `#${x.sub_id}`).join(', ')}</span>`;
+                    }
+                    layer.bindPopup(popup);
+                }
+            }).addTo(rubberCheckLayerGroup);
+
+            rubberCheckLayersBySub[row.sub_id] = geoLayer;
+            tableRows.push({
+                sub_id: row.sub_id, id: row.id, classtype: row.classtype,
+                area_sqm: Number(row.shpsplit_sqm || 0), status,
+                neighbors: topo?.neighbors || []
+            });
+        });
+
+        document.getElementById('rubberCheckCount').innerHTML =
+            `<span><b>${rubberCount.toLocaleString('th-TH')}</b> ยางพาราลงทะเบียน</span>` +
+            `<span class="rck-summary-sep">·</span><span><b>${exCount.toLocaleString('th-TH')}</b> กันออก</span>` +
+            `<span class="rck-summary-sep">|</span><span class="text-danger"><b>${overlapCount.toLocaleString('th-TH')}</b> ซ้อนทับจริง</span>` +
+            `<span class="rck-summary-sep">·</span><span class="text-success"><b>${touchingCount.toLocaleString('th-TH')}</b> ติดกันแล้ว</span>`;
+        document.getElementById('rubberCheckMapLoading').style.display = 'none';
+        document.getElementById('rubberCheckMap').style.display = '';
+        document.getElementById('rubberCheckTableWrap').style.display = '';
+        document.getElementById('rubberCheckFilterBar').style.display = 'flex';
+        rubberCheckAllRows = tableRows;
+        map.invalidateSize();
+        applyRubberCheckFilter('all');
+    } catch (err) {
+        document.getElementById('rubberCheckMapLoading').innerHTML =
+            `<span class="text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>โหลดข้อมูลไม่สำเร็จ: ${err.message}</span>`;
+    }
+}
+
+/* แถบปุ่มกรองสถานะ (ทั้งหมด/ซ้อนทับ/ติดกันแล้ว/ไม่มีเพื่อนบ้านใกล้) — นับจำนวนจาก rubberCheckAllRows เสมอ
+   (ไม่เปลี่ยนตามตัวกรองปัจจุบัน) ส่วนปุ่มที่ active จะไฮไลท์ตาม rubberCheckActiveFilter */
+function renderRubberCheckFilterBar() {
+    const bar = document.getElementById('rubberCheckFilterBar');
+    const counts = { all: rubberCheckAllRows.length, overlap: 0, touching: 0, none: 0 };
+    rubberCheckAllRows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+
+    const defs = [
+        { key: 'all', label: 'ทั้งหมด', icon: 'bi-grid-3x3-gap-fill', cls: 'rck-filter-all' },
+        { key: 'overlap', label: 'ซ้อนทับจริง', icon: 'bi-exclamation-octagon-fill', cls: 'rck-filter-overlap' },
+        { key: 'touching', label: 'ติดกันแล้ว', icon: 'bi-check-circle-fill', cls: 'rck-filter-touching' },
+        { key: 'none', label: 'ไม่มีเพื่อนบ้านใกล้', icon: 'bi-dash-circle', cls: 'rck-filter-none' }
+    ];
+    bar.innerHTML = defs.map(d => `
+        <button type="button" class="rck-filter-btn ${d.cls} ${rubberCheckActiveFilter === d.key ? 'active' : ''}" data-filter="${d.key}">
+            <i class="bi ${d.icon}"></i>${d.label}
+            <span class="rck-filter-count">${(counts[d.key] || 0).toLocaleString('th-TH')}</span>
+        </button>`).join('');
+
+    bar.querySelectorAll('.rck-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => applyRubberCheckFilter(btn.getAttribute('data-filter')));
+    });
+}
+
+/* กรองทั้งตารางและแผนที่ให้ตรงกัน — ซ่อน/แสดง layer บนแผนที่ตามสถานะที่เลือก แล้วซูมให้พอดีเฉพาะที่เหลือ */
+function applyRubberCheckFilter(filter) {
+    rubberCheckActiveFilter = filter;
+    renderRubberCheckFilterBar();
+
+    const filteredRows = filter === 'all' ? rubberCheckAllRows : rubberCheckAllRows.filter(r => r.status === filter);
+    renderRubberCheckTable(filteredRows);
+
+    if (!rubberCheckMapInstance || !rubberCheckLayerGroup) return;
+    const visibleBounds = [];
+    rubberCheckAllRows.forEach(row => {
+        const layer = rubberCheckLayersBySub[row.sub_id];
+        if (!layer) return;
+        const shouldShow = filter === 'all' || row.status === filter;
+        const isShown = rubberCheckLayerGroup.hasLayer(layer);
+        if (shouldShow && !isShown) rubberCheckLayerGroup.addLayer(layer);
+        if (!shouldShow && isShown) rubberCheckLayerGroup.removeLayer(layer);
+        if (shouldShow) {
+            const b = layer.getBounds();
+            if (b.isValid()) visibleBounds.push(b);
+        }
+    });
+    if (visibleBounds.length > 0) {
+        let combined = visibleBounds[0];
+        visibleBounds.slice(1).forEach(b => { combined = combined.extend(b); });
+        rubberCheckMapInstance.fitBounds(combined, { padding: [20, 20] });
+    }
+}
+
+/* ตารางรายละเอียดด้านล่างแผนที่ — เหมือนตารางในหน้า reclassdash แต่เพิ่มคอลัมน์สถานะติด/ซ้อนทับ
+   แถวที่ id เดียวกัน (โฉนดเดียวกัน หลาย sub_id) รวม cell id เป็นแถวเดียวด้วย rowspan ไม่ต้องขึ้นซ้ำทุกแถว
+   เรียงลำดับเป็น "กลุ่ม" ตาม id — กลุ่มที่มีปัญหาแย่สุด (ซ้อนทับ > ติดกันแล้ว > ไม่มีเพื่อนบ้านใกล้) ขึ้นก่อน */
+function renderRubberCheckTable(tableRows) {
+    const wrap = document.getElementById('rubberCheckTableWrap');
+    if (tableRows.length === 0) {
+        wrap.innerHTML = '<div class="text-muted small p-3">ไม่มีแปลงในสถานะที่เลือก</div>';
+        return;
+    }
+    const statusRank = { overlap: 0, touching: 1, none: 2 };
+
+    const groupsMap = new Map();
+    tableRows.forEach(row => {
+        if (!groupsMap.has(row.id)) groupsMap.set(row.id, []);
+        groupsMap.get(row.id).push(row);
+    });
+    const groups = Array.from(groupsMap.values());
+    groups.forEach(g => g.sort((a, b) => statusRank[a.status] - statusRank[b.status]));
+    groups.sort((a, b) => {
+        const rankA = Math.min(...a.map(r => statusRank[r.status]));
+        const rankB = Math.min(...b.map(r => statusRank[r.status]));
+        return rankA !== rankB ? rankA - rankB : String(a[0].id).localeCompare(String(b[0].id), 'th', { numeric: true });
+    });
+
+    const statusPill = (row) => {
+        if (row.status === 'overlap') {
+            const names = row.neighbors.filter(n => n.type === 'overlap').map(n => `#${n.sub_id}`).join(', ');
+            return `<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;font-weight:600;">
+                <i class="bi bi-exclamation-octagon-fill me-1"></i>ซ้อนทับ ${names}</span>`;
+        }
+        if (row.status === 'touching') {
+            const names = row.neighbors.filter(n => n.type === 'touching').map(n => `#${n.sub_id}`).join(', ');
+            return `<span class="badge" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;font-weight:600;">
+                <i class="bi bi-check-circle-fill me-1"></i>ติดกับ ${names}</span>`;
+        }
+        return `<span class="badge" style="background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;font-weight:600;">
+            <i class="bi bi-dash-circle me-1"></i>ไม่พบเพื่อนบ้านใกล้</span>`;
+    };
+
+    let rowNum = 0;
+    const rowsHtml = groups.map((group, gi) => group.map((row, idxInGroup) => {
+        rowNum++;
+        const idCell = idxInGroup === 0
+            ? `<td rowspan="${group.length}" class="align-middle rck-id-cell">${row.id}</td>`
+            : '';
+        return `
+        <tr class="rubber-check-row rck-group-${gi % 2}${idxInGroup === 0 ? ' rck-group-start' : ''}" data-subid="${row.sub_id}" style="cursor:pointer;">
+            <td class="text-center text-muted">${rowNum}</td>
+            <td><b>${row.sub_id}</b></td>
+            ${idCell}
+            <td>${RUBBER_CHECK_CLASS_LABEL[row.classtype] || row.classtype}</td>
+            <td class="text-end">${row.area_sqm ? Math.round(row.area_sqm).toLocaleString('th-TH') : '-'}</td>
+            <td>${statusPill(row)}</td>
+        </tr>`;
+    }).join('')).join('');
+
+    wrap.innerHTML = `
+        <div class="table-responsive" style="max-height:38vh; overflow:auto; border-top:1px solid #dee2e6;">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light" style="position:sticky; top:0; z-index:1;">
+                    <tr>
+                        <th style="width:40px;">#</th>
+                        <th>sub_id</th>
+                        <th>id</th>
+                        <th>คลาส</th>
+                        <th class="text-end">พื้นที่ (ตร.ม.)</th>
+                        <th>สถานะติด/ซ้อนทับ</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+            </table>
+        </div>`;
+
+    wrap.querySelectorAll('.rubber-check-row').forEach(tr => {
+        tr.addEventListener('click', () => focusRubberCheckPlot(tr.getAttribute('data-subid')));
+    });
+}
+
+/* คลิกแถวในตาราง (หรือจะเรียกจากที่อื่น) → ซูม + เปิด popup ของแปลงนั้นบนแผนที่ */
+function focusRubberCheckPlot(subId) {
+    const layer = rubberCheckLayersBySub[subId];
+    if (!layer || !rubberCheckMapInstance) return;
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+        rubberCheckMapInstance.flyToBounds(bounds, { maxZoom: 20, padding: [30, 30] });
+    }
+    const sub = layer.getLayers()[0];
+    if (sub) setTimeout(() => sub.openPopup(), 300);
+}
+
+/* ปุ่มขยายเต็มจอ — toggle class มาตรฐานของ Bootstrap 5 บน modal-dialog แล้วบอก Leaflet คำนวณขนาดใหม่ */
+document.getElementById('btnRubberCheckFullscreen').addEventListener('click', function () {
+    const dialog = document.getElementById('rubberCheckModalDialog');
+    const isFullscreen = dialog.classList.toggle('modal-fullscreen');
+    this.querySelector('i').className = isFullscreen ? 'bi bi-fullscreen-exit' : 'bi bi-arrows-fullscreen';
+    this.title = isFullscreen ? 'ย่อกลับ' : 'ขยายเต็มจอ';
+    setTimeout(() => { if (rubberCheckMapInstance) rubberCheckMapInstance.invalidateSize(); }, 250);
+});
 
 /* ── Render assignee picker จาก users table (ใช้ email เป็นตัวระบุ) ── */
 function renderAssigneePicker(selectedEmail) {

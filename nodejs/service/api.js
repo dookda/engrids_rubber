@@ -1101,6 +1101,67 @@ app.post('/api/check_topology/:tb', async (req, res) => {
     }
 });
 
+// ── Adjacency/Overlap check with tolerance ("integrate") ─────────────────────
+// ใช้โดย modal "เช็คยางติด/ซ้อนทับ" ในหน้าแอดมิน — เฉพาะคลาสยางพาราลงทะเบียน + พื้นที่กันออกทั้งหมด
+// ไม่บันทึกลง DB (ต่างจาก recomputeTopologyStatus) แค่คำนวณสดเพื่อแสดงผล
+// tolerance (เมตร): ช่องว่าง/การซ้อนทับเล็กน้อยไม่เกินค่านี้ถือว่า "ติดกันแล้ว" (ok) ไม่ใช่ปัญหา
+// เกินกว่านั้นถือว่า "ซ้อนทับจริง" (ต้องแก้) — เทียบเท่าการทำ Integrate ใน ArcGIS ด้วย tolerance ที่กำหนด
+app.get('/api/check_adjacency/:tb', async (req, res) => {
+    try {
+        const tb = req.params.tb.toLowerCase();
+        if (!tb) return res.status(400).json({ error: 'Table name is required' });
+        const tolerance = Math.max(0.01, Math.min(5, parseFloat(req.query.tolerance) || 0.1));
+        const classFilter = `(classtype = 'rubber' OR LEFT(classtype, 3) = 'ex_')`;
+
+        const { rows: sample } = await pool.query(
+            `SELECT ST_AsGeoJSON(geom) AS geom FROM reclass_${tb}
+             WHERE geom IS NOT NULL AND ${classFilter} LIMIT 1`
+        );
+        if (!sample.length) {
+            return res.status(200).json({ success: true, tolerance, results: [] });
+        }
+        const srid = getUtmSridFromGeoJSON(JSON.parse(sample[0].geom));
+
+        const { rows: pairs } = await pool.query(`
+            WITH geoms AS (
+                SELECT sub_id, id, classtype, geom AS orig_g, ST_Transform(geom, ${srid}) AS g
+                FROM reclass_${tb}
+                WHERE geom IS NOT NULL AND ${classFilter}
+            )
+            SELECT
+                a.sub_id AS a_sub, a.id AS a_id,
+                b.sub_id AS b_sub, b.id AS b_id,
+                ROUND(ST_Distance(a.g, b.g)::numeric, 3) AS dist_m,
+                ROUND(GREATEST(ST_Area(ST_Intersection(a.g, b.g)), 0)::numeric, 2) AS overlap_sqm,
+                ST_Intersects(ST_Buffer(a.g, -$1 / 2.0), ST_Buffer(b.g, -$1 / 2.0)) AS real_overlap
+            FROM geoms a
+            JOIN geoms b
+              ON a.sub_id <> b.sub_id
+             AND a.id IS DISTINCT FROM b.id
+             AND a.orig_g && ST_Expand(b.orig_g, 0.001)
+             AND ST_DWithin(a.g, b.g, $1)
+        `, [tolerance]);
+
+        // สรุปสถานะต่อแปลง: ซ้อนทับจริง (เกิน tolerance) ชนะ ติดกันแล้ว (ในระยะ tolerance)
+        const bySub = {};
+        pairs.forEach(p => {
+            if (!bySub[p.a_sub]) bySub[p.a_sub] = { sub_id: p.a_sub, id: p.a_id, status: 'touching', neighbors: [] };
+            const entry = bySub[p.a_sub];
+            const type = p.real_overlap ? 'overlap' : 'touching';
+            if (type === 'overlap') entry.status = 'overlap';
+            entry.neighbors.push({
+                sub_id: p.b_sub, id: p.b_id, type,
+                dist_m: Number(p.dist_m), overlap_sqm: Number(p.overlap_sqm)
+            });
+        });
+
+        res.status(200).json({ success: true, tolerance, results: Object.values(bySub) });
+    } catch (err) {
+        console.error('check_adjacency error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // Review history endpoint
 app.get('/api/review_history/:tb/:id', async (req, res) => {
     try {
