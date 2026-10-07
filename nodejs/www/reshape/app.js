@@ -112,6 +112,63 @@ const ndvi = L.tileLayer.wms("https://engrids.soc.cmu.ac.th/geoserver/gwc/servic
     zIndex: 5
 });
 
+// เลเยอร์อ้างอิง ส.ป.ก. (ALRO GeoServer)
+// override สีเส้นขอบเริ่มต้น (เขียว #00ff40) ของเซิร์ฟเวอร์ ALRO ให้เป็นสีเหลืองผ่าน SLD_BODY
+const ALRO_ZONE_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_pg:wgs84_map_land_zone48</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#ffd600</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#ffd600</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroLandZone = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/alromaps_pg/wms?", {
+    layers: 'alromaps_pg:wgs84_map_land_zone48',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    sld_body: ALRO_ZONE_SLD,
+    maxZoom: 22,
+    zIndex: 4
+});
+
+const alroLr47 = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/ALROSurveyGIS/wms?", {
+    layers: 'ALROSurveyGIS:lr47_total_utf8',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    maxZoom: 22,
+    zIndex: 4
+});
+
 // shpall background layer — bbox-filtered per viewport, reloads on map move
 const shpallLayer = L.featureGroup();
 let _shpallActive = false;
@@ -347,6 +404,8 @@ const overlayMaps = {
     "แปลงยาง (เดิม)": shpallLayer,
     "ชื่อแปลง (เดิม)": shpallLabelToggle.addTo(map),
     "ตรวจเช็กแปลงตัวอย่าง": shpckLayer,
+    "เขตที่ดิน สปก. (zone)": alroLandZone,
+    "แปลงสำรวจ สปก. (lr47)": alroLr47,
     "Longdo Map": longdoLayer.addTo(map),
 };
 
