@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.14.2/dist/leaflet-geoman.css" />
     <link rel="stylesheet" href="./../assets/bootstrap.min.css">
-    <link rel="stylesheet" href="./style.css?v=5">
+    <link rel="stylesheet" href="./style.css?v=7">
 </head>
 
 <body>
@@ -447,6 +447,55 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
+         MODAL: เช็คยางติด/ซ้อนทับ — แสดงเฉพาะคลาสยางพาราลงทะเบียนของโปรเจคบนแผนที่
+    ═══════════════════════════════════════════════════════ -->
+    <div class="modal fade" id="rubberCheckModal" tabindex="-1" aria-labelledby="rubberCheckModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable" id="rubberCheckModalDialog">
+            <div class="modal-content rck-modal-content">
+                <div class="modal-header rck-header">
+                    <h5 class="modal-title" id="rubberCheckModalLabel">
+                        <i class="bi bi-tree-fill me-2"></i>เช็คยางติด/ซ้อนทับ — <span id="rubberCheckModalTb"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <button type="button" class="rck-float-expand" id="btnRubberCheckFullscreen" title="ขยายเต็มจอ">
+                    <i class="bi bi-arrows-fullscreen"></i>
+                </button>
+                <div class="modal-body p-0">
+                    <div class="rck-legend">
+                        <div class="rck-legend-row">
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#006d2c;"></i>ยางพาราลงทะเบียน</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#00ff0d;"></i>กันออก (ยางพาราต่างอายุ)</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#ff00d4;"></i>กันออก (สิ่งปลูกสร้าง)</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#00fff2;"></i>กันออก (บ่อน้ำ)</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#ffff00;"></i>กันออก (ถนนคอนกรีต)</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#00008b;"></i>กันออก (ถนนลาดยาง)</span>
+                            <span class="rck-chip"><i class="rck-swatch" style="background:#AACDDC;"></i>กันออก (เพิ่มเติม)</span>
+                        </div>
+                        <div class="rck-legend-note">
+                            <i class="bi bi-info-circle me-1"></i>
+                            เช็ค topology อัตโนมัติด้วย tolerance 0.1 เมตร (เหมือน Integrate) — ดูที่<strong>เส้นขอบ</strong>:
+                            <strong class="text-danger">ขอบแดงหนา = ซ้อนทับจริง</strong> (เกิน 0.1 ม. ต้องแก้),
+                            <strong>ขอบขาวหนา = ติดกันแล้ว</strong> (ในระยะ 0.1 ม. ถือว่าโอเค) —
+                            คลิกแปลง/แถวในตารางเพื่อโฟกัส
+                        </div>
+                    </div>
+                    <div id="rubberCheckFilterBar" class="rck-filter-bar" style="display:none;"></div>
+                    <div id="rubberCheckMapLoading" class="text-center text-muted p-4">
+                        <div class="spinner-border spinner-border-sm me-2"></div>กำลังโหลด...
+                    </div>
+                    <div id="rubberCheckMap" style="height:50vh; display:none;"></div>
+                    <div id="rubberCheckTableWrap" style="display:none;"></div>
+                </div>
+                <div class="modal-footer rck-footer">
+                    <div id="rubberCheckCount" class="rck-summary me-auto"></div>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
          MODAL 5: คำนวณค่าจ้าง (Worker Payment Summary per layer)
     ═══════════════════════════════════════════════════════ -->
     <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
@@ -804,7 +853,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highcharts/11.3.0/highcharts.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="./app.js?v=20260831"></script>
+    <script src="./app.js?v=20261007f"></script>
 </body>
 
 </html>
