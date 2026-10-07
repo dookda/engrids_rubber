@@ -92,6 +92,66 @@ const ndviWms = new ol.layer.Tile({
     zIndex: 5
 });
 
+// เลเยอร์อ้างอิง ส.ป.ก. (ALRO GeoServer)
+// override สีเส้นขอบเริ่มต้น (เขียว #00ff40) ของเซิร์ฟเวอร์ ALRO ให้เป็นสีเหลืองผ่าน SLD_BODY
+const ALRO_ZONE_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_pg:wgs84_map_land_zone48</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#ffd600</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#ffd600</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroLandZone = new ol.layer.Tile({
+    source: new ol.source.TileWMS({
+        url: 'https://songsuk.alro.go.th:8443/geoserver/alromaps_pg/wms?',
+        params: { LAYERS: 'alromaps_pg:wgs84_map_land_zone48', FORMAT: 'image/png', TRANSPARENT: true, VERSION: '1.3.0', SLD_BODY: ALRO_ZONE_SLD },
+        serverType: 'geoserver'
+    }),
+    title: 'เขตที่ดิน สปก. (zone)',
+    visible: false,
+    zIndex: 4
+});
+
+const alroLr47 = new ol.layer.Tile({
+    source: new ol.source.TileWMS({
+        url: 'https://songsuk.alro.go.th:8443/geoserver/ALROSurveyGIS/wms?',
+        params: { LAYERS: 'ALROSurveyGIS:lr47_total_utf8', FORMAT: 'image/png', TRANSPARENT: true, VERSION: '1.3.0' },
+        serverType: 'geoserver'
+    }),
+    title: 'แปลงสำรวจ สปก. (lr47)',
+    visible: false,
+    zIndex: 4
+});
+
 const SHPALL_MIN_ZOOM = 13; // โหลด/แสดงเส้นขอบแปลงเฉพาะตอนซูมใกล้พอ ลดข้อมูลที่ต้องโหลดตอนซูมไกล
 const SHPALL_LABEL_MIN_ZOOM = 17; // ตัวหนังสือป้ายแปลงขึ้นช้ากว่าเส้นขอบ ต้องซูมเข้าไปอีกถึงจะเห็น
 
@@ -331,7 +391,7 @@ const pointRefLayer = new ol.layer.Vector({
 const map = new ol.Map({
     target: 'map',
     layers: [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer,
-        ndviWms, shpallLayer, shpckLayer, othersLayer, vectorLayer, pointRefLayer, splitLineLayer],
+        ndviWms, alroLandZone, alroLr47, shpallLayer, shpckLayer, othersLayer, vectorLayer, pointRefLayer, splitLineLayer],
     view: new ol.View({
         center: ol.proj.fromLonLat([100.8784385963758, 18.819620993471577]),
         zoom: 13,
@@ -1981,7 +2041,7 @@ function buildLegend() {
 
 // ── 19. Layer switcher (base=radio, overlay=checkbox) ────
 const BASE_LAYERS = [gmapSatLayer, gmapRoadLayer, gmapHybrid, gmapTerrain, longdoLayer];
-const OVERLAY_LAYERS = [ndviWms, shpallLayer, shpckLayer];
+const OVERLAY_LAYERS = [ndviWms, alroLandZone, alroLr47, shpallLayer, shpckLayer];
 
 function buildLayerSwitcher() {
     const ctrl = document.createElement('div');
@@ -2044,6 +2104,8 @@ function buildLayerSwitcher() {
         { layer: shpallLayer, label: 'แปลง (เดิม)' },
         { layer: shpallLabelToggle, label: 'ชื่อแปลง (เดิม)' },
         { layer: shpckLayer, label: 'ตรวจเช็กแปลงตัวอย่าง' },
+        { layer: alroLandZone, label: 'เขตที่ดิน สปก. (zone)' },
+        { layer: alroLr47, label: 'แปลงสำรวจ สปก. (lr47)' },
     ];
 
     const sep = document.createElement('div');
