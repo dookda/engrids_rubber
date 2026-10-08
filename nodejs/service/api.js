@@ -1337,6 +1337,60 @@ app.get('/api/shpall/:tb/search', async (req, res) => {
     }
 });
 
+// GET ค้นหาแปลงเอกสารสิทธิ สปก. จากเลขระวาง/เลขที่ดิน — proxy ไป ALRO GeoServer
+// เพราะเซิร์ฟเวอร์ ALRO ไม่ได้เปิด CORS ให้ fetch ตรงจาก browser ได้
+// ค้นพร้อมกันทั้ง 2 โซน UTM เพราะข้อมูลคนละชุด/คนละ field แต่เป็นประเภทเดียวกัน (เลขระวาง/เลขที่ดิน)
+//   - โซน 48: alromaps_ind:ind_34_z48 (field pin_ind)
+//   - โซน 47: alromaps_pg:wgs84_map_land_zone47 (field pin, พื้นที่เป็น rai/ngan/wa แยกช่อง)
+app.get('/api/alro/ind/search', async (req, res) => {
+    try {
+        const pin = (req.query.pin || '').trim();
+        if (!pin) {
+            return res.status(400).json({ success: false, error: 'pin query param required: ?pin=...' });
+        }
+
+        const safePin = pin.replace(/'/g, "''");
+
+        const cql48 = `pin_ind ILIKE '%${safePin}%'`;
+        const url48 = 'https://songsuk.alro.go.th:8443/geoserver/alromaps_ind/ows?' +
+            'service=WFS&version=2.0.0&request=GetFeature&typeName=alromaps_ind:ind_34_z48' +
+            '&outputFormat=application/json&srsName=EPSG:4326&count=50' +
+            `&CQL_FILTER=${encodeURIComponent(cql48)}`;
+
+        const cql47 = `pin ILIKE '%${safePin}%'`;
+        const url47 = 'https://songsuk.alro.go.th:8443/geoserver/alromaps_pg/ows?' +
+            'service=WFS&version=2.0.0&request=GetFeature&typeName=alromaps_pg:wgs84_map_land_zone47' +
+            '&outputFormat=application/json&srsName=EPSG:4326&count=50' +
+            `&CQL_FILTER=${encodeURIComponent(cql47)}`;
+
+        const [data48, data47] = await Promise.all([
+            fetch(url48).then(r => r.json()).catch(() => ({ features: [] })),
+            fetch(url47).then(r => r.json()).catch(() => ({ features: [] })),
+        ]);
+
+        const features48 = (data48.features || []).map(f => ({
+            type: 'Feature',
+            geometry: f.geometry,
+            properties: { pin_ind: f.properties.pin_ind, area_rai: f.properties.area_rai, zone: '48' }
+        }));
+
+        const features47 = (data47.features || []).map(f => {
+            const p = f.properties || {};
+            const area_rai = (p.rai || 0) + (p.ngan || 0) / 4 + (p.wa || 0) / 400;
+            return {
+                type: 'Feature',
+                geometry: f.geometry,
+                properties: { pin_ind: p.pin, area_rai, zone: '47' }
+            };
+        });
+
+        res.status(200).json({ success: true, type: 'FeatureCollection', features: [...features48, ...features47] });
+    } catch (err) {
+        console.error('Error in /api/alro/ind/search:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // GET แปลงตัวอย่าง (shpck) — จุดตรวจเช็กแปลงตัวอย่างทั่วประเทศ ชุดข้อมูลเล็ก (~144 แปลง)
 // ส่งทั้งหมดในครั้งเดียว ไม่ต้อง bbox-filter เหมือน shpall ที่มีข้อมูลจำนวนมาก
 app.get('/api/shpck', async (req, res) => {

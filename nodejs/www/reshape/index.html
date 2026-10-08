@@ -100,6 +100,32 @@
                     </div>
                 </div>
 
+                <!-- Search เอกสารสิทธิ สปก. (ind) จากเลขระวาง -->
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <div class="section-title alroind-search-toggle" data-bs-toggle="collapse"
+                            data-bs-target="#alroIndSearchCollapse" role="button" aria-expanded="false"
+                            aria-controls="alroIndSearchCollapse">
+                            <i class="bi bi-search"></i> ค้นหาเลขระวาง (ind)
+                            <i class="bi bi-chevron-down ms-auto shpall-search-chevron"></i>
+                        </div>
+                        <div class="collapse" id="alroIndSearchCollapse">
+                            <div class="input-group mt-2">
+                                <input type="text" class="form-control" id="alroIndSearchInput"
+                                    placeholder="เช่น 5839I4296/128">
+                                <button class="btn btn-success" type="button" id="alroIndSearchBtn">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                                <button class="btn btn-light border" type="button" id="alroIndSearchClearBtn"
+                                    title="ล้างการค้นหา">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                            <div id="alroIndSearchResults" class="shpall-search-results"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Feature Info & Tools -->
                 <div class="card">
                     <div class="card-body">

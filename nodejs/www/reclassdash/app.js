@@ -718,6 +718,101 @@ const alroLr47 = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/ALRO
     zIndex: 4
 });
 
+// override สีเส้นขอบ/ตัวอักษรของเลเยอร์เอกสารสิทธิ สปก. ให้เป็นสีชมพูเข้มผ่าน SLD_BODY
+const ALRO_IND_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_ind:ind_34_z48</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#c2185b</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin_ind</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#c2185b</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroInd = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/alromaps_ind/wms?", {
+    layers: 'alromaps_ind:ind_34_z48',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    sld_body: ALRO_IND_SLD,
+    maxZoom: 22,
+    zIndex: 4
+});
+
+// เอกสารสิทธิ สปก. โซน 47 — คนละ workspace/field กับ ind_34_z48 (field label คือ "pin" ไม่ใช่ "pin_ind")
+// แต่เป็นชุดข้อมูลประเภทเดียวกัน (เลขระวาง/เลขที่ดิน) จึงใช้สีชมพูเข้มเดียวกัน
+const ALRO_ZONE47_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_pg:wgs84_map_land_zone47</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#c2185b</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#c2185b</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroZone47 = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/alromaps_pg/wms?", {
+    layers: 'alromaps_pg:wgs84_map_land_zone47',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    sld_body: ALRO_ZONE47_SLD,
+    maxZoom: 22,
+    zIndex: 4
+});
+
 // shpall background layer — bbox-filtered per viewport, reloads on map move
 const shpallLayer = L.featureGroup();
 let _shpallActive = false;
@@ -850,6 +945,8 @@ const overlayMaps = {
     "ตรวจเช็กแปลงตัวอย่าง": shpckLayer,
     "เขตที่ดิน สปก. (zone)": alroLandZone,
     "แปลงสำรวจ สปก. (lr47)": alroLr47,
+    "เอกสารสิทธิ สปก. (zone 48)": alroInd,
+    "เอกสารสิทธิ สปก. (zone 47)": alroZone47,
     "Longdo Map": longdoLayer.addTo(map)
 };
 
