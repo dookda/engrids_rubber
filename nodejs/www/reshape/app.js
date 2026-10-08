@@ -169,6 +169,101 @@ const alroLr47 = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/ALRO
     zIndex: 4
 });
 
+// override สีเส้นขอบ/ตัวอักษรของเลเยอร์เอกสารสิทธิ สปก. ให้เป็นสีชมพูเข้มผ่าน SLD_BODY
+const ALRO_IND_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_ind:ind_34_z48</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#c2185b</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin_ind</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#c2185b</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroInd = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/alromaps_ind/wms?", {
+    layers: 'alromaps_ind:ind_34_z48',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    sld_body: ALRO_IND_SLD,
+    maxZoom: 22,
+    zIndex: 4
+});
+
+// เอกสารสิทธิ สปก. โซน 47 — คนละ workspace/field กับ ind_34_z48 (field label คือ "pin" ไม่ใช่ "pin_ind")
+// แต่เป็นชุดข้อมูลประเภทเดียวกัน (เลขระวาง/เลขที่ดิน) จึงใช้สีชมพูเข้มเดียวกัน
+const ALRO_ZONE47_SLD = `<?xml version="1.0" encoding="UTF-8"?>
+<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld" xmlns:ogc="http://www.opengis.net/ogc">
+  <NamedLayer>
+    <Name>alromaps_pg:wgs84_map_land_zone47</Name>
+    <UserStyle>
+      <FeatureTypeStyle>
+        <Rule>
+          <MaxScaleDenominator>50000.0</MaxScaleDenominator>
+          <PolygonSymbolizer>
+            <Stroke>
+              <CssParameter name="stroke">#c2185b</CssParameter>
+              <CssParameter name="stroke-width">2</CssParameter>
+            </Stroke>
+          </PolygonSymbolizer>
+          <TextSymbolizer>
+            <Geometry><ogc:Function name="centroid"><ogc:PropertyName>geom</ogc:PropertyName></ogc:Function></Geometry>
+            <Label><ogc:PropertyName>pin</ogc:PropertyName></Label>
+            <Font>
+              <CssParameter name="font-family">Arial</CssParameter>
+              <CssParameter name="font-size">14</CssParameter>
+              <CssParameter name="font-style">normal</CssParameter>
+              <CssParameter name="font-weight">bold</CssParameter>
+            </Font>
+            <LabelPlacement>
+              <PointPlacement>
+                <AnchorPoint><AnchorPointX>0.5</AnchorPointX><AnchorPointY>0.5</AnchorPointY></AnchorPoint>
+              </PointPlacement>
+            </LabelPlacement>
+            <Fill><CssParameter name="fill">#c2185b</CssParameter></Fill>
+          </TextSymbolizer>
+        </Rule>
+      </FeatureTypeStyle>
+    </UserStyle>
+  </NamedLayer>
+</StyledLayerDescriptor>`;
+
+const alroZone47 = L.tileLayer.wms("https://songsuk.alro.go.th:8443/geoserver/alromaps_pg/wms?", {
+    layers: 'alromaps_pg:wgs84_map_land_zone47',
+    format: 'image/png',
+    transparent: true,
+    version: '1.3.0',
+    sld_body: ALRO_ZONE47_SLD,
+    maxZoom: 22,
+    zIndex: 4
+});
+
 // shpall background layer — bbox-filtered per viewport, reloads on map move
 const shpallLayer = L.featureGroup();
 let _shpallActive = false;
@@ -389,6 +484,105 @@ document.getElementById('shpallSearchClearBtn').addEventListener('click', () => 
     shpallSearchHighlightGroup.clearLayers();
 });
 
+// ===== ค้นหาแปลงเอกสารสิทธิ สปก. (alromaps_ind) จากเลขระวาง/เลขที่ดิน (pin_ind) =====
+const alroIndSearchHighlightGroup = L.featureGroup().addTo(map);
+
+function _alroIndSearchStyle() {
+    return { color: '#ffea00', weight: 4, opacity: 1, fillColor: '#ffea00', fillOpacity: 0.25, dashArray: '6,4' };
+}
+
+function renderAlroIndSearchResults(features) {
+    const box = document.getElementById('alroIndSearchResults');
+    box.innerHTML = '';
+
+    if (!features.length) {
+        box.classList.add('has-results');
+        box.innerHTML = '<div class="shpall-search-empty">ไม่พบแปลงที่ตรงกับเลขระวางนี้</div>';
+        return;
+    }
+
+    box.classList.add('has-results');
+    features.forEach((f) => {
+        const props = f.properties || {};
+        const item = document.createElement('div');
+        item.className = 'shpall-search-item';
+        item.innerHTML = `
+            <span class="name">${props.pin_ind || '-'} ${props.zone ? `<small>(zone ${props.zone})</small>` : ''}</span>
+            <span class="meta">${props.area_rai ? props.area_rai.toFixed(2) + ' ไร่' : '-'}</span>
+        `;
+        item.addEventListener('click', () => zoomToAlroIndFeature(f));
+        box.appendChild(item);
+    });
+
+    if (features.length === 1) zoomToAlroIndFeature(features[0]);
+}
+
+function zoomToAlroIndFeature(feature) {
+    alroIndSearchHighlightGroup.clearLayers();
+    const layer = L.geoJson(feature, {
+        style: _alroIndSearchStyle,
+        pmIgnore: true
+    }).addTo(alroIndSearchHighlightGroup);
+
+    const props = feature.properties || {};
+    layer.bindPopup(`<strong>${props.pin_ind || '-'}</strong> ${props.zone ? `(zone ${props.zone})` : ''}<br>เนื้อที่: ${props.area_rai ? props.area_rai.toFixed(2) : '-'} ไร่`);
+
+    const bounds = layer.getBounds();
+    if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+    }
+    setTimeout(() => layer.openPopup(), 350);
+}
+
+async function searchAlroIndByPin(pin) {
+    const resultsBox = document.getElementById('alroIndSearchResults');
+    if (!pin) {
+        resultsBox.classList.remove('has-results');
+        resultsBox.innerHTML = '';
+        alroIndSearchHighlightGroup.clearLayers();
+        return;
+    }
+    try {
+        const res = await fetch(`/rub/api/alro/ind/search?pin=${encodeURIComponent(pin)}`);
+        const data = await res.json();
+        if (data.success) {
+            renderAlroIndSearchResults(data.features || []);
+        } else {
+            console.error('alro ind search error:', data.error);
+        }
+    } catch (err) {
+        console.error('alro ind search error:', err);
+    }
+}
+
+let _alroIndSearchTimer = null;
+document.getElementById('alroIndSearchInput').addEventListener('input', (e) => {
+    clearTimeout(_alroIndSearchTimer);
+    const value = e.target.value.trim();
+    _alroIndSearchTimer = setTimeout(() => searchAlroIndByPin(value), 350);
+});
+document.getElementById('alroIndSearchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        clearTimeout(_alroIndSearchTimer);
+        searchAlroIndByPin(e.target.value.trim());
+    }
+});
+document.getElementById('alroIndSearchBtn').addEventListener('click', () => {
+    clearTimeout(_alroIndSearchTimer);
+    searchAlroIndByPin(document.getElementById('alroIndSearchInput').value.trim());
+});
+document.getElementById('alroIndSearchCollapse').addEventListener('shown.bs.collapse', () => {
+    document.getElementById('alroIndSearchInput').focus();
+});
+document.getElementById('alroIndSearchClearBtn').addEventListener('click', () => {
+    clearTimeout(_alroIndSearchTimer);
+    document.getElementById('alroIndSearchInput').value = '';
+    document.getElementById('alroIndSearchResults').classList.remove('has-results');
+    document.getElementById('alroIndSearchResults').innerHTML = '';
+    alroIndSearchHighlightGroup.clearLayers();
+});
+
 const baseLayers = {
     "Google Road": gmap_road,
     "Google Satellite": gmap_sat.addTo(map),
@@ -406,6 +600,8 @@ const overlayMaps = {
     "ตรวจเช็กแปลงตัวอย่าง": shpckLayer,
     "เขตที่ดิน สปก. (zone)": alroLandZone,
     "แปลงสำรวจ สปก. (lr47)": alroLr47,
+    "เอกสารสิทธิ สปก. (zone 48)": alroInd,
+    "เอกสารสิทธิ สปก. (zone 47)": alroZone47,
     "Longdo Map": longdoLayer.addTo(map),
 };
 
