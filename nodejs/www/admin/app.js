@@ -1954,7 +1954,7 @@ function renderDashboardOverview() {
             </div>
             <div class="dash-grand-card">
                 <div class="dash-grand-label">เนื้อที่ใช้คิดเงิน (class_Area)</div>
-                <div class="dash-grand-val">${fmt2(gDrawn)}</div>
+                <div class="dash-grand-val is-money">${fmt2(gDrawn)}</div>
                 <div class="dash-grand-sub">ไร่ · ${gProgressPct.toFixed(0)}% ของเป้าหมาย</div>
             </div>
             <div class="dash-grand-card">
@@ -1966,11 +1966,6 @@ function renderDashboardOverview() {
                 <div class="dash-grand-label">หลายคลาส (โบนัส)</div>
                 <div class="dash-grand-val">${fmt0(gBonusPlot)}</div>
                 <div class="dash-grand-sub">แปลง</div>
-            </div>
-            <div class="dash-grand-card is-highlight">
-                <div class="dash-grand-label">ประมาณการค่าจ้างรวม</div>
-                <div class="dash-grand-val is-money">${fmt2(gPay)}</div>
-                <div class="dash-grand-sub">บาท</div>
             </div>
         </div>
         <div class="dash-project-progress mb-1">
