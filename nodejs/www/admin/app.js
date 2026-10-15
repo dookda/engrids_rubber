@@ -1875,7 +1875,7 @@ function renderDashboardOverview() {
     // เอาไร่ที่ปัดแล้วคูณ 1600 กลับจะเพี้ยนจากค่าจริง (เช่น 4.26×1600=6,816 แต่ ตร.ม.จริงคือ 6,810) จึงต้องใช้ drawn_sqm ที่ backend รวมจาก shpsplit_sqm ตรง ๆ แทน
     const fmtSqmExact = (sqm) => Math.round(sqm || 0).toLocaleString('th-TH') + ' ตร.ม.';
 
-    let gTarget = 0, gDrawn = 0, gPay = 0, gTotalPlots = 0, gClassifiedPlots = 0, gBonusPlot = 0, gDeedTotal = 0;
+    let gTarget = 0, gDrawn = 0, gPay = 0, gTotalPlots = 0, gClassifiedPlots = 0, gBonusPlot = 0, gBonusPay = 0, gDeedTotal = 0;
 
     const rows = data.map((p, i) => {
         const areaPay = (p.ns4.area_rai * rateNs4) + (p.other.area_rai * rateOther);
@@ -1893,6 +1893,7 @@ function renderDashboardOverview() {
         gTotalPlots += p.total_plots;
         gClassifiedPlots += p.classified_plots;
         gBonusPlot += p.bonus.plot_count;
+        gBonusPay += bonusPay;
         gDeedTotal += p.deed_total_rai;
 
         return `
@@ -1954,7 +1955,7 @@ function renderDashboardOverview() {
             </div>
             <div class="dash-grand-card">
                 <div class="dash-grand-label">เนื้อที่ใช้คิดเงิน (class_Area)</div>
-                <div class="dash-grand-val is-money">${fmt2(gDrawn)}</div>
+                <div class="dash-grand-val">${fmt2(gDrawn)}</div>
                 <div class="dash-grand-sub">ไร่ · ${gProgressPct.toFixed(0)}% ของเป้าหมาย</div>
             </div>
             <div class="dash-grand-card">
@@ -1962,10 +1963,15 @@ function renderDashboardOverview() {
                 <div class="dash-grand-val">${gClassifyPct}%</div>
                 <div class="dash-grand-sub">${fmt0(gClassifiedPlots)}/${fmt0(gTotalPlots)} แปลง</div>
             </div>
-            <div class="dash-grand-card">
+            <div class="dash-grand-card" title="${fmt0(gBonusPlot)} แปลง × ${rateBonus.toLocaleString('th-TH')} บาท/แปลง = ${fmt2(gBonusPay)} บาท">
                 <div class="dash-grand-label">หลายคลาส (โบนัส)</div>
                 <div class="dash-grand-val">${fmt0(gBonusPlot)}</div>
-                <div class="dash-grand-sub">แปลง</div>
+                <div class="dash-grand-sub">แปลง &times; ${rateBonus.toLocaleString('th-TH')} บาท = ${fmt2(gBonusPay)} บาท</div>
+            </div>
+            <div class="dash-grand-card" title="เนื้อที่ใช้คิดเงิน (class_Area) ${fmt2(gDrawn)} + หลายคลาส (โบนัส) ${fmt2(gBonusPay)} บาท = ${fmt2(gDrawn + gBonusPay)} บาท">
+                <div class="dash-grand-label">รวมค่าจ้าง (คิดเงิน + โบนัส)</div>
+                <div class="dash-grand-val is-money">${fmt2(gDrawn + gBonusPay)}</div>
+                <div class="dash-grand-sub">บาท &middot; ${fmt2(gDrawn)} + ${fmt2(gBonusPay)}</div>
             </div>
         </div>
         <div class="dash-project-progress mb-1">
