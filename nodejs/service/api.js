@@ -5305,8 +5305,10 @@ app.get('/api/wage-summary-v3-all', async (req, res) => {
                 FROM reclass_${tb} r
                 JOIN class_counts cc ON cc.id = r.id
                 LEFT JOIN ${tb} m ON m.id = r.id
-                ORDER BY r.id
+                ORDER BY r.editor, r.id
             `).catch(() => ({ rows: [] }));
+            // ต้องเรียง r.editor, r.id ให้ตรงกับ /api/worker-summary-v3/:tb ทุกประการ — แปลงที่คลาสย่อยมี editor ต่างกัน
+            // จะยกทั้งแปลงให้ editor ของแถวแรก ถ้าเรียงแค่ r.id ลำดับแถวภายในแปลงเดียวกันไม่แน่นอน แปลงจะไปตกอยู่กับคนละคนกับหน้า V3
 
             const idGroups = {};
             rowsRes.rows.forEach(row => {
