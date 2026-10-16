@@ -1955,7 +1955,7 @@ function renderDashboardOverview() {
                 <div class="dash-grand-sub">ไร่</div>
             </div>
             <div class="dash-grand-card" title="ผลรวม class_Area เฉพาะคลาสยางพาราลงทะเบียน (classtype=rubber) ไม่รวมพื้นที่กันออก">
-                <div class="dash-grand-label">ยางพาราลงทะเบียน (rubber)</div>
+                <div class="dash-grand-label">ยางพาราลงทะเบียน (Para only)</div>
                 <div class="dash-grand-val">${fmt2(gRubber)}</div>
                 <div class="dash-grand-sub">ไร่</div>
             </div>
