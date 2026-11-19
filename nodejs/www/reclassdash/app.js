@@ -1,3 +1,7 @@
+// ── โครงการแก้ไข (../edit-project.js): คลาสอื่นนอกจากยาง/กันออก = "อื่นๆ" สีแดง — โครงการหลักคืนค่าเดิม ──
+const _ruL = (ct, normal) => (window.RU_EDIT ? window.RU_EDIT.label(ct, normal) : normal);
+const _ruC = (ct, normal) => (window.RU_EDIT ? window.RU_EDIT.color(ct, normal) : normal);
+
 // ── Global state ──
 let _panelUserDirty = false;
 let _autoSavingUserRemark = false;
@@ -1066,8 +1070,8 @@ const _workerLabelMap = {
 
 // Update the selected-plot banner in the worker quick panel
 const _updateWorkerSelectedBanner = (rowData) => {
-    const color = _workerColorMap[rowData.classtype] || '#90a4ae';
-    const label = _workerLabelMap[rowData.classtype] || 'อื่นๆ';
+    const color = _ruC(rowData.classtype, _workerColorMap[rowData.classtype] || '#90a4ae');
+    const label = _ruL(rowData.classtype, _workerLabelMap[rowData.classtype] || 'อื่นๆ');
     $('#worker-sel-dot').css('background', color);
     $('#worker-sel-subid').text(`#${rowData.sub_id}`);
     $('#worker-sel-id').text(`ID: ${rowData.id}`);
@@ -1105,8 +1109,8 @@ const _updateAreaCards = (rowData) => {
         'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
         'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
     };
-    const rdLabel = labelMapFull[rowData.classtype] || 'อื่นๆ';
-    const rdColor = colorMapFull[rowData.classtype] || '#6c757d';
+    const rdLabel = _ruL(rowData.classtype, labelMapFull[rowData.classtype] || 'อื่นๆ');
+    const rdColor = _ruC(rowData.classtype, colorMapFull[rowData.classtype] || '#6c757d');
 
     // Left card: deed data
     $('#target-land-sqm').text(Number(rowData.deed_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
@@ -1202,8 +1206,8 @@ const buildWorkerPlotList = (filterId = null) => {
 
     // Build single item HTML
     const buildItem = row => {
-        const color = _workerColorMap[row.classtype] || '#90a4ae';
-        const label = _workerLabelMap[row.classtype] || 'อื่นๆ';
+        const color = _ruC(row.classtype, _workerColorMap[row.classtype] || '#90a4ae');
+        const label = _ruL(row.classtype, _workerLabelMap[row.classtype] || 'อื่นๆ');
         const ca = row.check_area || '';
         const cs = row.check_shape || '';
         let verdictHtml;
@@ -1460,8 +1464,8 @@ const showFeaturePanel = (feature, layer) => {
         'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
         'ex_other': '#AACDDC'
     };
-    const label = labelMap[props.classtype] || 'อื่นๆ';
-    const color = colorMap[props.classtype] || '#6c757d';
+    const label = _ruL(props.classtype, labelMap[props.classtype] || 'อื่นๆ');
+    const color = _ruC(props.classtype, colorMap[props.classtype] || '#6c757d');
 
     if (props.classtype !== 'rubber' && props.classtype) {
         $('#display-other-type').text(label).removeClass('outline-muted');
@@ -1572,8 +1576,8 @@ const showFeaturePanel = (feature, layer) => {
 
             // Per-sub check_shape rows
             const shapeRowsHtml = allSubs.map(r => {
-                const label = labelMap[r.classtype] || r.classtype || '?';
-                const color = colorMap[r.classtype] || '#666';
+                const label = _ruL(r.classtype, labelMap[r.classtype] || r.classtype || '?');
+                const color = _ruC(r.classtype, colorMap[r.classtype] || '#666');
                 const cs = r.check_shape || '';
                 const rowClass = cs === 'ผ่าน' ? 'is-pass' : cs === 'ไม่ผ่าน' ? 'is-fail' : '';
                 return `<div class="sub-review-row ${rowClass}" data-subid="${r.sub_id}">
@@ -1697,7 +1701,7 @@ const getFeatureStyle = (feature) => {
                                         ? '#AACDDCff'
                                         : '#fdae61';
     return {
-        fillColor: color,
+        fillColor: _ruC(feature.properties.classtype, color),
         weight: 2,
         opacity: 1,
         color: 'white',
@@ -1768,6 +1772,7 @@ const onEachFeature = (feature, layer) => {
 
 const loadGeoData = async () => {
     try {
+        if (window.RU_EDIT) await window.RU_EDIT.ready;   // รู้ประเภทโครงการก่อนวาดสี/ป้ายคลาส
         const tb = document.getElementById('tb').value;
         const response = await fetch(`/rub/api/getreclassfeatures/${tb}`);
         const result = await response.json();
@@ -2029,8 +2034,8 @@ const loadGeoData = async () => {
                             'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
                             'ex_other': '#AACDDC'
                         };
-                        const label = labelMap[data] || 'อื่นๆ';
-                        const c = colorMap[data] || '#90a4ae';
+                        const label = _ruL(data, labelMap[data] || 'อื่นๆ');
+                        const c = _ruC(data, colorMap[data] || '#90a4ae');
                         return `<span class="classtype-badge" style="background:${c}15;color:#000;border:1px solid ${c}40; font-weight: 500;">${label}</span>`;
                     }
                 },
@@ -3081,6 +3086,16 @@ legend.onAdd = function (map) {
     div.innerHTML += `<i style="background:#2196F3; width:14px; height:14px; display:inline-block; margin-right:6px; opacity:0.8; border:1px solid #1565C0"></i> ขอบเขต Reshape<br>`;
 
 
+    if (window.RU_EDIT?.active) {
+        // โครงการแก้ไข: ยางพาราที่ลงทะเบียน + พื้นที่กันออกทั้งหมด + อื่นๆ (แดง)
+        window.RU_EDIT.MAIN.forEach(([ct, label]) => {
+            const style = getFeatureStyle({ properties: { classtype: ct } });
+            div.innerHTML += `<i style="background:${style.fillColor}; width:14px; height:14px; display:inline-block; margin-right:6px;"></i> ${label}<br>`;
+        });
+        div.innerHTML += `<i style="background:${window.RU_EDIT.OTHER_COLOR}; width:14px; height:14px; display:inline-block; margin-right:6px;"></i> อื่นๆ<br>`;
+        return div;
+    }
+
     for (let i = 0; i < categories.length; i++) {
         const dummy = { properties: { classtype: categories[i] } },
             style = getFeatureStyle(dummy);
@@ -3093,6 +3108,8 @@ legend.onAdd = function (map) {
 
 
 legend.addTo(map);
+// legend ถูกสร้างก่อนรู้ประเภทโครงการ → สร้างใหม่เมื่อรู้ว่าเป็นโครงการแก้ไข
+window.RU_EDIT?.ready.then(isEdit => { if (isEdit) { legend.remove(); legend.addTo(map); } });
 
 document.getElementById('reshape').addEventListener('click', (e) => {
     e.preventDefault();
@@ -3320,6 +3337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadTaskProgress(tb, currentUser);
 
         // จัดกลุ่มประเภทต่างๆ ก่อนแสดงผล เพื่อป้องกันแถวซ้ำกัน (เช่น มี "ไม่ระบุ" หลายอัน)
+        if (window.RU_EDIT) await window.RU_EDIT.ready;
         const groupedData = {};
         raiData.forEach(r => {
             let cat = 'ไม่ระบุ';
@@ -3332,6 +3350,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             else if (r.classtype === 'ex_cr_area') cat = 'พื้นที่กันออก (ถนนคอนกรีต)';
             else if (r.classtype === 'ex_ar_area') cat = 'พื้นที่กันออก (ถนนลาดยาง)';
             else if (r.classtype === 'ex_other') cat = 'พื้นที่กันออก (เพิ่มเติม)';
+            cat = _ruL(r.classtype, cat);   // โครงการแก้ไข: คลาสอื่นรวมเป็น "อื่นๆ"
 
             groupedData[cat] = (groupedData[cat] || 0) + parseFloat(r.area_rai);
         });

@@ -382,6 +382,72 @@ async function loadAssignmentHome(tb_name) {
     }
 }
 
+// สรุปตัวเลขบนการ์ดโครงการแก้ไข: จำนวนแปลง / ยางลงทะเบียน / พื้นที่กันออก / ถึงเป้า (ยาง+กันออก เทียบ Rubr_total)
+// รายการแปลงที่ยาง+กันออก ยังไม่ตรงเป้า (เกิน ±600 ตร.ม.) พร้อมเหตุผล และปุ่มเปิดแก้คลาส (ไม่ลบคลาสเดิม)
+function renderOffTarget(tb, s) {
+    const list = s.off_target || [];
+    if (!list.length) {
+        return `<div class="edit-ok"><i class="bi bi-check-circle-fill me-1"></i>ทุกแปลงตรงเป้า (ยาง+กันออก ±600 ตร.ม.)</div>`;
+    }
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    const rai = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const rows = list.map(p => {
+        const short = p.diff_sqm !== null && p.diff_sqm < 0;
+        const diffTxt = p.diff_sqm === null ? 'ไม่มีเป้า'
+            : `${short ? 'ขาด' : 'เกิน'} ${Math.abs(p.diff_sqm).toLocaleString('th-TH')} ตร.ม.`;
+        const url = `/rub/reclass/index.html?tb=${encodeURIComponent(tb)}&id=${p.id}&Rubr_Sqm=${encodeURIComponent(p.rubr_sqm || 0)}`;
+        return `
+            <div class="off-row">
+                <div class="off-main">
+                    <div class="off-title">
+                        <span class="off-id">ID ${p.id}</span>
+                        <span>${esc(p.regis_no || '-')} / ${esc(p.no_plot ?? '-')}</span>
+                        <span class="off-name">${esc(p.full_nam || '')}</span>
+                    </div>
+                    <div class="off-nums">
+                        ยาง ${rai(p.rubber)} + กันออก ${rai(p.ex)} = <b>${rai(p.sum)}</b> / เป้า ${p.target ? rai(p.target) : '-'} ไร่
+                        <span class="off-diff ${short ? 'short' : 'over'}">${diffTxt}</span>
+                    </div>
+                    <ul class="off-reasons">${p.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+                </div>
+                <a class="btn btn-sm off-btn" href="${url}" title="เปิดแปลงนี้ในหน้า Reclass (ไม่ลบคลาสเดิม)">
+                    <i class="bi bi-pencil-square me-1"></i>แก้คลาส
+                </a>
+            </div>`;
+    }).join('');
+    const more = s.off_target_total > list.length ? `<div class="off-more">และอีก ${s.off_target_total - list.length} แปลง</div>` : '';
+    return `
+        <details class="edit-off" ${s.off_target_total <= 10 ? 'open' : ''}>
+            <summary><i class="bi bi-exclamation-triangle-fill me-1"></i>แปลงที่ยังไม่ตรงเป้า <b>${s.off_target_total}</b> แปลง
+                <span class="off-hint">ยาง+กันออก เทียบ Rubr_total เกิน ±600 ตร.ม. (ไม่นับ “อื่นๆ”)</span></summary>
+            <div class="off-list">${rows}${more}</div>
+        </details>`;
+}
+
+async function loadEditProjectSummary(tb) {
+    const box = document.getElementById(`edit_stats_${tb}`);
+    if (!box) return;
+    const rai = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    try {
+        const r = await fetch(`/rub/api/project-summary/${encodeURIComponent(tb)}`);
+        const s = await r.json();
+        if (!r.ok) throw new Error(s.error || r.statusText);
+        const pct = s.plots ? Math.round((s.reached / s.plots) * 100) : 0;
+        box.innerHTML = `
+            <div class="edit-stat"><small>แปลง</small><b>${s.plots.toLocaleString()}</b></div>
+            <div class="edit-stat"><small><span class="edit-dot" style="background:#006d2c"></span>ยางลงทะเบียน</small><b>${rai(s.rubber)}<em>ไร่</em></b></div>
+            <div class="edit-stat"><small><span class="edit-dot" style="background:#AACDDC"></span>พื้นที่กันออก</small><b>${rai(s.ex)}<em>ไร่</em></b></div>
+            <div class="edit-stat">
+                <small>ตรงเป้า ±600 ตร.ม.</small>
+                <b>${s.reached}<em>/ ${s.plots}</em></b>
+                <div class="edit-progress" title="${pct}%"><span style="width:${pct}%"></span></div>
+            </div>
+            ${renderOffTarget(tb, s)}`;
+    } catch (e) {
+        box.innerHTML = `<div class="edit-note text-danger">โหลดสรุปไม่ได้: ${String(e.message).replace(/</g, '&lt;')}</div>`;
+    }
+}
+
 const initApp = async () => {
     try {
 
@@ -393,31 +459,78 @@ const initApp = async () => {
         const layerList = document.getElementById('layerList');
         layerList.innerHTML = ''; // clear existing
 
-        const promises = result.map(async (item, index) => {
+        // แยก 2 กลุ่ม: โครงการหลัก / โครงการแก้ไขคลาส (สร้างจากไฟล์ผ่านปุ่ม "แก้ไขคลาส" — สีม่วง)
+        const isEditProject = (item) => item.kind === 'edit';
+        const mainItems = result.filter(i => !isEditProject(i));
+        const editItems = result.filter(isEditProject);
+        layerList.innerHTML = `
+            <div class="col-12 project-section">
+                <div class="project-section-head">
+                    <span class="project-section-dot main"></span>
+                    <span class="project-section-title">โครงการหลัก</span>
+                    <span class="project-section-count">${mainItems.length}</span>
+                </div>
+                <div id="layerListMain">${mainItems.length ? '' : '<div class="project-section-empty">ยังไม่มีโครงการ</div>'}</div>
+            </div>
+            ${editItems.length ? `
+            <div class="col-12 project-section">
+                <div class="project-section-head edit">
+                    <span class="project-section-dot edit"></span>
+                    <span class="project-section-title">โครงการแก้ไขคลาส</span>
+                    <span class="project-section-count edit">${editItems.length}</span>
+                    <span class="project-section-hint">สร้างจากไฟล์ที่แก้ใน QGIS — แยกจากโครงการหลัก ใช้ปรับแก้ข้อมูล</span>
+                </div>
+                <div id="layerListEdit"></div>
+            </div>` : ''}`;
+        const mainBox = document.getElementById('layerListMain');
+        const editBox = document.getElementById('layerListEdit');
+        const fmtDateTh = (d) => d ? new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-';
+        const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+        const promises = result.map(async (item) => {
             const { tb_name } = item;
+            const isEdit = isEditProject(item);
+            const index = isEdit ? editItems.indexOf(item) : mainItems.indexOf(item);
+            const btnColor = isEdit ? '#f57c00' : '#5c727d';
+            const sourceFiles = isEdit ? String(item.remark || '').replace(/^แก้ไขคลาสจากไฟล์:\s*/, '') : '';
             const wrapper = document.createElement('div');
             wrapper.innerHTML = `
-                <div class="alert alert-dismissible alert-info shadow-sm mb-3 border-0 project-card-premium">
+                <div class="alert alert-dismissible alert-info shadow-sm mb-3 border-0 ${isEdit ? 'project-card-edit' : 'project-card-premium'}">
+                    ${isEdit ? `
+                    <div class="edit-card-head mb-2">
+                        <div>
+                            <span class="edit-badge"><i class="bi bi-pencil-fill"></i> โครงการแก้ไข</span>
+                            <div class="edit-card-title"><i class="bi bi-folder-symlink-fill me-2"></i>${index + 1}. ${escHtml(tb_name)}</div>
+                        </div>
+                    </div>
+                    <div class="edit-meta mb-2">
+                        ${sourceFiles ? `<span title="ไฟล์ต้นทาง"><i class="bi bi-file-earmark-zip"></i>${escHtml(sourceFiles)}</span>` : ''}
+                        <span><i class="bi bi-calendar3"></i>สร้าง ${fmtDateTh(item.created_at)}</span>
+                        ${item.created_by ? `<span><i class="bi bi-person"></i>${escHtml(item.created_by)}</span>` : ''}
+                    </div>
+                    <div class="edit-stats mb-3" id="edit_stats_${tb_name}">
+                        <div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div>
+                    </div>` : `
                     <div class="d-flex justify-content-between align-items-center mb-3">
 
                         <strong style="color: #2e7d32; font-size: 1.4rem;"><i class="bi bi-folder-fill text-warning me-2"></i>${index + 1}. โครงการ: ${tb_name}</strong>
-                    </div>
-                    
+                    </div>`}
+
                     <div class="d-flex flex-wrap gap-2 mb-3">
-                        <button class="btn btn-secondary reshape btn-sm px-3" data-tb="${tb_name}" style="background-color: #5c727d; border-color: #5c727d;">
+                        <button class="btn btn-secondary reshape btn-sm px-3" data-tb="${tb_name}" style="background-color: ${btnColor}; border-color: ${btnColor};">
                             <i class="bi bi-pencil-square me-1"></i>ปรับรูปแปลง
                         </button>
-                        <button class="btn btn-secondary dashboard-btn btn-sm px-3" data-tb="${tb_name}" style="background-color: #5c727d; border-color: #5c727d;">
+                        <button class="btn btn-secondary dashboard-btn btn-sm px-3" data-tb="${tb_name}" style="background-color: ${btnColor}; border-color: ${btnColor};">
                             <i class="bi bi-graph-up-arrow me-1"></i>Dashboard
                         </button>
                         <div class="dropdown d-inline-block">
-                            <button class="btn btn-success dropdown-toggle btn-sm px-3" type="button" id="dropdownMenuButton${tb_name}" data-bs-toggle="dropdown" aria-expanded="false" style="background-color: #43a047; border-color: #43a047;">
+                            <button class="btn btn-success dropdown-toggle btn-sm px-3" type="button" id="dropdownMenuButton${tb_name}" data-bs-toggle="dropdown" aria-expanded="false" style="background-color: ${isEdit ? '#e65100' : '#43a047'}; border-color: ${isEdit ? '#e65100' : '#43a047'};">
                                 <i class="bi bi-download me-1"></i>Download ข้อมูล
                             </button>
 
                             <ul class="dropdown-menu premium-dropdown-menu shadow-lg border-0" style="border-radius: 12px;" aria-labelledby="dropdownMenuButton${tb_name}">
                                 <li>
-                                    <a class="dropdown-item download_all" href="javascript:void(0);" data-tb="${tb_name}">
+                                    <a class="dropdown-item download_all" href="javascript:void(0);" data-tb="${tb_name}" data-edit="${isEdit ? '1' : ''}">
                                         <div class="icon-wrapper" style="color: #e91e63 !important; background: #fce4ec !important;"><i class="bi bi-download"></i></div>
                                         <span class="fw-bold">Download ทั้งหมด</span>
                                     </a>
@@ -429,12 +542,12 @@ const initApp = async () => {
                                         <span>Download แปลงโฉนดของยางพารา</span>
                                     </a>
                                 </li>
-                                <li>
+                                ${isEdit ? '' : `<li>
                                     <a class="dropdown-item classify_download" href="javascript:void(0);" data-tb="${tb_name}">
                                         <div class="icon-wrapper"><i class="bi bi-file-earmark-check"></i></div>
                                         <span>Download reclassify (LU)</span>
                                     </a>
-                                </li>
+                                </li>`}
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
                                     <a class="dropdown-item classify_download_rubber" href="javascript:void(0);" data-tb="${tb_name}">
@@ -456,7 +569,8 @@ const initApp = async () => {
                     <div class="assignment-home-section" id="assign_home_${tb_name}"></div>
                 </div>
             `;
-            layerList.appendChild(wrapper);
+            (isEdit ? editBox : mainBox).appendChild(wrapper);
+            if (isEdit) loadEditProjectSummary(tb_name);
             await loadAssignmentHome(tb_name);
         });
 
@@ -523,7 +637,10 @@ const initApp = async () => {
                 e.preventDefault();
                 const tb = this.getAttribute('data-tb');
                 downloadFile(`/rub/api/download/reshape/${tb}`, `pacel_yang_${tb}.geojson`);
-                downloadFile(`/rub/api/download/reshape/v_reclass_${tb}`, `v_reclass_LU_${tb}.geojson`);
+                // โครงการแก้ไขไม่มีไฟล์ LU (ใช้แค่ยางลงทะเบียน + พื้นที่กันออก)
+                if (this.getAttribute('data-edit') !== '1') {
+                    downloadFile(`/rub/api/download/reshape/v_reclass_${tb}`, `v_reclass_LU_${tb}.geojson`);
+                }
                 downloadFile(`/rub/api/download/reshape/v_reclass_${tb}?type=rubber`, `v_reclass_rubber_${tb}.geojson`);
                 downloadFile(`/rub/api/download/reshape/v_reclass_${tb}?type=rubber_and_ex`, `v_reclass_rubber_ex_${tb}.geojson`);
             });
@@ -654,6 +771,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // ปุ่ม "งานที่ต้องแก้ไข" — สรุปแปลงที่แอดมินตรวจแล้วไม่ผ่านของทุกคน ทุกโปรเจค แสดงให้ผู้ login ทุก role เห็น
             document.getElementById('btnNeedsFixAll').style.display = '';
+            // ปุ่ม "แก้ไขคลาส" — อัปโหลดไฟล์ขอบเขตแปลง/แปลงที่คลาสแล้วที่แก้ใน QGIS (เลือกโครงการในหน้าต่าง)
+            document.getElementById('btnEditClass').style.display = '';
 
             // แสดง role badge
             const roleBadgeColors = { admin: '#dc3545', worker: '#198754' };
