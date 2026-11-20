@@ -5730,8 +5730,10 @@ app.get('/api/project-summary/:tb', async (req, res) => {
 
 // ── ตรวจไฟล์ ±600 (ปุ่ม "ตรวจไฟล์ ±600" หน้าแรก) ───────────────────────────
 // ตรวจไฟล์ที่แก้ใน QGIS เสร็จแล้ว ก่อนส่ง/นำเข้า — อ่านอย่างเดียว ไม่บันทึกอะไรลงฐานข้อมูล
-// ① แปลงที่คลาสแล้ว (จำเป็น) ② ขอบเขตแปลง (ไม่บังคับ — ถ้ามี จะตัดคลาสให้อยู่ในขอบเขตก่อนคิดพื้นที่ เหมือนตอนนำเข้า)
-// ต่อแปลง: ยางลงทะเบียน (หักส่วนที่ทับกันออก) + พื้นที่กันออก เทียบ Rubr_total — ผ่านเมื่อต่างไม่เกิน ±600 ตร.ม.
+// ใส่ไฟล์ใดไฟล์หนึ่งหรือทั้งสอง:
+// ① แปลงที่คลาสแล้ว → ต่อแปลง: ยางลงทะเบียน (หักส่วนที่ทับกันออก) + พื้นที่กันออก เทียบ Rubr_total ผ่านเมื่อต่างไม่เกิน ±600 ตร.ม.
+// ② ขอบเขตแปลง (โฉนด) → ต่อแปลง: พื้นที่รูปแปลง เทียบ Deed_total ผ่านเมื่อต่างไม่เกิน ±100 ตร.ม.
+//    ถ้าใส่ทั้งคู่ คลาสใน ① จะถูกตัดให้อยู่ในขอบเขต ② ก่อนคิด ±600 (เหมือนตอนนำเข้า)
 // พื้นที่คิดจากรูป polygon จริง (UTM) ไม่ใช้ค่า Class_Area ในตาราง — ถ้า Class_Area ไม่ตรงรูปจริงจะแจ้งเตือนแยก
 app.post('/api/file-check-600',
     upload.fields([{ name: 'classified', maxCount: 1 }, { name: 'boundary', maxCount: 1 }]),
@@ -5741,8 +5743,9 @@ app.post('/api/file-check-600',
     const files = [req.files?.classified?.[0], req.files?.boundary?.[0]].filter(Boolean);
     try {
         const cFile = req.files?.classified?.[0], bFile = req.files?.boundary?.[0];
-        if (!cFile) return res.status(400).json({ error: 'กรุณาเลือกไฟล์แปลงที่คลาสแล้ว (ช่อง ①)' });
+        if (!cFile && !bFile) return res.status(400).json({ error: 'กรุณาเลือกไฟล์อย่างน้อย 1 ไฟล์' });
         const TOL_SQM = 600;
+        const DEED_TOL_SQM = 100; // ขอบเขตแปลง (โฉนด) เทียบ Deed_total ต่างได้ไม่เกิน ±100 ตร.ม.
         const NEAR_SQM = 500; // ผ่านแต่ใกล้ขอบเกณฑ์ — แก้รูปอีกนิดอาจหลุด
         const num = (v) => { const n = Number(ruText(v)); return Number.isFinite(n) ? n : 0; };
         const targetOf = (p) => {
@@ -5753,16 +5756,28 @@ app.post('/api/file-check-600',
             const r = num(ruProp(p, 'Rubr_Rai')) + num(ruProp(p, 'Rubr_Ngan')) / 4 + num(ruProp(p, 'Rubr_sqwa')) / 400;
             return r > 0 ? r : null;
         };
+        const deedTargetOf = (p) => {
+            const t = num(ruProp(p, 'Deed_total'));
+            if (t > 0) return t;
+            const s = num(ruProp(p, 'Deed_Sqm'));
+            if (s > 0) return s / 1600;
+            const r = num(ruProp(p, 'Deed_Rai')) + num(ruProp(p, 'Deed_Ngan')) / 4 + num(ruProp(p, 'Deed_sqwa')) / 400;
+            return r > 0 ? r : null;
+        };
 
-        // ── ไฟล์แปลงที่คลาสแล้ว ──
-        const { features, srid } = await ruReadFile(cFile, dirs[0]);
-        const polys = features.filter(f => f?.geometry && /Polygon$/.test(f.geometry.type));
-        if (!polys.length) throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบ polygon');
-        if (ruProp(polys[0].properties || {}, 'Classtype') === undefined) {
-            throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบคอลัมน์ Classtype (เลือกไฟล์สลับช่องหรือเปล่า?)');
+        // ── ไฟล์แปลงที่คลาสแล้ว (ไม่ใส่ก็ได้ ถ้าตรวจเฉพาะขอบเขตแปลง) ──
+        let polys = [], srid = 4326, missingColumns = [];
+        if (cFile) {
+            const r = await ruReadFile(cFile, dirs[0]);
+            srid = r.srid;
+            polys = r.features.filter(f => f?.geometry && /Polygon$/.test(f.geometry.type));
+            if (!polys.length) throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบ polygon');
+            if (ruProp(polys[0].properties || {}, 'Classtype') === undefined) {
+                throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบคอลัมน์ Classtype (เลือกไฟล์สลับช่องหรือเปล่า?)');
+            }
+            missingColumns = ['Classtype', 'Class_Area', 'Regis_No', 'No_Plot', 'Deed_ID', 'Rubr_total']
+                .filter(c => ruProp(polys[0].properties || {}, c) === undefined);
         }
-        const missingColumns = ['Classtype', 'Class_Area', 'Regis_No', 'No_Plot', 'Deed_ID', 'Rubr_total']
-            .filter(c => ruProp(polys[0].properties || {}, c) === undefined);
 
         const plots = [];              // pid -> ข้อมูลแปลง
         const k3 = new Map(), k2 = new Map();
@@ -5777,13 +5792,15 @@ app.post('/api/file-check-600',
                 plots.push({
                     pid, regis_no: ruText(regis), no_plot: ruText(plot), deed_id: ruText(deed),
                     full_nam: ruText(ruProp(p, 'Full_nam')) || [ruProp(p, 'Title_name'), ruProp(p, 'F_name'), ruProp(p, 'L_name')].map(ruText).filter(Boolean).join(''),
-                    target: null, polygons: 0, unknown: 0, invalid: 0, attr_mismatch: 0,
+                    target: null, deed_target: null, boundaries: 0, polygons: 0, unknown: 0, invalid: 0, attr_mismatch: 0,
                 });
                 k3.set(key3, pid);
                 if (!k2.has(key2)) k2.set(key2, pid);
             }
             const t = targetOf(p);
             if (t !== null && plots[pid].target === null) plots[pid].target = t;
+            const dt = deedTargetOf(p);
+            if (dt !== null && plots[pid].deed_target === null) plots[pid].deed_target = dt;
             return pid;
         };
         const unknownClasses = {};
@@ -5804,8 +5821,16 @@ app.post('/api/file-check-600',
             const bp = b.features.filter(f => f?.geometry && /Polygon$/.test(f.geometry.type));
             if (!bp.length) throw new Error('ไฟล์ขอบเขตแปลง: ไม่พบ polygon');
             const before = plots.length;
-            bList = bp.map(f => ({ pid: plotOf(f.properties || {}, true), g: JSON.stringify(f.geometry) }));
-            boundaryOnly = plots.length - before; // แปลงที่มีในขอบเขตแต่ไม่มีคลาสเลยในไฟล์ ①
+            bList = bp.map(f => {
+                const p = f.properties || {};
+                const pid = plotOf(p, true);
+                plots[pid].boundaries++;
+                // เป้าโฉนดใช้ค่าจากไฟล์ขอบเขตแปลงก่อน (ไฟล์ ① อาจมีค่าเก่า)
+                const dt = deedTargetOf(p);
+                if (dt !== null && !plots[pid]._deedFromB) { plots[pid].deed_target = dt; plots[pid]._deedFromB = true; }
+                return { pid, g: JSON.stringify(f.geometry) };
+            });
+            boundaryOnly = cFile ? plots.length - before : 0; // แปลงที่มีในขอบเขตแต่ไม่มีคลาสเลยในไฟล์ ①
         }
 
         const AREA0 = (g) => `CASE WHEN ${g} IS NULL OR ST_IsEmpty(${g}) THEN 0 ELSE ${RU_AREA(g)} END`;
@@ -5886,11 +5911,26 @@ app.post('/api/file-check-600',
             const overlapRuEx = Math.max(0, Number(g.ru_sqm || 0) - ruNet);                                // ยางทับกันออก
             const targetSqm = pl.target !== null ? pl.target * 1600 : null;
             const diff = targetSqm !== null ? Math.round(sumSqm - targetSqm) : null;
-            const status = targetSqm === null ? 'notarget'
+            const status = !cFile ? null
+                : targetSqm === null ? 'notarget'
                 : Math.abs(diff) <= TOL_SQM ? (Math.abs(diff) > NEAR_SQM ? 'near' : 'pass')
                 : diff < 0 ? 'short' : 'over';
+            // ── ขอบเขตแปลง (โฉนด) เทียบ Deed_total ±100 ตร.ม. ──
+            const bSqm = g.boundary_sqm === null || g.boundary_sqm === undefined ? null : Number(g.boundary_sqm);
+            const deedTargetSqm = pl.deed_target !== null ? pl.deed_target * 1600 : null;
+            const deedDiff = bSqm !== null && deedTargetSqm !== null ? Math.round(bSqm - deedTargetSqm) : null;
+            const deed_status = !bFile ? null
+                : !pl.boundaries ? 'noboundary'
+                : deedTargetSqm === null ? 'notarget'
+                : Math.abs(deedDiff) <= DEED_TOL_SQM ? 'pass'
+                : deedDiff < 0 ? 'short' : 'over';
+            const deed_notes = [];
+            if (pl.boundaries > 1) deed_notes.push(`มีรูปขอบเขต ${pl.boundaries} polygon ในแปลงเดียวกัน — รวมเป็นรูปเดียวแล้ว`);
+            if (deed_status === 'noboundary') deed_notes.push('ไม่มีรูปขอบเขตในไฟล์ ② (มีแต่คลาสในไฟล์ ①)');
+            if (deed_status === 'notarget') deed_notes.push('ไม่มีค่า Deed_total');
             const notes = [];
-            if (!pl.polygons) notes.push('ไม่มีคลาสในไฟล์ ① (มีแต่ขอบเขตแปลง)');
+            if (!cFile) { /* ตรวจเฉพาะขอบเขตแปลง */ }
+            else if (!pl.polygons) notes.push('ไม่มีคลาสในไฟล์ ① (มีแต่ขอบเขตแปลง)');
             else if (sumSqm < 1) notes.push('ไม่มียางลงทะเบียน/กันออกเลย');
             if (status === 'short' && a.unknown_sqm + a.other > 1) {
                 notes.push(`มีพื้นที่ไม่นับเข้าเป้า ${(Math.round((a.unknown_sqm + a.other) / 16) / 100).toFixed(2)} ไร่ (ยางไม่ลงทะเบียน/ไม่ใช่ยาง/Classtype ไม่รู้จัก)`);
@@ -5905,20 +5945,29 @@ app.post('/api/file-check-600',
                 regis_no: pl.regis_no, no_plot: pl.no_plot, deed_id: pl.deed_id, full_nam: pl.full_nam,
                 polygons: pl.polygons, target_rai: pl.target,
                 rubber_rai: ruNet / 1600, ex_rai: ex / 1600, sum_rai: sumSqm / 1600,
-                boundary_rai: g.boundary_sqm === null || g.boundary_sqm === undefined ? null : Number(g.boundary_sqm) / 1600,
                 diff_sqm: diff, status, notes,
+                boundary_rai: bSqm === null ? null : bSqm / 1600, deed_target_rai: pl.deed_target,
+                deed_diff_sqm: deedDiff, deed_status, deed_notes,
             };
         });
-        const count = (s) => out.filter(p => p.status === s).length;
+        const count = (s, k = 'status') => out.filter(p => p[k] === s).length;
+        const deedPlots = out.filter(p => p.deed_status && p.deed_status !== 'noboundary');
         res.json({
-            files: { classified: cFile.originalname, boundary: bFile?.originalname || null },
+            files: { classified: cFile?.originalname || null, boundary: bFile?.originalname || null },
             tolerance_sqm: TOL_SQM,
+            deed_tolerance_sqm: DEED_TOL_SQM,
             polygons: polys.length,
-            summary: {
+            boundary_polygons: bList.length,
+            summary: cFile ? {
                 plots: out.length, pass: count('pass'), near: count('near'),
                 short: count('short'), over: count('over'), notarget: count('notarget'),
                 with_notes: out.filter(p => p.notes.length).length, boundary_only: boundaryOnly,
-            },
+            } : null,
+            deed_summary: bFile ? {
+                plots: deedPlots.length, pass: count('pass', 'deed_status'),
+                short: count('short', 'deed_status'), over: count('over', 'deed_status'),
+                notarget: count('notarget', 'deed_status'), noboundary: count('noboundary', 'deed_status'),
+            } : null,
             missingColumns, unknownClasses, plots: out,
         });
     } catch (err) {

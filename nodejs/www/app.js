@@ -485,8 +485,8 @@ const initApp = async () => {
                             <i class="bi bi-palette me-1"></i>แก้ไขคลาส
                         </button>
                         <button type="button" class="btn btn-sm filecheck-btn" style="border:1px solid #00796b; color:#00796b;"
-                                title="ตรวจไฟล์ที่แก้เสร็จแล้ว ว่ายาง+กันออก ต่างจาก Rubr_total ไม่เกิน ±600 ตร.ม.">
-                            <i class="bi bi-clipboard-check me-1"></i>ตรวจไฟล์ ±600
+                                title="ตรวจไฟล์ที่แก้เสร็จแล้ว: ยาง+กันออก เทียบ Rubr_total ±600 ตร.ม. / แปลงโฉนด เทียบ Deed_total ±100 ตร.ม.">
+                            <i class="bi bi-clipboard-check me-1"></i>ตรวจไฟล์
                         </button>
                     </span>
                 </div>
