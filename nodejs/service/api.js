@@ -5663,6 +5663,8 @@ app.get('/api/project-summary/:tb', async (req, res) => {
             SELECT m.id, m."Regis_No" AS regis_no, m."No_Plot"::text AS no_plot, m."Deed_ID" AS deed_id,
                    m."Full_nam" AS full_nam, m."Rubr_Sqm" AS rubr_sqm, m."Deed_Area"::float AS deed_rai,
                    COALESCE(NULLIF(m."Rubr_Sqm", 0) / 1600.0, m."Rubr_total")::float AS target,
+                   COALESCE(NULLIF(m."Deed_total", 0), NULLIF(m."Deed_Sqm", 0) / 1600.0)::float AS deed_target,
+                   (${RU_AREA('m.geom')})::float AS boundary_sqm,
                    COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype = 'rubber'), 0)::float / 1600.0 AS rubber,
                    COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype LIKE 'ex\\_%'), 0)::float / 1600.0 AS ex,
                    COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype IS NULL OR TRIM(r.classtype) = ''), 0)::float AS unclassified,
@@ -5674,6 +5676,29 @@ app.get('/api/project-summary/:tb', async (req, res) => {
         const rai = (n) => (Math.round(n * 100) / 100).toFixed(2);
         const offTarget = [];
         let reached = 0;
+        // ขอบเขตแปลง (โฉนด): พื้นที่รูปแปลงจริง (UTM) เทียบ Deed_total ต่างได้ไม่เกิน ±100 ตร.ม. (เกณฑ์เดียวกับปุ่ม "ตรวจไฟล์")
+        const DEED_TOL_SQM = 100;
+        const deedOff = [];
+        let deedReached = 0, deedChecked = 0;
+        for (const p of plots) {
+            const bSqm = p.boundary_sqm;
+            const tSqm = p.deed_target > 0 ? p.deed_target * 1600 : null;
+            // ไม่มีเนื้อที่โฉนด (0 / ว่าง — แปลงที่แบ่งเนื้อที่) หรือไม่มีรูปแปลง → ไม่นับ ไม่แสดง
+            if (bSqm === null || tSqm === null) continue;
+            // เลขโฉนดมี "/" (เช่น 1234/5678) = โฉนดแบ่งเป็นหลายแปลง → เนื้อที่ไม่ตรงรูปแปลงเดียว ไม่นับ ไม่แสดง
+            if (String(p.deed_id ?? '').includes('/')) continue;
+            deedChecked++;
+            const dDiff = Math.round(bSqm - tSqm);
+            if (Math.abs(dDiff) <= DEED_TOL_SQM) { deedReached++; continue; }
+            const dReasons = [];
+            if (dDiff < 0) dReasons.push('รูปแปลงเล็กกว่าเนื้อที่โฉนด — ขยายขอบเขตแปลงให้ครบตามโฉนด');
+            else dReasons.push('รูปแปลงใหญ่กว่าเนื้อที่โฉนด — ลดขอบเขตแปลงให้ตรงตามโฉนด');
+            deedOff.push({
+                id: p.id, regis_no: p.regis_no, no_plot: p.no_plot, deed_id: p.deed_id, full_nam: p.full_nam,
+                boundary: bSqm / 1600, deed_target: p.deed_target,
+                diff_sqm: dDiff, reasons: dReasons,
+            });
+        }
         for (const p of plots) {
             const sum = p.rubber + p.ex;
             if (p.target > 0 && Math.abs(sum - p.target) <= TOL) { reached++; continue; }
@@ -5720,6 +5745,10 @@ app.get('/api/project-summary/:tb', async (req, res) => {
             reached,
             off_target: offTarget.slice(0, 300),
             off_target_total: offTarget.length,
+            deed_reached: deedReached,
+            deed_checked: deedChecked,
+            deed_off: deedOff.slice(0, 300),
+            deed_off_total: deedOff.length,
         });
     } catch (err) {
         if (err.code === '42P01') return res.status(404).json({ error: 'ไม่พบโครงการ' });
