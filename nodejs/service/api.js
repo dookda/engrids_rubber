@@ -306,6 +306,14 @@ app.get('/api/getfeatures/:tb', async (req, res) => {
     }
 });
 
+// รูปที่ใช้ "วาดแผนที่" ของแถว reclass: โครงการแก้ไขมี geom_display (รูป "อื่นๆ" ที่ลบเส้น/แถบบางตามขอบแล้ว)
+// ส่วน geom เก็บรูปเต็มไว้คำนวณพื้นที่ (ผลรวมคลาส = เนื้อที่โฉนด) — โครงการหลักไม่มีคอลัมน์นี้ใช้ geom ตามเดิม
+async function reclassDisplayGeomSql(tb, alias) {
+    const { rowCount } = await pool.query(
+        `SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'geom_display'`, [`reclass_${tb}`]);
+    return rowCount ? `ST_ASGeoJSON(COALESCE(${alias}.geom_display, ${alias}.geom))` : `ST_ASGeoJSON(${alias}.geom)`;
+}
+
 app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
     try {
         const tb = req.params.tb.toLowerCase();
@@ -336,6 +344,8 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
 
         if (reclassTableExists) await ensureReclassLock(tb);
 
+        const rGeomSelect = reclassTableExists ? await reclassDisplayGeomSql(tb, 'r') : 'ST_ASGeoJSON(r.geom)';
+
         let sql, values;
         if (reclassTableExists) {
             // locked: มีเฉพาะโครงการแก้ไข — อ่านผ่าน to_jsonb เพื่อไม่ error กับโครงการหลักที่ไม่มีคอลัมน์นี้
@@ -356,7 +366,7 @@ app.get('/api/getfeatures/:tb/:fid', async (req, res) => {
                         t."Deed_ID",
                         t."Full_nam",
                         t."Farmer_ID",
-                        ST_ASGeoJSON(r.geom) AS geom,
+                        ${rGeomSelect} AS geom,
                         ${geomPointSelect}
                     FROM ${reclassTableName} r
                     JOIN ${tb} t ON r.id = t.id
@@ -996,7 +1006,7 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.topology_status,
                     a.topology_detail,
                     a.topology_checked_ts,
-                    ST_ASGeoJSON(a.geom) AS geom,
+                    ${await reclassDisplayGeomSql(tb, 'a')} AS geom,
                     ${geomPointSelect} FROM reclass_${tb} a
                 LEFT JOIN ${tb} b
                 ON a.id = b.id
@@ -5521,42 +5531,50 @@ const RU_MIN_REMAINDER_SQM = 1; // เศษพื้นที่ที่เห
 const RU_SLIVER_HALF_WIDTH_M = 1;
 
 // SQL (CTE) ของการลบแถบบาง: แก้รูปให้ valid ใน UTM → แยกชิ้นย่อย → แต่ละชิ้น "หดเข้าแล้วขยายออก" (opening)
-// ตัดกับชิ้นเดิมให้ขอบไม่ขยับ → รวมกลับ. ต้องทำทีละชิ้นที่ valid: ถ้าทำกับรูปที่ไม่ valid (เส้นตัดกันเอง)
-// การ buffer จะกินพื้นที่ก้อนใหญ่ไปด้วย. เส้นที่พื้นที่แทบเป็นศูนย์ (ขอบยางเกือบทับขอบโฉนด) หายไปด้วยวิธีนี้
-// ใช้ร่วมกับสคริปต์ล้างข้อมูลโครงการเดิม — ผลลัพธ์: (fid, orig, kept) ใน UTM
-const RU_SLIVER_CTE = (fromSql, r = RU_SLIVER_HALF_WIDTH_M) => `
+// ตัดกับชิ้นเดิมให้ขอบไม่ขยับ → รวมกลับ → หักส่วนที่ทับ polygon อื่นของแปลงเดียวกันออก
+// - ต้องทำทีละชิ้นที่ valid: ถ้า buffer รูปที่ไม่ valid (เส้นตัดกันเอง) จะกินพื้นที่ก้อนใหญ่ไปด้วย
+// - ต้องหักคลาสอื่นออก: MakeValid อาจ "ถมรู" กลาง "อื่นๆ" (ซึ่งคือที่ตั้งของยาง/กันออก) ทำให้ทับคลาสอื่น
+// เส้นที่พื้นที่แทบเป็นศูนย์ (ขอบยางเกือบทับขอบโฉนด) หายไปด้วยวิธีนี้
+// ผลลัพธ์ o: (fid, raw = รูปเดิมใน UTM, orig = รูปที่แก้ valid แล้ว, kept = รูปใหม่)
+const RU_SLIVER_CTE = (tb, whereSql, r = RU_SLIVER_HALF_WIDTH_M) => `
     s AS (
-        SELECT fid, srid, ST_CollectionExtract(ST_MakeValid(ST_Transform(geom, srid)), 3) AS orig
-        FROM (SELECT fid, geom, ${UTM_SRID_SQL('geom')} AS srid FROM ${fromSql}) q
+        SELECT fid, id, srid, ST_Transform(geom, srid) AS raw,
+               ST_CollectionExtract(ST_MakeValid(ST_Transform(geom, srid)), 3) AS orig
+        FROM (SELECT fid, id, geom, ${UTM_SRID_SQL('geom')} AS srid FROM reclass_${tb}
+              WHERE (classtype IS NULL OR TRIM(classtype) = '') AND geom IS NOT NULL AND (${whereSql})) q
     ), parts AS (
         SELECT fid, (ST_Dump(orig)).geom AS g FROM s
     ), k AS (
         SELECT fid, ST_Union(ST_Intersection(g, ST_Buffer(ST_Buffer(g, -${r}, 'join=mitre'), ${r}, 'join=mitre'))) AS kept
         FROM parts WHERE ST_Area(g) > 0 GROUP BY fid
+    ), oth AS (
+        SELECT s.fid, ST_MakeValid(ST_Union(ST_MakeValid(ST_Transform(x.geom, s.srid)))) AS g
+        FROM s JOIN reclass_${tb} x ON x.id = s.id AND x.fid <> s.fid AND x.geom IS NOT NULL
+        GROUP BY s.fid
     ), o AS (
-        SELECT s.fid, s.srid, s.orig, COALESCE(k.kept, ST_GeomFromText('POLYGON EMPTY', s.srid)) AS kept
-        FROM s LEFT JOIN k ON k.fid = s.fid
+        SELECT s.fid, s.srid, s.raw, s.orig,
+               CASE WHEN oth.g IS NULL THEN COALESCE(k.kept, ST_GeomFromText('POLYGON EMPTY', s.srid))
+                    ELSE ST_CollectionExtract(ST_Difference(COALESCE(k.kept, ST_GeomFromText('POLYGON EMPTY', s.srid)), oth.g), 3)
+               END AS kept
+        FROM s LEFT JOIN k ON k.fid = s.fid LEFT JOIN oth ON oth.fid = s.fid
     )`;
+// เปลี่ยนจริง และไม่ใหญ่กว่ารูปเดิม
+const RU_SLIVER_ACCEPT = `(ABS(ST_Area(o.kept) - ST_Area(o.orig)) > 0.01 OR ST_NPoints(o.kept) <> ST_NPoints(o.orig))
+          AND ST_Area(o.kept) <= LEAST(ST_Area(o.raw), ST_Area(o.orig)) + 0.5`;
 
-// ลบแถบบางออกจาก polygon "อื่นๆ" (ประเภทว่าง) ที่ตรงเงื่อนไข; ชิ้นที่หายหมด/เล็กกว่า RU_MIN_REMAINDER_SQM ถูกลบ
+// สร้าง "รูปสำหรับวาดแผนที่" (geom_display) ของ "อื่นๆ" (ประเภทว่าง) ที่ลบเส้น/แถบบางตามขอบออกแล้ว
+// geom (รูปเต็ม) ไม่ถูกแตะ — พื้นที่และผลรวมคลาสยังเท่าเนื้อที่โฉนด
 // whereSql ต้องอ้างคอลัมน์ของ reclass_{tb} (ไม่มี alias) และใช้ $1.. ตาม params
 async function ruRemoveSlivers(db, tb, whereSql, params = []) {
-    const { rows } = await db.query(`
-        WITH ${RU_SLIVER_CTE(`reclass_${tb} WHERE (classtype IS NULL OR TRIM(classtype) = '') AND geom IS NOT NULL AND (${whereSql})`)}
+    await db.query(`ALTER TABLE reclass_${tb} ADD COLUMN IF NOT EXISTS geom_display geometry(MultiPolygon, 4326)`);
+    const { rowCount } = await db.query(`
+        WITH ${RU_SLIVER_CTE(tb, whereSql)}
         UPDATE reclass_${tb} t
-        SET geom = ${RU_CLEAN_GEOM('ST_Transform(o.kept, 4326)')}
+        SET geom_display = CASE WHEN ST_IsEmpty(o.kept) OR ST_Area(o.kept) < ${RU_MIN_REMAINDER_SQM} THEN NULL
+                                ELSE ${RU_CLEAN_GEOM('ST_Transform(o.kept, 4326)')} END
         FROM o
-        WHERE t.fid = o.fid
-          AND (ABS(ST_Area(o.kept) - ST_Area(o.orig)) > 0.01 OR ST_NPoints(o.kept) <> ST_NPoints(o.orig))
-        RETURNING t.fid`, params);
-    const fids = rows.map(x => x.fid);
-    if (!fids.length) return 0;
-    await db.query(`DELETE FROM reclass_${tb} WHERE fid = ANY($1::int[])
-                    AND (geom IS NULL OR ST_IsEmpty(geom) OR ${RU_AREA('geom')} < ${RU_MIN_REMAINDER_SQM})`, [fids]);
-    await db.query(`UPDATE reclass_${tb}
-                    SET shpsplit_sqm = ${RU_AREA('geom')}, "class_Area" = ROUND((${RU_AREA('geom')} / 1600.0)::numeric, 2)
-                    WHERE fid = ANY($1::int[])`, [fids]);
-    return fids.length;
+        WHERE t.fid = o.fid AND ${RU_SLIVER_ACCEPT}`, params);
+    return rowCount;
 }
 
 function ruMatcher(mainRows) {
@@ -5605,6 +5623,8 @@ async function ensureReclassLock(tb) {
             // โครงการแก้ไขที่สร้างก่อนมีระบบล็อก — ล็อกพื้นที่ "อื่นๆ" ที่มีอยู่
             await pool.query(`UPDATE reclass_${tb} SET locked = TRUE WHERE classtype IS NULL OR TRIM(classtype) = '' OR (classtype NOT IN ('rubber', 'not-rubber', 'Other') AND classtype NOT LIKE 'ex\\_%')`);
         }
+        // รูปสำหรับวาดแผนที่ของ "อื่นๆ" (ลบเส้น/แถบบางตามขอบ) — geom เก็บรูปเต็มไว้คำนวณพื้นที่
+        await pool.query(`ALTER TABLE reclass_${tb} ADD COLUMN IF NOT EXISTS geom_display geometry(MultiPolygon, 4326)`);
         // "ยางพาราที่ไม่ได้ลงทะเบียน" / "ไม่ใช่ยางพารา" ใช้ได้ในโครงการแก้ไข — ปลดล็อกถ้าเคยถูกล็อกไว้
         await pool.query(`UPDATE reclass_${tb} SET locked = FALSE WHERE locked AND classtype IN ('not-rubber', 'Other')`);
     }
