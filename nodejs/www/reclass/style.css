@@ -880,3 +880,22 @@ hr {
         overflow: auto;
     }
 }
+/* ===== โครงการแก้ไข: คู่มือ + พื้นที่ "อื่นๆ" ที่ล็อก ===== */
+.edit-guide {
+    background: linear-gradient(135deg, #fffaf3, #fff1e0);
+    border: 1px solid #ffd8a8;
+    border-left: 4px solid #fb8c00;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: .78rem;
+    color: #5d4630;
+}
+.edit-guide-title { font-weight: 700; color: #e65100; margin-bottom: 4px; }
+.edit-guide ul { margin: 0; padding-left: 4px; list-style: none; }
+.edit-guide li { display: flex; align-items: center; gap: 6px; margin: 3px 0; line-height: 1.35; }
+.edit-guide li .bi { color: #e65100; width: 14px; text-align: center; flex-shrink: 0; }
+.eg-sw { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; display: inline-block; }
+.eg-rubber { background: linear-gradient(135deg, #006d2c 50%, #AACDDC 50%); }
+.eg-locked { background: repeating-linear-gradient(135deg, rgba(13,71,161,.75) 0 2px, rgba(13,71,161,.14) 2px 6px); border: 1.5px dashed #0d47a1; }
+.eg-extra { background: linear-gradient(135deg, #9900ff 50%, #ff0004 50%); }
+.eg-pending { background: #ffcc80; border: 1.5px dashed #ef6c00; }

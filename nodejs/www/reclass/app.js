@@ -62,10 +62,13 @@ function calculateAreaSqmLocal(geometry) {
 }
 
 // ── 2. Base tile sources ──────────────────────────────────
+// ภาพคมชัด: scale=2 ได้แผ่นภาพ 512px (ละเอียดเท่าระดับซูมถัดไป) + ภาพจริงถึงซูม 19
+// (ทดสอบแล้ว ซูม 20 ขึ้นไป Google เป็นภาพขยายจากซูม 19 — ให้ OL ขยายเองต่อจากนี้)
 function googleSource(lyrs) {
     return new ol.source.XYZ({
-        url: `https://mt0.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}`,
-        maxZoom: 18
+        urls: ['mt0', 'mt1', 'mt2', 'mt3'].map(s => `https://${s}.google.com/vt/lyrs=${lyrs}&x={x}&y={y}&z={z}&scale=2`),
+        tilePixelRatio: 2,
+        maxZoom: 19
     });
 }
 
@@ -530,10 +533,48 @@ const CLASS_COLORS = {
 const DEFAULT_COLOR = '#fdae61';
 
 function getColor(classtype) {
-    return CLASS_COLORS[classtype] || DEFAULT_COLOR;
+    const normal = CLASS_COLORS[classtype] || DEFAULT_COLOR;
+    // โครงการแก้ไข: คลาสอื่นนอกจากยาง/กันออก (รวมยังไม่จำแนก) = สีแดง "อื่นๆ"
+    return window.RU_EDIT ? window.RU_EDIT.color(classtype, normal) : normal;
+}
+
+// พื้นที่ "อื่นๆ" ที่ล็อก (โครงการแก้ไข): แดงจาง ลายเส้นทแยง ขอบประแดง + ป้าย 🔒 — เลือก/แก้ไม่ได้
+let _lockHatch = null;
+function lockedHatchFill() {
+    if (_lockHatch) return _lockHatch;
+    const c = document.createElement('canvas');
+    c.width = c.height = 10;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(13,71,161,0.14)';
+    g.fillRect(0, 0, 10, 10);
+    g.strokeStyle = 'rgba(13,71,161,0.7)';
+    g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, 10); g.lineTo(10, 0); g.moveTo(-2, 2); g.lineTo(2, -2); g.moveTo(8, 12); g.lineTo(12, 8); g.stroke();
+    _lockHatch = new ol.style.Fill({ color: g.createPattern(c, 'repeat') });
+    return _lockHatch;
+}
+function lockedStyleFn(feature, resolution) {
+    const styles = [new ol.style.Style({
+        fill: lockedHatchFill(),
+        stroke: new ol.style.Stroke({ color: '#0d47a1', width: 2, lineDash: [6, 4] }),
+        zIndex: 0,
+    })];
+    if (resolution < 3) {
+        styles.push(new ol.style.Style({
+            text: new ol.style.Text({
+                text: '🔒 อื่นๆ',
+                font: '600 12px "Noto Sans Thai", sans-serif',
+                fill: new ol.style.Fill({ color: '#0d47a1' }),
+                stroke: new ol.style.Stroke({ color: 'rgba(255,255,255,0.9)', width: 3 }),
+                overflow: false,
+            }),
+        }));
+    }
+    return styles;
 }
 
 function featureStyleFn(feature, _resolution) {
+    if (feature.get('locked')) return lockedStyleFn(feature, _resolution);
     const ct = feature.get('classtype');
     const sel = feature.get('selected');
     const merge = feature.get('mergeSelected');
@@ -865,6 +906,7 @@ const loadGeoData = async (id, shouldFit = true) => {
                 shpsplit_sqm: item.shpsplit_sqm,
                 class_Area: item['class_Area'],
                 classtype: item.classtype,
+                locked: item.locked === true,   // โครงการแก้ไข: พื้นที่ "อื่นๆ" ถูกล็อก
                 check_area: item.check_area || '',
                 check_shape: item.check_shape || '',
                 remark: item.remark || '',
@@ -943,6 +985,7 @@ const classtypeColorMap = {
 function updateClasstypeColor(value) {
     const el = document.getElementById('classtype');
     el.classList.remove(...Object.values(classtypeColorMap));
+    if (value && window.RU_EDIT?.active && !window.RU_EDIT.isKnown(value)) { el.classList.add('ct-Other'); return; }
     if (value && classtypeColorMap[value]) el.classList.add(classtypeColorMap[value]);
 }
 
@@ -979,6 +1022,16 @@ function filterClasstypeOptions(ct) {
     `;
 
     select.innerHTML = '<option value=""></option>';
+    if (window.RU_EDIT?.active) {
+        // โครงการแก้ไข: เลือกได้ทุกคลาส (ยางลงทะเบียน / กันออก / ยางไม่ลงทะเบียน / ไม่ใช่ยาง) ทุก polygon
+        // ถ้าเป็นประเภทที่ไม่รู้จัก แสดงเป็น "อื่นๆ" ให้รู้ว่าต้องเลือกใหม่
+        select.insertAdjacentHTML('beforeend', ALL_OPTIONS);
+        if (ct && !window.RU_EDIT.isKnown(ct)) {
+            select.insertAdjacentHTML('beforeend', `<option value="${ct}" disabled>อื่นๆ — กรุณาเลือกประเภทใหม่</option>`);
+        }
+        if (savedVal) select.value = savedVal;
+        return;
+    }
     select.insertAdjacentHTML('beforeend', ct === 'rubber' ? RUBBER_OPTIONS : ALL_OPTIONS);
 
     if (savedVal) select.value = savedVal;
@@ -1059,9 +1112,16 @@ map.on('click', (evt) => {
 
     const pixel = map.getEventPixel(evt.originalEvent);
     let hit = null;
+    let lockedHit = null;
     map.forEachFeatureAtPixel(pixel, (feature) => {
+        // polygon ที่ล็อก (อื่นๆ ในโครงการแก้ไข) เลือกไม่ได้ — ถ้ามี polygon อื่นซ้อนอยู่ใช้ตัวนั้นแทน
+        if (feature.get('locked')) { lockedHit = lockedHit || feature; return; }
         if (!hit) hit = feature;
     }, { layerFilter: l => l === vectorLayer });
+    if (!hit && lockedHit) {
+        showToast('🔒 พื้นที่ “อื่นๆ” ถูกล็อก — แก้ได้เฉพาะยางพาราลงทะเบียนและพื้นที่กันออก (คลาสใหม่ทั้งแปลง: กด “คืนแปลงเดิม”)', 'warning');
+        return;
+    }
 
     if (mergeMode) {
         if (!hit) return;
@@ -1448,7 +1508,11 @@ async function executeUnsplit() {
         return;
     }
 
-    if (!confirm('ต้องการคืนแปลงเดิมหรือไม่?\nการกระทำนี้จะลบการ Split ทั้งหมดของแปลงนี้และคืนเป็นแปลงเดิม')) {
+    const hasLocked = vectorSource.getFeatures().some(f => f.get('locked'));
+    const msg = hasLocked
+        ? 'คลาสใหม่ทั้งแปลง?\n\nการคืนแปลงเดิมจะลบคลาสทั้งหมดของแปลงนี้ — รวมยางพาราลงทะเบียน พื้นที่กันออก และพื้นที่ “อื่นๆ” ที่ล็อกไว้\nแล้วเริ่มคลาสใหม่จากแปลงเปล่า (ไม่มีส่วนที่ล็อก)'
+        : 'ต้องการคืนแปลงเดิมหรือไม่?\nการกระทำนี้จะลบการ Split ทั้งหมดของแปลงนี้และคืนเป็นแปลงเดิม';
+    if (!confirm(msg)) {
         return;
     }
 
@@ -2128,10 +2192,20 @@ function buildLegend() {
         { ct: 'ex_ar_area', label: 'พื้นที่กันออก (ถนนลาดยาง)' },
         { ct: 'ex_other', label: 'พื้นที่กันออก (เพิ่มเติม)' },
     ];
+    if (window.RU_EDIT?.active) {
+        // โครงการแก้ไข: ยางลงทะเบียน + กันออกทั้งหมด (นับเป้า) → ยางไม่ลงทะเบียน / ไม่ใช่ยาง → 🔒 อื่นๆ (ยังไม่จำแนก)
+        entries.length = 0;
+        window.RU_EDIT.MAIN.forEach(([ct, label]) => entries.push({ ct, label }));
+        window.RU_EDIT.EXTRA.forEach(([ct, label]) => entries.push({ ct, label: `${label} (ไม่นับเป้า)` }));
+        entries.push({ ct: '__other', label: '🔒 อื่นๆ — ยังไม่จำแนก (ล็อก)', locked: true });
+        entries.push({ ct: null, label: 'ยังไม่ได้คลาส (เลือกประเภท)' });
+    }
     const div = document.createElement('div');
     div.className = 'legend ol-unselectable';
-    div.innerHTML = entries.map(e =>
-        `<div class="legend-item"><i style="background:${getColor(e.ct)}; opacity:0.85"></i>${e.label}</div>`
+    div.innerHTML = entries.map(e => e.locked
+        // ลายเส้นทแยงแดง + ขอบประ เหมือนบนแผนที่
+        ? `<div class="legend-item"><i style="background:repeating-linear-gradient(135deg, rgba(13,71,161,.75) 0 2px, rgba(13,71,161,.14) 2px 6px); border:1.5px dashed #0d47a1"></i>${e.label}</div>`
+        : `<div class="legend-item"><i style="background:${getColor(e.ct)}; opacity:0.85"></i>${e.label}</div>`
     ).join('');
     document.getElementById('map').appendChild(div);
 }
@@ -2261,6 +2335,27 @@ const initApp = async () => {
     }
     document.getElementById('id').value = id;
     document.getElementById('tb').value = tb;
+
+    // รู้ก่อนวาดแผนที่/สร้างตัวเลือกคลาส ว่าเป็นโครงการแก้ไขหรือไม่ (ดู ../edit-project.js)
+    if (window.RU_EDIT) await window.RU_EDIT.ready;
+    if (window.RU_EDIT?.active) {
+        // คู่มือสั้นๆ ของโครงการแก้ไข — แก้ได้เฉพาะยาง + กันออก, พื้นที่ "อื่นๆ" ล็อก
+        const panel = document.getElementById('featurePanel');
+        if (panel && !document.getElementById('editProjectGuide')) {
+            panel.insertAdjacentHTML('afterbegin', `
+                <div id="editProjectGuide" class="edit-guide mb-3">
+                    <div class="edit-guide-title"><i class="bi bi-pencil-fill"></i> โครงการแก้ไข — เป้าหมายนับ ยางพาราลงทะเบียน + พื้นที่กันออก</div>
+                    <ul>
+                        <li><span class="eg-sw eg-rubber"></span>คลิก polygon เพื่อเปลี่ยนประเภท หรือแก้รูป (ยางลงทะเบียน / กันออก / ยางไม่ลงทะเบียน / ไม่ใช่ยาง)</li>
+                        <li><i class="bi bi-scissors"></i> กันออกเพิ่มในยาง: เลือก polygon ยาง → ตัดแปลง → เลือกชิ้นที่ตัดเป็น “พื้นที่กันออก” (หรือ “ยางไม่ลงทะเบียน” / “ไม่ใช่ยาง” ถ้าไม่ต้องนับ)</li>
+                        <li><span class="eg-sw eg-extra"></span>ยางพาราที่ไม่ได้ลงทะเบียน / ไม่ใช่ยางพารา — แก้ได้ แต่<b>ไม่นับ</b>เข้าเป้า</li>
+                        <li><span class="eg-sw eg-locked"></span><b>🔒 อื่นๆ = ยังไม่จำแนก</b> ถูกล็อก เลือก/แก้ไม่ได้ ไม่นับเข้าเป้า</li>
+                        <li><span class="eg-sw eg-pending"></span><b>ยังไม่ได้คลาส</b> (ส้มอ่อน) — ชิ้นที่เพิ่งตัด/คืนแปลงเดิม คลิกแล้วเลือกประเภท</li>
+                        <li><i class="bi bi-arrow-counterclockwise"></i> คลาสใหม่ทั้งแปลง: กด “คืนแปลงเดิม” (ลบคลาสทั้งหมดแล้วเริ่มใหม่ ไม่มีส่วนที่ล็อก)</li>
+                    </ul>
+                </div>`);
+        }
+    }
 
     filterClasstypeOptions(null);
 

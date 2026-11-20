@@ -63,27 +63,27 @@ const rubberTreeIconHighlight = L.icon({
 });
 
 // Configure base layer
-const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_sat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+const gmap_sat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_terrain = L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+const gmap_terrain = L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 

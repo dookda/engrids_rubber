@@ -1,3 +1,24 @@
+// ── โครงการแก้ไข (../edit-project.js): คลาสอื่นนอกจากยาง/กันออก = "อื่นๆ" สีแดง — โครงการหลักคืนค่าเดิม ──
+const _ruL = (ct, normal, locked) => (window.RU_EDIT ? window.RU_EDIT.label(ct, normal, locked) : normal);
+const _ruC = (ct, normal, locked) => (window.RU_EDIT ? window.RU_EDIT.color(ct, normal, locked) : normal);
+
+// ลายทแยงน้ำเงินเข้มของ "อื่นๆ" ที่ล็อก — Leaflet วาดด้วย SVG จึงใช้ fillColor: 'url(#ruLockHatch)' ได้
+(function addLockHatchPattern() {
+    const add = () => {
+        if (document.getElementById('ruLockHatch')) return;
+        document.body.insertAdjacentHTML('afterbegin', `
+            <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+                <defs>
+                    <pattern id="ruLockHatch" patternUnits="userSpaceOnUse" width="9" height="9" patternTransform="rotate(45)">
+                        <rect width="9" height="9" fill="rgba(13,71,161,0.18)"></rect>
+                        <line x1="0" y1="0" x2="0" y2="9" stroke="#0d47a1" stroke-width="3.5"></line>
+                    </pattern>
+                </defs>
+            </svg>`);
+    };
+    document.body ? add() : document.addEventListener('DOMContentLoaded', add);
+})();
+
 // ── Global state ──
 let _panelUserDirty = false;
 let _autoSavingUserRemark = false;
@@ -612,27 +633,27 @@ const rubberTreeIcon = L.icon({
 });
 
 // Configure base layer
-const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+const gmap_road = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_sat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+const gmap_sat = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_terrain = L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', {
+const gmap_terrain = L.tileLayer('https://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
-const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+const gmap_hybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2', {
     maxZoom: 22,
-    maxNativeZoom: 18,
+    maxNativeZoom: 19,
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
 });
 
@@ -1066,8 +1087,8 @@ const _workerLabelMap = {
 
 // Update the selected-plot banner in the worker quick panel
 const _updateWorkerSelectedBanner = (rowData) => {
-    const color = _workerColorMap[rowData.classtype] || '#90a4ae';
-    const label = _workerLabelMap[rowData.classtype] || 'อื่นๆ';
+    const color = _ruC(rowData.classtype, _workerColorMap[rowData.classtype] || '#90a4ae', rowData.locked);
+    const label = _ruL(rowData.classtype, _workerLabelMap[rowData.classtype] || 'อื่นๆ', rowData.locked);
     $('#worker-sel-dot').css('background', color);
     $('#worker-sel-subid').text(`#${rowData.sub_id}`);
     $('#worker-sel-id').text(`ID: ${rowData.id}`);
@@ -1105,8 +1126,8 @@ const _updateAreaCards = (rowData) => {
         'ex_age_rubber': '#00ff0d', 'ex_building': '#ff00d4', 'ex_pond': '#00fff2',
         'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b', 'ex_other': '#AACDDC'
     };
-    const rdLabel = labelMapFull[rowData.classtype] || 'อื่นๆ';
-    const rdColor = colorMapFull[rowData.classtype] || '#6c757d';
+    const rdLabel = _ruL(rowData.classtype, labelMapFull[rowData.classtype] || 'อื่นๆ', rowData.locked);
+    const rdColor = _ruC(rowData.classtype, colorMapFull[rowData.classtype] || '#6c757d', rowData.locked);
 
     // Left card: deed data
     $('#target-land-sqm').text(Number(rowData.deed_sqm || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 }));
@@ -1202,8 +1223,8 @@ const buildWorkerPlotList = (filterId = null) => {
 
     // Build single item HTML
     const buildItem = row => {
-        const color = _workerColorMap[row.classtype] || '#90a4ae';
-        const label = _workerLabelMap[row.classtype] || 'อื่นๆ';
+        const color = _ruC(row.classtype, _workerColorMap[row.classtype] || '#90a4ae', row.locked);
+        const label = _ruL(row.classtype, _workerLabelMap[row.classtype] || 'อื่นๆ', row.locked);
         const ca = row.check_area || '';
         const cs = row.check_shape || '';
         let verdictHtml;
@@ -1460,8 +1481,8 @@ const showFeaturePanel = (feature, layer) => {
         'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
         'ex_other': '#AACDDC'
     };
-    const label = labelMap[props.classtype] || 'อื่นๆ';
-    const color = colorMap[props.classtype] || '#6c757d';
+    const label = _ruL(props.classtype, labelMap[props.classtype] || 'อื่นๆ', props.locked);
+    const color = _ruC(props.classtype, colorMap[props.classtype] || '#6c757d', props.locked);
 
     if (props.classtype !== 'rubber' && props.classtype) {
         $('#display-other-type').text(label).removeClass('outline-muted');
@@ -1572,8 +1593,8 @@ const showFeaturePanel = (feature, layer) => {
 
             // Per-sub check_shape rows
             const shapeRowsHtml = allSubs.map(r => {
-                const label = labelMap[r.classtype] || r.classtype || '?';
-                const color = colorMap[r.classtype] || '#666';
+                const label = _ruL(r.classtype, labelMap[r.classtype] || r.classtype || '?', r.locked);
+                const color = _ruC(r.classtype, colorMap[r.classtype] || '#666', r.locked);
                 const cs = r.check_shape || '';
                 const rowClass = cs === 'ผ่าน' ? 'is-pass' : cs === 'ไม่ผ่าน' ? 'is-fail' : '';
                 return `<div class="sub-review-row ${rowClass}" data-subid="${r.sub_id}">
@@ -1697,11 +1718,19 @@ const getFeatureStyle = (feature) => {
                                         ? '#AACDDCff'
                                         : '#fdae61';
     return {
-        fillColor: color,
+        fillColor: _ruC(feature.properties.classtype, color, feature.properties.locked),
         weight: 2,
         opacity: 1,
         color: 'white',
-        fillOpacity: 0.5
+        fillOpacity: 0.5,
+        // โครงการแก้ไข: "อื่นๆ" ที่ล็อก = น้ำเงินเข้ม ขอบประ (แยกจาก "ถนนลาดยาง" ที่เป็นน้ำเงินเหมือนกัน)
+        //               ยังไม่ได้คลาส (ไม่ล็อก) = ส้มอ่อน ขอบประส้ม
+        ...(window.RU_EDIT?.active && !window.RU_EDIT.isKnown(feature.properties.classtype)
+            ? (window.RU_EDIT.isPending(feature.properties.classtype, feature.properties.locked)
+                ? { color: '#ef6c00', dashArray: '4,4', fillOpacity: 0.45 }
+                // ลายทแยงน้ำเงินเข้ม (SVG pattern #ruLockHatch) + ขอบประ — เหมือนหน้า Reclass
+                : { fillColor: 'url(#ruLockHatch)', color: '#0d47a1', dashArray: '6,4', fillOpacity: 0.9 })
+            : {}),
     };
 };
 
@@ -1768,6 +1797,7 @@ const onEachFeature = (feature, layer) => {
 
 const loadGeoData = async () => {
     try {
+        if (window.RU_EDIT) await window.RU_EDIT.ready;   // รู้ประเภทโครงการก่อนวาดสี/ป้ายคลาส
         const tb = document.getElementById('tb').value;
         const response = await fetch(`/rub/api/getreclassfeatures/${tb}`);
         const result = await response.json();
@@ -1832,6 +1862,7 @@ const loadGeoData = async () => {
         const tableData = data.map(item => ({
             id: Number(item.id),
             sub_id: item.sub_id,
+            locked: item.locked === true,   // โครงการแก้ไข: "อื่นๆ" ที่ล็อก
             refinal: item.refinal,
             geom: JSON.parse(item.geom),
             geom_point: item.geom_point ? JSON.parse(item.geom_point) : null, // จุดอ้างอิงเดิม (GPS) จากแปลงหลัก
@@ -2014,7 +2045,7 @@ const loadGeoData = async () => {
                 {
                     data: 'classtype',
                     title: 'ประเภท',
-                    render: (data) => {
+                    render: (data, type, row) => {
                         const labelMap = {
                             'rubber': 'ยางพาราที่ลงทะเบียน', 'not-rubber': 'ยางพาราที่ไม่ได้ลงทะเบียน',
                             'Other': 'ไม่ใช่ยางพารา', 'ex_age_rubber': 'พื้นที่กันออก (ยางพาราต่างอายุ)',
@@ -2029,8 +2060,8 @@ const loadGeoData = async () => {
                             'ex_cr_area': '#ffff00', 'ex_ar_area': '#00008b',
                             'ex_other': '#AACDDC'
                         };
-                        const label = labelMap[data] || 'อื่นๆ';
-                        const c = colorMap[data] || '#90a4ae';
+                        const label = _ruL(data, labelMap[data] || 'อื่นๆ', row?.locked);
+                        const c = _ruC(data, colorMap[data] || '#90a4ae', row?.locked);
                         return `<span class="classtype-badge" style="background:${c}15;color:#000;border:1px solid ${c}40; font-weight: 500;">${label}</span>`;
                     }
                 },
@@ -2633,6 +2664,7 @@ const loadGeoData = async () => {
                         id_farmer: row.id_farmer,
                         shpsplit_sqm: row.shpsplit_sqm,
                         classtype: row.classtype,
+                        locked: row.locked,
                         check_area: row.check_area,
                         check_shape: row.check_shape,
                         remark: row.remark,
@@ -3081,6 +3113,21 @@ legend.onAdd = function (map) {
     div.innerHTML += `<i style="background:#2196F3; width:14px; height:14px; display:inline-block; margin-right:6px; opacity:0.8; border:1px solid #1565C0"></i> ขอบเขต Reshape<br>`;
 
 
+    if (window.RU_EDIT?.active) {
+        // โครงการแก้ไข: ยางพาราที่ลงทะเบียน + พื้นที่กันออกทั้งหมด + อื่นๆ (แดง)
+        // นับเป้า: ยางลงทะเบียน + กันออก | ไม่นับ: ยางไม่ลงทะเบียน, ไม่ใช่ยาง, อื่นๆ (ยังไม่จำแนก)
+        const sw = (bg, extra = '') => `<i style="background:${bg}; width:14px; height:14px; display:inline-block; margin-right:6px;${extra}"></i>`;
+        window.RU_EDIT.MAIN.forEach(([ct, label]) => {
+            div.innerHTML += `${sw(getFeatureStyle({ properties: { classtype: ct } }).fillColor)} ${label}<br>`;
+        });
+        window.RU_EDIT.EXTRA.forEach(([ct, label]) => {
+            div.innerHTML += `${sw(getFeatureStyle({ properties: { classtype: ct } }).fillColor)} ${label} <small style="color:#888">(ไม่นับเป้า)</small><br>`;
+        });
+        div.innerHTML += `${sw('repeating-linear-gradient(135deg, rgba(13,71,161,.75) 0 2px, rgba(13,71,161,.15) 2px 6px)', ' border:1.5px dashed #0d47a1; box-sizing:border-box;')} อื่นๆ — ยังไม่จำแนก (ล็อก)<br>`;
+        div.innerHTML += `${sw(window.RU_EDIT.PENDING_COLOR, ' border:1.5px dashed #ef6c00; box-sizing:border-box;')} ยังไม่ได้คลาส (เลือกประเภท)<br>`;
+        return div;
+    }
+
     for (let i = 0; i < categories.length; i++) {
         const dummy = { properties: { classtype: categories[i] } },
             style = getFeatureStyle(dummy);
@@ -3093,6 +3140,8 @@ legend.onAdd = function (map) {
 
 
 legend.addTo(map);
+// legend ถูกสร้างก่อนรู้ประเภทโครงการ → สร้างใหม่เมื่อรู้ว่าเป็นโครงการแก้ไข
+window.RU_EDIT?.ready.then(isEdit => { if (isEdit) { legend.remove(); legend.addTo(map); } });
 
 document.getElementById('reshape').addEventListener('click', (e) => {
     e.preventDefault();
@@ -3320,6 +3369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadTaskProgress(tb, currentUser);
 
         // จัดกลุ่มประเภทต่างๆ ก่อนแสดงผล เพื่อป้องกันแถวซ้ำกัน (เช่น มี "ไม่ระบุ" หลายอัน)
+        if (window.RU_EDIT) await window.RU_EDIT.ready;
         const groupedData = {};
         raiData.forEach(r => {
             let cat = 'ไม่ระบุ';
@@ -3332,6 +3382,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             else if (r.classtype === 'ex_cr_area') cat = 'พื้นที่กันออก (ถนนคอนกรีต)';
             else if (r.classtype === 'ex_ar_area') cat = 'พื้นที่กันออก (ถนนลาดยาง)';
             else if (r.classtype === 'ex_other') cat = 'พื้นที่กันออก (เพิ่มเติม)';
+            // โครงการแก้ไข: ประเภทว่าง (กราฟไม่แยกว่าล็อกหรือไม่) = "อื่นๆ / ยังไม่ได้คลาส", ประเภทไม่รู้จัก = "อื่นๆ"
+            cat = (window.RU_EDIT?.active && !r.classtype) ? 'อื่นๆ / ยังไม่ได้คลาส' : _ruL(r.classtype, cat, true);
 
             groupedData[cat] = (groupedData[cat] || 0) + parseFloat(r.area_rai);
         });
