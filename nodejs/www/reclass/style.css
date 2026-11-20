@@ -896,4 +896,6 @@ hr {
 .edit-guide li .bi { color: #e65100; width: 14px; text-align: center; flex-shrink: 0; }
 .eg-sw { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; display: inline-block; }
 .eg-rubber { background: linear-gradient(135deg, #006d2c 50%, #AACDDC 50%); }
-.eg-locked { background: repeating-linear-gradient(135deg, rgba(229,57,53,.6) 0 2px, rgba(229,57,53,.12) 2px 6px); border: 1.5px dashed #e53935; }
+.eg-locked { background: repeating-linear-gradient(135deg, rgba(13,71,161,.75) 0 2px, rgba(13,71,161,.14) 2px 6px); border: 1.5px dashed #0d47a1; }
+.eg-extra { background: linear-gradient(135deg, #9900ff 50%, #ff0004 50%); }
+.eg-pending { background: #ffcc80; border: 1.5px dashed #ef6c00; }

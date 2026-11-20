@@ -419,7 +419,7 @@ function renderOffTarget(tb, s) {
     return `
         <details class="edit-off" ${s.off_target_total <= 10 ? 'open' : ''}>
             <summary><i class="bi bi-exclamation-triangle-fill me-1"></i>แปลงที่ยังไม่ตรงเป้า <b>${s.off_target_total}</b> แปลง
-                <span class="off-hint">ยาง+กันออก เทียบ Rubr_total เกิน ±600 ตร.ม. (ไม่นับ “อื่นๆ”)</span></summary>
+                <span class="off-hint">ยาง+กันออก เทียบ Rubr_total เกิน ±600 ตร.ม. (ไม่นับ ยางไม่ลงทะเบียน / ไม่ใช่ยาง / อื่นๆ)</span></summary>
             <div class="off-list">${rows}${more}</div>
         </details>`;
 }

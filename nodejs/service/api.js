@@ -967,6 +967,7 @@ app.get('/api/getreclassfeatures/:tb', async (req, res) => {
                     a.sub_id,
                     b.refinal,
                     a.classtype,
+                    COALESCE((to_jsonb(a)->>'locked')::boolean, FALSE) AS locked,
                     a.farmer_id,
                     b."Farmer_ID",
                     b."Regis_No",
@@ -5561,9 +5562,10 @@ async function ensureReclassLock(tb) {
         if (!col.length) {
             await pool.query(`ALTER TABLE reclass_${tb} ADD COLUMN locked BOOLEAN DEFAULT FALSE`);
             // โครงการแก้ไขที่สร้างก่อนมีระบบล็อก — ล็อกพื้นที่ "อื่นๆ" ที่มีอยู่
-            await pool.query(`UPDATE reclass_${tb} SET locked = TRUE
-                              WHERE classtype IS NULL OR (classtype <> 'rubber' AND classtype NOT LIKE 'ex\\_%')`);
+            await pool.query(`UPDATE reclass_${tb} SET locked = TRUE WHERE classtype IS NULL OR TRIM(classtype) = '' OR (classtype NOT IN ('rubber', 'not-rubber', 'Other') AND classtype NOT LIKE 'ex\\_%')`);
         }
+        // "ยางพาราที่ไม่ได้ลงทะเบียน" / "ไม่ใช่ยางพารา" ใช้ได้ในโครงการแก้ไข — ปลดล็อกถ้าเคยถูกล็อกไว้
+        await pool.query(`UPDATE reclass_${tb} SET locked = FALSE WHERE locked AND classtype IN ('not-rubber', 'Other')`);
     }
     _reclassLockReady.add(tb);
 }
@@ -5578,7 +5580,7 @@ async function blockIfReclassLocked(res, tb, subIds) {
             `SELECT sub_id FROM reclass_${tb} WHERE sub_id = ANY($1::text[]) AND (to_jsonb(reclass_${tb})->>'locked') = 'true'`, [ids]);
         if (rows.length) {
             res.status(423).json({
-                error: `พื้นที่ “อื่นๆ” ถูกล็อก (${rows.map(r => r.sub_id).join(', ')}) — โครงการแก้ไขแก้ได้เฉพาะยางพาราลงทะเบียนและพื้นที่กันออก ถ้าต้องการคลาสใหม่ทั้งแปลง ให้กด “คืนแปลงเดิม”`,
+                error: `พื้นที่ “อื่นๆ” (ยังไม่จำแนก) ถูกล็อก (${rows.map(r => r.sub_id).join(', ')}) — แก้ได้เฉพาะ polygon ที่มีประเภทแล้ว ถ้าต้องการคลาสใหม่ทั้งแปลง ให้กด “คืนแปลงเดิม”`,
                 locked: rows.map(r => r.sub_id),
             });
             return true;
@@ -5599,9 +5601,9 @@ app.get('/api/project-summary/:tb', async (req, res) => {
         const { rows: plots } = await pool.query(`
             SELECT m.id, m."Regis_No" AS regis_no, m."No_Plot"::text AS no_plot, m."Deed_ID" AS deed_id,
                    m."Full_nam" AS full_nam, m."Rubr_Sqm" AS rubr_sqm, m."Deed_Area"::float AS deed_rai,
-                   COALESCE(m."Rubr_total", m."Rubr_Sqm" / 1600.0)::float AS target,
-                   COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype = 'rubber'), 0)::float AS rubber,
-                   COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype LIKE 'ex\\_%'), 0)::float AS ex,
+                   COALESCE(NULLIF(m."Rubr_Sqm", 0) / 1600.0, m."Rubr_total")::float AS target,
+                   COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype = 'rubber'), 0)::float / 1600.0 AS rubber,
+                   COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype LIKE 'ex\\_%'), 0)::float / 1600.0 AS ex,
                    COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype IS NULL OR TRIM(r.classtype) = ''), 0)::float AS unclassified,
                    COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype IS NOT NULL AND TRIM(r.classtype) <> ''
                                                          AND r.classtype <> 'rubber' AND r.classtype NOT LIKE 'ex\\_%'), 0)::float AS other
@@ -5623,12 +5625,14 @@ app.get('/api/project-summary/:tb', async (req, res) => {
                 reasons.push('ยังไม่ได้คลาสยางพาราที่ลงทะเบียนเลย');
             } else if (diffSqm < 0) {
                 const shortRai = -diffSqm / 1600;
-                // โครงการแก้ไขสนใจแค่ยาง + กันออก: ยังไม่จำแนก + คลาสอื่น รวมเป็น "อื่นๆ"
-                const otherRai = p.unclassified + p.other;
-                if (otherRai > 0.005) {
-                    reasons.push(otherRai + TOL >= shortRai
-                        ? `มีพื้นที่ “อื่นๆ” ${rai(otherRai)} ไร่ — พอดีกับส่วนที่ขาด น่าจะเป็นยางหรือพื้นที่กันออกที่ยังไม่ได้คลาส`
-                        : `มีพื้นที่ “อื่นๆ” ${rai(otherRai)} ไร่ (ไม่นับเป็นยางลงทะเบียน) — ตรวจว่าควรเป็นยางหรือกันออก`);
+                // ไม่นับเข้าเป้า: "อื่นๆ" (ยังไม่จำแนก) และ ยางไม่ลงทะเบียน / ไม่ใช่ยาง
+                if (p.unclassified > 0.005) {
+                    reasons.push(p.unclassified + TOL >= shortRai
+                        ? `มีพื้นที่ “อื่นๆ” (ยังไม่จำแนก) ${rai(p.unclassified)} ไร่ — พอดีกับส่วนที่ขาด น่าจะเป็นยางหรือพื้นที่กันออกที่ยังไม่ได้คลาส`
+                        : `มีพื้นที่ “อื่นๆ” (ยังไม่จำแนก) ${rai(p.unclassified)} ไร่ ไม่นับเข้าเป้า`);
+                }
+                if (p.other > 0.005) {
+                    reasons.push(`มีพื้นที่ ยางไม่ลงทะเบียน / ไม่ใช่ยาง ${rai(p.other)} ไร่ (ไม่นับเข้าเป้า) — ตรวจว่าควรเป็นยางลงทะเบียนหรือกันออก`);
                 }
                 if (p.deed_rai !== null && p.deed_rai + TOL < p.target) {
                     reasons.push(`ขอบเขตแปลง ${rai(p.deed_rai)} ไร่ เล็กกว่าเป้าหมาย ${rai(p.target)} ไร่ — ตรวจรูปแปลงโฉนด`);
@@ -6137,7 +6141,7 @@ async function ruCommitPlots(req, res, tb, data, ids, tmpPath, user) {
             const { rows: k } = await pool.query(`SELECT kind FROM layerlist WHERE LOWER(tb_name) = $1`, [tb]);
             if (k[0]?.kind === 'edit') {
                 await pool.query(`UPDATE reclass_${tb} SET locked = TRUE
-                                  WHERE id = ANY($1::int[]) AND (classtype IS NULL OR (classtype <> 'rubber' AND classtype NOT LIKE 'ex\\_%'))`,
+                                  WHERE id = ANY($1::int[]) AND (classtype IS NULL OR TRIM(classtype) = '' OR (classtype NOT IN ('rubber', 'not-rubber', 'Other') AND classtype NOT LIKE 'ex\\_%'))`,
                     [realIds]);
             }
         } catch (e) { console.error('[reclass-upload lock]', e.message); }
@@ -6162,9 +6166,9 @@ async function ruCommitPlots(req, res, tb, data, ids, tmpPath, user) {
         const { rows: results } = await pool.query(`
             SELECT m.id, m."Regis_No" AS regis_no, m."No_Plot"::text AS no_plot, m."Full_nam" AS full_nam,
                    m."Rubr_Sqm" AS rubr_sqm, m."Deed_Area"::float AS deed_rai,
-                   COALESCE(m."Rubr_total", m."Rubr_Sqm" / 1600.0)::float AS target,
-                   COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype = 'rubber'), 0)::float AS rubber,
-                   COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype LIKE 'ex\\_%'), 0)::float AS ex,
+                   COALESCE(NULLIF(m."Rubr_Sqm", 0) / 1600.0, m."Rubr_total")::float AS target,
+                   COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype = 'rubber'), 0)::float / 1600.0 AS rubber,
+                   COALESCE(SUM(r.shpsplit_sqm) FILTER (WHERE r.classtype LIKE 'ex\\_%'), 0)::float / 1600.0 AS ex,
                    COALESCE(SUM(r."class_Area") FILTER (WHERE r.classtype IS NULL), 0)::float AS unclassified,
                    (m.id = ANY($2::int[])) AS is_new
             FROM ${tb} m LEFT JOIN reclass_${tb} r ON r.id = m.id

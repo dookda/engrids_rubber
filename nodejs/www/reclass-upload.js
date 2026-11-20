@@ -14,8 +14,8 @@
         'not-rubber': ['ยางพาราที่ไม่ได้ลงทะเบียน', 'ยางไม่ลงทะเบียน', '#9900ff'],
         'Other': ['ไม่ใช่ยางพารา', 'ไม่ใช่ยาง', '#ff0004'],
     };
-    const LEGEND = ['rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other'];
-    const meta = (c) => CLASSES[c] || ['อื่นๆ', 'อื่นๆ', '#e53935'];
+    const LEGEND = ['rubber', 'ex_age_rubber', 'ex_building', 'ex_pond', 'ex_cr_area', 'ex_ar_area', 'ex_other', 'not-rubber', 'Other'];
+    const meta = (c) => CLASSES[c] || ['อื่นๆ', 'อื่นๆ', '#0d47a1'];
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     const fmt = (n) => (n === null || n === undefined || isNaN(n)) ? '-' : Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const sw = (c) => `<span class="rcu-sw" style="background:${meta(c)[2]}"></span>`;
@@ -111,7 +111,7 @@
         });
     }
 
-    const legendHtml = () => `<div class="rcu-legend">${LEGEND.map(c => `<span>${sw(c)}${esc(meta(c)[0])}</span>`).join('')}<span>${sw(null)}อื่นๆ (ไม่นับเป็นยางลงทะเบียน)</span></div>`;
+    const legendHtml = () => `<div class="rcu-legend">${LEGEND.map(c => `<span>${sw(c)}${esc(meta(c)[0])}</span>`).join('')}<span>${sw(null)}อื่นๆ — ยังไม่จำแนก</span><span style="color:#888">· นับเป้า = ยางลงทะเบียน + กันออก</span></div>`;
 
     // เกณฑ์เดียวกับระบบเดิม (reclass / reclassdash): ยางพารา ±600 ตร.ม. = ±0.375 ไร่
     const TOL_RAI = 600 / 1600;
