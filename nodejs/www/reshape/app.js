@@ -910,8 +910,10 @@ function customLineToPolygon(geojsonFeature) {
 }
 
 // Label management - always uses selectedLayer to avoid stale/wrong closure references
+let _areaSeq = 0; // กันคำตอบเก่ามาทับเลขใหม่ (ลากจุดเร็วๆ ยิงหลาย request ซ้อนกัน)
 const updateAreaLabel = async () => {
     if (!selectedLayer) return;
+    const mySeq = ++_areaSeq;
     try {
         const geojsonFeature = selectedLayer.toGeoJSON();
         let geometry = geojsonFeature.geometry || (geojsonFeature.features && geojsonFeature.features[0]?.geometry);
@@ -944,6 +946,7 @@ const updateAreaLabel = async () => {
         }
 
         const { area } = await res.json();
+        if (mySeq !== _areaSeq) return; // มีการคำนวณรอบใหม่กว่าแล้ว ทิ้งผลเก่า
         const target_area = Number(document.getElementById('deed_sqm').value.replace(/,/g, ''));
 
         console.log(`Area result: ${area}, target: ${target_area}`);
@@ -1073,6 +1076,8 @@ const onEachFeature = (feature, layer) => {
         highlightSelectedLayer(layer);
         layerEdited = false; // reset on new selection
         selectedLayer = layer;
+        // คำนวณ "เนื้อที่ขณะนี้" สดจากรูปที่อยู่บนแผนที่ (ไม่ใช้ค่าที่เก็บไว้ซึ่งอาจค้าง)
+        if (!(layer instanceof L.Marker)) updateAreaLabel();
     });
 
     // Listen to pm:enable to attach a real-time change listener.
