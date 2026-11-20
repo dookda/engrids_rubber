@@ -5517,6 +5517,47 @@ const ruKey3 = (regis, plot, deed) => `${ruText(regis) || ''}|${ruNum(plot)}|${r
 const ruKey2 = (regis, plot) => `${ruText(regis) || ''}|${ruNum(plot)}`;
 const RU_AREA = (g) => `ST_Area(ST_Transform(${g}, ${UTM_SRID_SQL(g)}))`;
 const RU_MIN_REMAINDER_SQM = 1; // เศษพื้นที่ที่เหลือในขอบเขตแปลงเล็กกว่านี้ไม่สร้างเป็นแถว "ยังไม่จำแนก"
+// แถบบางของ "อื่นๆ" (ช่องว่างระหว่างเส้นยางในไฟล์ QGIS กับเส้นโฉนด) แคบกว่า 2 × ค่านี้ (เมตร) ถูกลบทิ้ง
+const RU_SLIVER_HALF_WIDTH_M = 1;
+
+// SQL (CTE) ของการลบแถบบาง: แก้รูปให้ valid ใน UTM → แยกชิ้นย่อย → แต่ละชิ้น "หดเข้าแล้วขยายออก" (opening)
+// ตัดกับชิ้นเดิมให้ขอบไม่ขยับ → รวมกลับ. ต้องทำทีละชิ้นที่ valid: ถ้าทำกับรูปที่ไม่ valid (เส้นตัดกันเอง)
+// การ buffer จะกินพื้นที่ก้อนใหญ่ไปด้วย. เส้นที่พื้นที่แทบเป็นศูนย์ (ขอบยางเกือบทับขอบโฉนด) หายไปด้วยวิธีนี้
+// ใช้ร่วมกับสคริปต์ล้างข้อมูลโครงการเดิม — ผลลัพธ์: (fid, orig, kept) ใน UTM
+const RU_SLIVER_CTE = (fromSql, r = RU_SLIVER_HALF_WIDTH_M) => `
+    s AS (
+        SELECT fid, srid, ST_CollectionExtract(ST_MakeValid(ST_Transform(geom, srid)), 3) AS orig
+        FROM (SELECT fid, geom, ${UTM_SRID_SQL('geom')} AS srid FROM ${fromSql}) q
+    ), parts AS (
+        SELECT fid, (ST_Dump(orig)).geom AS g FROM s
+    ), k AS (
+        SELECT fid, ST_Union(ST_Intersection(g, ST_Buffer(ST_Buffer(g, -${r}, 'join=mitre'), ${r}, 'join=mitre'))) AS kept
+        FROM parts WHERE ST_Area(g) > 0 GROUP BY fid
+    ), o AS (
+        SELECT s.fid, s.srid, s.orig, COALESCE(k.kept, ST_GeomFromText('POLYGON EMPTY', s.srid)) AS kept
+        FROM s LEFT JOIN k ON k.fid = s.fid
+    )`;
+
+// ลบแถบบางออกจาก polygon "อื่นๆ" (ประเภทว่าง) ที่ตรงเงื่อนไข; ชิ้นที่หายหมด/เล็กกว่า RU_MIN_REMAINDER_SQM ถูกลบ
+// whereSql ต้องอ้างคอลัมน์ของ reclass_{tb} (ไม่มี alias) และใช้ $1.. ตาม params
+async function ruRemoveSlivers(db, tb, whereSql, params = []) {
+    const { rows } = await db.query(`
+        WITH ${RU_SLIVER_CTE(`reclass_${tb} WHERE (classtype IS NULL OR TRIM(classtype) = '') AND geom IS NOT NULL AND (${whereSql})`)}
+        UPDATE reclass_${tb} t
+        SET geom = ${RU_CLEAN_GEOM('ST_Transform(o.kept, 4326)')}
+        FROM o
+        WHERE t.fid = o.fid
+          AND (ABS(ST_Area(o.kept) - ST_Area(o.orig)) > 0.01 OR ST_NPoints(o.kept) <> ST_NPoints(o.orig))
+        RETURNING t.fid`, params);
+    const fids = rows.map(x => x.fid);
+    if (!fids.length) return 0;
+    await db.query(`DELETE FROM reclass_${tb} WHERE fid = ANY($1::int[])
+                    AND (geom IS NULL OR ST_IsEmpty(geom) OR ${RU_AREA('geom')} < ${RU_MIN_REMAINDER_SQM})`, [fids]);
+    await db.query(`UPDATE reclass_${tb}
+                    SET shpsplit_sqm = ${RU_AREA('geom')}, "class_Area" = ROUND((${RU_AREA('geom')} / 1600.0)::numeric, 2)
+                    WHERE fid = ANY($1::int[])`, [fids]);
+    return fids.length;
+}
 
 function ruMatcher(mainRows) {
     const byId = new Map(mainRows.map(r => [r.id, r]));
@@ -6113,6 +6154,8 @@ async function ruCommitPlots(req, res, tb, data, ids, tmpPath, user) {
                         SELECT $1, $2, m."Farmer_ID", ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), NULL, $4, NOW()
                         FROM ${tb} m WHERE m.id = $1`, [id, nextSub(), rem[0].gj, editor]);
                     stats.remainder++;
+                    // ลบแถบบาง (ช่องว่างระหว่างเส้นยางในไฟล์กับเส้นโฉนด) ออกจาก "อื่นๆ"
+                    await ruRemoveSlivers(client, tb, `id = $1`, [id]);
                 }
 
                 // 5) พื้นที่ใหม่ทุกแถว + ล้างผลตรวจ (ประวัติถูกเก็บไว้แล้ว) + แปลงเหลือแถวเดียวใช้ sub_id = id
