@@ -472,16 +472,26 @@ const initApp = async () => {
                 </div>
                 <div id="layerListMain">${mainItems.length ? '' : '<div class="project-section-empty">ยังไม่มีโครงการ</div>'}</div>
             </div>
-            ${editItems.length ? `
-            <div class="col-12 project-section">
+            <div class="col-12 project-section ${editItems.length ? '' : 'project-section-edit-empty'}">
                 <div class="project-section-head edit">
                     <span class="project-section-dot edit"></span>
                     <span class="project-section-title">โครงการแก้ไขคลาส</span>
                     <span class="project-section-count edit">${editItems.length}</span>
                     <span class="project-section-hint">สร้างจากไฟล์ที่แก้ใน QGIS — แยกจากโครงการหลัก ใช้ปรับแก้ข้อมูล</span>
+                    <!-- แสดงเมื่อ login เท่านั้น (body.is-logged-in) -->
+                    <span class="edit-tools">
+                        <button type="button" class="btn btn-sm reclassup-btn" style="border:1px solid #6a1b9a; color:#6a1b9a;"
+                                title="สร้างโครงการแก้ไขคลาสใหม่จากไฟล์ที่แก้ใน QGIS">
+                            <i class="bi bi-palette me-1"></i>แก้ไขคลาส
+                        </button>
+                        <button type="button" class="btn btn-sm filecheck-btn" style="border:1px solid #00796b; color:#00796b;"
+                                title="ตรวจไฟล์ที่แก้เสร็จแล้ว ว่ายาง+กันออก ต่างจาก Rubr_total ไม่เกิน ±600 ตร.ม.">
+                            <i class="bi bi-clipboard-check me-1"></i>ตรวจไฟล์ ±600
+                        </button>
+                    </span>
                 </div>
-                <div id="layerListEdit"></div>
-            </div>` : ''}`;
+                <div id="layerListEdit">${editItems.length ? '' : '<div class="project-section-empty">ยังไม่มีโครงการแก้ไขคลาส — กด “แก้ไขคลาส” เพื่อสร้างจากไฟล์</div>'}</div>
+            </div>`;
         const mainBox = document.getElementById('layerListMain');
         const editBox = document.getElementById('layerListEdit');
         const fmtDateTh = (d) => d ? new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-';
@@ -771,8 +781,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // ปุ่ม "งานที่ต้องแก้ไข" — สรุปแปลงที่แอดมินตรวจแล้วไม่ผ่านของทุกคน ทุกโปรเจค แสดงให้ผู้ login ทุก role เห็น
             document.getElementById('btnNeedsFixAll').style.display = '';
-            // ปุ่ม "แก้ไขคลาส" — อัปโหลดไฟล์ขอบเขตแปลง/แปลงที่คลาสแล้วที่แก้ใน QGIS (เลือกโครงการในหน้าต่าง)
-            document.getElementById('btnEditClass').style.display = '';
+            // ปุ่ม "แก้ไขคลาส" + "ตรวจไฟล์ ±600" อยู่ในหัวกลุ่ม "โครงการแก้ไขคลาส" — แสดงเมื่อ login (ดู .edit-tools ใน style.css)
+            document.body.classList.add('is-logged-in');
 
             // แสดง role badge
             const roleBadgeColors = { admin: '#dc3545', worker: '#198754' };

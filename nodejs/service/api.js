@@ -5728,6 +5728,208 @@ app.get('/api/project-summary/:tb', async (req, res) => {
     }
 });
 
+// ── ตรวจไฟล์ ±600 (ปุ่ม "ตรวจไฟล์ ±600" หน้าแรก) ───────────────────────────
+// ตรวจไฟล์ที่แก้ใน QGIS เสร็จแล้ว ก่อนส่ง/นำเข้า — อ่านอย่างเดียว ไม่บันทึกอะไรลงฐานข้อมูล
+// ① แปลงที่คลาสแล้ว (จำเป็น) ② ขอบเขตแปลง (ไม่บังคับ — ถ้ามี จะตัดคลาสให้อยู่ในขอบเขตก่อนคิดพื้นที่ เหมือนตอนนำเข้า)
+// ต่อแปลง: ยางลงทะเบียน (หักส่วนที่ทับกันออก) + พื้นที่กันออก เทียบ Rubr_total — ผ่านเมื่อต่างไม่เกิน ±600 ตร.ม.
+// พื้นที่คิดจากรูป polygon จริง (UTM) ไม่ใช้ค่า Class_Area ในตาราง — ถ้า Class_Area ไม่ตรงรูปจริงจะแจ้งเตือนแยก
+app.post('/api/file-check-600',
+    upload.fields([{ name: 'classified', maxCount: 1 }, { name: 'boundary', maxCount: 1 }]),
+    async (req, res) => {
+    const stamp = Date.now();
+    const dirs = [path.join('uploads', `extract_fcc_${stamp}`), path.join('uploads', `extract_fcb_${stamp}`)];
+    const files = [req.files?.classified?.[0], req.files?.boundary?.[0]].filter(Boolean);
+    try {
+        const cFile = req.files?.classified?.[0], bFile = req.files?.boundary?.[0];
+        if (!cFile) return res.status(400).json({ error: 'กรุณาเลือกไฟล์แปลงที่คลาสแล้ว (ช่อง ①)' });
+        const TOL_SQM = 600;
+        const NEAR_SQM = 500; // ผ่านแต่ใกล้ขอบเกณฑ์ — แก้รูปอีกนิดอาจหลุด
+        const num = (v) => { const n = Number(ruText(v)); return Number.isFinite(n) ? n : 0; };
+        const targetOf = (p) => {
+            const t = num(ruProp(p, 'Rubr_total'));
+            if (t > 0) return t;
+            const s = num(ruProp(p, 'Rubr_Sqm'));
+            if (s > 0) return s / 1600;
+            const r = num(ruProp(p, 'Rubr_Rai')) + num(ruProp(p, 'Rubr_Ngan')) / 4 + num(ruProp(p, 'Rubr_sqwa')) / 400;
+            return r > 0 ? r : null;
+        };
+
+        // ── ไฟล์แปลงที่คลาสแล้ว ──
+        const { features, srid } = await ruReadFile(cFile, dirs[0]);
+        const polys = features.filter(f => f?.geometry && /Polygon$/.test(f.geometry.type));
+        if (!polys.length) throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบ polygon');
+        if (ruProp(polys[0].properties || {}, 'Classtype') === undefined) {
+            throw new Error('ไฟล์แปลงที่คลาสแล้ว: ไม่พบคอลัมน์ Classtype (เลือกไฟล์สลับช่องหรือเปล่า?)');
+        }
+        const missingColumns = ['Classtype', 'Class_Area', 'Regis_No', 'No_Plot', 'Deed_ID', 'Rubr_total']
+            .filter(c => ruProp(polys[0].properties || {}, c) === undefined);
+
+        const plots = [];              // pid -> ข้อมูลแปลง
+        const k3 = new Map(), k2 = new Map();
+        const plotOf = (p, create) => {
+            const regis = ruProp(p, 'Regis_No'), plot = ruProp(p, 'No_Plot'), deed = ruProp(p, 'Deed_ID');
+            const key3 = ruKey3(regis, plot, deed), key2 = ruKey2(regis, plot);
+            let pid = k3.get(key3);
+            if (pid === undefined && !create) pid = k2.get(key2);
+            if (pid === undefined) {
+                if (!create) return null;
+                pid = plots.length;
+                plots.push({
+                    pid, regis_no: ruText(regis), no_plot: ruText(plot), deed_id: ruText(deed),
+                    full_nam: ruText(ruProp(p, 'Full_nam')) || [ruProp(p, 'Title_name'), ruProp(p, 'F_name'), ruProp(p, 'L_name')].map(ruText).filter(Boolean).join(''),
+                    target: null, polygons: 0, unknown: 0, invalid: 0, attr_mismatch: 0,
+                });
+                k3.set(key3, pid);
+                if (!k2.has(key2)) k2.set(key2, pid);
+            }
+            const t = targetOf(p);
+            if (t !== null && plots[pid].target === null) plots[pid].target = t;
+            return pid;
+        };
+        const unknownClasses = {};
+        const list = polys.map((f, i) => {
+            const p = f.properties || {};
+            const raw = ruProp(p, 'Classtype');
+            const code = ruClassCode(raw);
+            if (!code) { const k = ruText(raw) || '(ว่าง)'; unknownClasses[k] = (unknownClasses[k] || 0) + 1; }
+            const ca = ruText(ruProp(p, 'Class_Area'));
+            return { i, pid: plotOf(p, true), code, attr: ca === null ? null : Number(ca), g: JSON.stringify(f.geometry) };
+        });
+
+        // ── ไฟล์ขอบเขตแปลง (ไม่บังคับ) ──
+        let bList = [], bSrid = 4326, boundaryOnly = 0;
+        if (bFile) {
+            const b = await ruReadFile(bFile, dirs[1]);
+            bSrid = b.srid;
+            const bp = b.features.filter(f => f?.geometry && /Polygon$/.test(f.geometry.type));
+            if (!bp.length) throw new Error('ไฟล์ขอบเขตแปลง: ไม่พบ polygon');
+            const before = plots.length;
+            bList = bp.map(f => ({ pid: plotOf(f.properties || {}, true), g: JSON.stringify(f.geometry) }));
+            boundaryOnly = plots.length - before; // แปลงที่มีในขอบเขตแต่ไม่มีคลาสเลยในไฟล์ ①
+        }
+
+        const AREA0 = (g) => `CASE WHEN ${g} IS NULL OR ST_IsEmpty(${g}) THEN 0 ELSE ${RU_AREA(g)} END`;
+        const { rows: polyRows } = await pool.query(`
+            WITH cf AS (
+                SELECT (e->>'i')::int AS i, (e->>'pid')::int AS pid, NULLIF(e->>'code', '') AS code,
+                       ST_SetSRID(ST_GeomFromGeoJSON(e->>'g'), ${srid}) AS raw
+                FROM json_array_elements($1::json) e
+            ), b AS (
+                SELECT (e->>'pid')::int AS pid,
+                       ST_Union(${RU_CLEAN_GEOM(`ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(e->>'g'), ${bSrid}), 4326)`)}) AS g
+                FROM json_array_elements($2::json) e GROUP BY 1
+            ), c AS (
+                SELECT cf.i, cf.pid, cf.code, ST_IsValid(cf.raw) AS valid,
+                       ${RU_CLEAN_GEOM('ST_Transform(cf.raw, 4326)')} AS full_g
+                FROM cf
+            ), k AS (
+                SELECT c.*, CASE WHEN b.g IS NULL THEN c.full_g ELSE ${RU_CLEAN_GEOM('ST_Intersection(c.full_g, b.g)')} END AS g
+                FROM c LEFT JOIN b ON b.pid = c.pid
+            )
+            SELECT i, pid, code, valid, ${AREA0('full_g')} AS full_sqm, ${AREA0('g')} AS sqm FROM k`,
+            [JSON.stringify(list.map(x => ({ i: x.i, pid: x.pid, code: x.code || '', g: x.g }))),
+             JSON.stringify(bList)]);
+
+        // ต่อแปลง: union ยาง / กันออก (กันซ้อนทับนับซ้ำ) แล้วหักกันออกออกจากยาง เหมือนตอนนำเข้า
+        const { rows: aggRows } = await pool.query(`
+            WITH cf AS (
+                SELECT (e->>'pid')::int AS pid, NULLIF(e->>'code', '') AS code,
+                       ${RU_CLEAN_GEOM(`ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(e->>'g'), ${srid}), 4326)`)} AS g
+                FROM json_array_elements($1::json) e
+            ), b AS (
+                SELECT (e->>'pid')::int AS pid,
+                       ST_Union(${RU_CLEAN_GEOM(`ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(e->>'g'), ${bSrid}), 4326)`)}) AS g
+                FROM json_array_elements($2::json) e GROUP BY 1
+            ), k AS (
+                SELECT cf.pid, cf.code, CASE WHEN b.g IS NULL THEN cf.g ELSE ${RU_CLEAN_GEOM('ST_Intersection(cf.g, b.g)')} END AS g
+                FROM cf LEFT JOIN b ON b.pid = cf.pid
+            ), u AS (
+                SELECT pid,
+                       ST_Union(g) FILTER (WHERE code = 'rubber') AS ru,
+                       ST_Union(g) FILTER (WHERE code LIKE 'ex\\_%') AS ex
+                FROM k WHERE g IS NOT NULL AND NOT ST_IsEmpty(g) GROUP BY pid
+            ), d AS (
+                SELECT u.pid, u.ru, u.ex,
+                       CASE WHEN u.ru IS NULL THEN NULL WHEN u.ex IS NULL THEN u.ru
+                            ELSE ${RU_CLEAN_GEOM('ST_Difference(u.ru, u.ex)')} END AS ru_net
+                FROM u
+            )
+            SELECT d.pid, ${AREA0('d.ru')} AS ru_sqm, ${AREA0('d.ex')} AS ex_sqm, ${AREA0('d.ru_net')} AS ru_net_sqm,
+                   (SELECT ${AREA0('b.g')} FROM b WHERE b.pid = d.pid) AS boundary_sqm
+            FROM d
+            UNION ALL
+            SELECT b.pid, 0, 0, 0, ${AREA0('b.g')} FROM b WHERE NOT EXISTS (SELECT 1 FROM d WHERE d.pid = b.pid)`,
+            [JSON.stringify(list.map(x => ({ pid: x.pid, code: x.code || '', g: x.g }))),
+             JSON.stringify(bList)]);
+
+        // รวมรายแปลง
+        const acc = plots.map(() => ({ ru_gross: 0, ex_gross: 0, other: 0, unknown_sqm: 0, outside: 0 }));
+        for (const r of polyRows) {
+            const pl = plots[r.pid], a = acc[r.pid], x = list[r.i];
+            const sqm = Number(r.sqm), full = Number(r.full_sqm);
+            pl.polygons++;
+            if (!r.valid) pl.invalid++;
+            if (!x.code) { pl.unknown++; a.unknown_sqm += sqm; }
+            else if (x.code === 'rubber') a.ru_gross += sqm;
+            else if (x.code.startsWith('ex_')) a.ex_gross += sqm;
+            else a.other += sqm;
+            a.outside += Math.max(0, full - sqm);
+            // Class_Area (ไร่ 2 ตำแหน่ง) ต่างจากรูปจริงเกิน 0.02 ไร่ (32 ตร.ม.) → ยังไม่ได้อัปเดตค่าในตาราง
+            if (x.attr !== null && Number.isFinite(x.attr) && Math.abs(x.attr - full / 1600) > 0.02) pl.attr_mismatch++;
+        }
+        const aggBy = new Map(aggRows.map(r => [Number(r.pid), r]));
+        const out = plots.map((pl, idx) => {
+            const a = acc[idx], g = aggBy.get(idx) || {};
+            const ruNet = Number(g.ru_net_sqm || 0), ex = Number(g.ex_sqm || 0);
+            const sumSqm = ruNet + ex;
+            const overlapSelf = Math.max(0, a.ru_gross - Number(g.ru_sqm || 0)) + Math.max(0, a.ex_gross - ex); // ซ้อนกันเองในคลาสเดียวกัน
+            const overlapRuEx = Math.max(0, Number(g.ru_sqm || 0) - ruNet);                                // ยางทับกันออก
+            const targetSqm = pl.target !== null ? pl.target * 1600 : null;
+            const diff = targetSqm !== null ? Math.round(sumSqm - targetSqm) : null;
+            const status = targetSqm === null ? 'notarget'
+                : Math.abs(diff) <= TOL_SQM ? (Math.abs(diff) > NEAR_SQM ? 'near' : 'pass')
+                : diff < 0 ? 'short' : 'over';
+            const notes = [];
+            if (!pl.polygons) notes.push('ไม่มีคลาสในไฟล์ ① (มีแต่ขอบเขตแปลง)');
+            else if (sumSqm < 1) notes.push('ไม่มียางลงทะเบียน/กันออกเลย');
+            if (status === 'short' && a.unknown_sqm + a.other > 1) {
+                notes.push(`มีพื้นที่ไม่นับเข้าเป้า ${(Math.round((a.unknown_sqm + a.other) / 16) / 100).toFixed(2)} ไร่ (ยางไม่ลงทะเบียน/ไม่ใช่ยาง/Classtype ไม่รู้จัก)`);
+            }
+            if (overlapSelf > 1) notes.push(`polygon คลาสเดียวกันซ้อนทับกัน ${Math.round(overlapSelf)} ตร.ม. (นับครั้งเดียว)`);
+            if (overlapRuEx > 1) notes.push(`ยางทับพื้นที่กันออก ${Math.round(overlapRuEx)} ตร.ม. (หักออกจากยางแล้ว)`);
+            if (a.outside > 1 && bFile) notes.push(`ล้นขอบเขตแปลง ${Math.round(a.outside)} ตร.ม. (ตัดทิ้งแล้ว)`);
+            if (pl.invalid) notes.push(`รูปผิดรูป (invalid) ${pl.invalid} polygon — ใช้ Fix geometries ใน QGIS`);
+            if (pl.unknown) notes.push(`Classtype ไม่รู้จัก/ว่าง ${pl.unknown} polygon`);
+            if (pl.attr_mismatch) notes.push(`Class_Area ไม่ตรงรูปจริง ${pl.attr_mismatch} polygon — คำนวณ $area/1600 ใหม่ใน QGIS`);
+            return {
+                regis_no: pl.regis_no, no_plot: pl.no_plot, deed_id: pl.deed_id, full_nam: pl.full_nam,
+                polygons: pl.polygons, target_rai: pl.target,
+                rubber_rai: ruNet / 1600, ex_rai: ex / 1600, sum_rai: sumSqm / 1600,
+                boundary_rai: g.boundary_sqm === null || g.boundary_sqm === undefined ? null : Number(g.boundary_sqm) / 1600,
+                diff_sqm: diff, status, notes,
+            };
+        });
+        const count = (s) => out.filter(p => p.status === s).length;
+        res.json({
+            files: { classified: cFile.originalname, boundary: bFile?.originalname || null },
+            tolerance_sqm: TOL_SQM,
+            polygons: polys.length,
+            summary: {
+                plots: out.length, pass: count('pass'), near: count('near'),
+                short: count('short'), over: count('over'), notarget: count('notarget'),
+                with_notes: out.filter(p => p.notes.length).length, boundary_only: boundaryOnly,
+            },
+            missingColumns, unknownClasses, plots: out,
+        });
+    } catch (err) {
+        console.error('[file-check-600]', err);
+        if (!res.headersSent) res.status(500).json({ error: err.message });
+    } finally {
+        dirs.forEach(d => { if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true }); });
+        files.forEach(f => { if (fs.existsSync(f.path)) fs.unlinkSync(f.path); });
+    }
+});
+
 // ── สถานะคลาสของแปลง (หน้า reshape ใช้ตัดสินว่าจะแสดงปุ่ม "แก้ไขคลาสเดิม" และเตือนก่อน Classify ใหม่) ──
 // ปุ่ม "Classify แปลงที่นี้" (/api/create_reclass_feature) ลบคลาสเดิมทั้งหมดของแปลง จึงต้องรู้ก่อนว่ามีคลาสอยู่ไหม
 app.get('/api/reclass-status/:tb/:id', async (req, res) => {

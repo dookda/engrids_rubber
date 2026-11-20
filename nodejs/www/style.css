@@ -739,6 +739,13 @@ hr {
 .project-section-count.edit { background: #fff3e0; color: #e65100; }
 .project-section-hint { font-size: .76rem; color: #8a8f8c; margin-left: auto; }
 .project-section-empty { font-size: .85rem; color: #999; padding: 6px 4px 12px; }
+/* ปุ่ม "แก้ไขคลาส" / "ตรวจไฟล์ ±600" ในหัวกลุ่มโครงการแก้ไขคลาส — เฉพาะผู้ login */
+.project-section-head.edit .project-section-hint { margin-left: 0; }
+.edit-tools { display: none; gap: 6px; margin-left: auto; }
+body.is-logged-in .edit-tools { display: inline-flex; }
+.edit-tools .btn { background: #fff; white-space: nowrap; }
+/* ยังไม่มีโครงการแก้ไข: ซ่อนทั้งกลุ่มถ้ายังไม่ login (ไม่มีอะไรให้ดู/กด) */
+body:not(.is-logged-in) .project-section-edit-empty { display: none; }
 
 /* การ์ดโครงการแก้ไข — โทนม่วง แยกจากโครงการหลัก (เขียว) */
 .project-card-edit {
