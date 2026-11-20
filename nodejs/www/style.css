@@ -781,7 +781,7 @@ body:not(.is-logged-in) .project-section-edit-empty { display: none; }
 .edit-card-title .bi { color: #ffa726; }
 .edit-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: #8a6f55; }
 .edit-meta span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.edit-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.edit-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 768px) { .edit-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .edit-stat {
     background: rgba(255, 255, 255, .8);
@@ -838,6 +838,14 @@ body:not(.is-logged-in) .project-section-edit-empty { display: none; }
 .off-btn { flex-shrink: 0; background: linear-gradient(135deg, #ffb74d, #e65100); color: #fff !important; border: 0; border-radius: 8px; font-size: .78rem; }
 .off-btn:hover { background: linear-gradient(135deg, #f57c00, #a33a00); }
 .off-more { padding: 8px 12px; font-size: .76rem; color: #97795c; border-top: 1px solid #ffecd2; }
+/* แปลงที่ขอบเขตไม่ตรงเนื้อที่โฉนด (±100) — โทนน้ำเงิน แยกจากรายการคลาส */
+.edit-progress.deed span { background: linear-gradient(90deg, #64b5f6, #1565c0); }
+.edit-off.deed { border-color: #bbdefb; }
+.edit-off.deed > summary { background: #e3f2fd; color: #0d47a1; }
+.edit-off.deed .off-row { border-top-color: #e3f2fd; }
+.edit-off.deed .off-id { background: #1565c0; }
+.off-btn.deed { background: linear-gradient(135deg, #64b5f6, #1565c0); }
+.off-btn.deed:hover { background: linear-gradient(135deg, #1e88e5, #0d47a1); }
 .edit-ok { grid-column: 1 / -1; font-size: .78rem; color: #2e7d32; background: #e8f5e9; border-radius: 10px; padding: 6px 10px; }
 /* รายชื่อผู้รับผิดชอบในการ์ดโครงการแก้ไข — โทนส้มเดียวกับการ์ด (ทับสีเขียวที่เป็น inline style) */
 .project-card-edit .assignment-home-section { border-top-color: rgba(251, 140, 0, .25); }

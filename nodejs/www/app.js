@@ -417,9 +417,50 @@ function renderOffTarget(tb, s) {
     }).join('');
     const more = s.off_target_total > list.length ? `<div class="off-more">และอีก ${s.off_target_total - list.length} แปลง</div>` : '';
     return `
-        <details class="edit-off" ${s.off_target_total <= 10 ? 'open' : ''}>
+        <details class="edit-off">
             <summary><i class="bi bi-exclamation-triangle-fill me-1"></i>แปลงที่ยังไม่ตรงเป้า <b>${s.off_target_total}</b> แปลง
                 <span class="off-hint">ยาง+กันออก เทียบ Rubr_total เกิน ±600 ตร.ม. (ไม่นับ ยางไม่ลงทะเบียน / ไม่ใช่ยาง / อื่นๆ)</span></summary>
+            <div class="off-list">${rows}${more}</div>
+        </details>`;
+}
+
+// รายการแปลงที่ขอบเขตแปลง (รูปแปลง) ไม่ตรงเนื้อที่โฉนด Deed_total เกิน ±100 ตร.ม. พร้อมปุ่มไปหน้าปรับรูปแปลง
+function renderDeedOff(tb, s) {
+    const list = s.deed_off || [];
+    if (!list.length) {
+        return `<div class="edit-ok"><i class="bi bi-check-circle-fill me-1"></i>ทุกแปลงขอบเขตตรงเนื้อที่โฉนด (±100 ตร.ม.)</div>`;
+    }
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    const rai = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const rows = list.map(p => {
+        const short = p.diff_sqm !== null && p.diff_sqm < 0;
+        const diffTxt = p.diff_sqm === null ? (p.boundary === null ? 'ไม่มีรูปแปลง' : 'ไม่มีเนื้อที่โฉนด')
+            : `${short ? 'ขาด' : 'เกิน'} ${Math.abs(p.diff_sqm).toLocaleString('th-TH')} ตร.ม.`;
+        const url = `/rub/reshape/index.html?tb=${encodeURIComponent(tb)}&id_from=${p.id}&id_to=${p.id}`;
+        return `
+            <div class="off-row">
+                <div class="off-main">
+                    <div class="off-title">
+                        <span class="off-id">ID ${p.id}</span>
+                        <span>${esc(p.regis_no || '-')} / ${esc(p.no_plot ?? '-')}</span>
+                        <span class="off-name">${esc(p.full_nam || '')}</span>
+                    </div>
+                    <div class="off-nums">
+                        รูปแปลง <b>${p.boundary === null ? '-' : rai(p.boundary)}</b> / เนื้อที่โฉนด ${p.deed_target ? rai(p.deed_target) : '-'} ไร่
+                        <span class="off-diff ${p.diff_sqm === null ? 'over' : short ? 'short' : 'over'}">${diffTxt}</span>
+                    </div>
+                    <ul class="off-reasons">${p.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+                </div>
+                <a class="btn btn-sm off-btn deed" href="${url}" title="เปิดแปลงนี้ในหน้าปรับรูปแปลง">
+                    <i class="bi bi-bounding-box me-1"></i>ปรับรูปแปลง
+                </a>
+            </div>`;
+    }).join('');
+    const more = s.deed_off_total > list.length ? `<div class="off-more">และอีก ${s.deed_off_total - list.length} แปลง</div>` : '';
+    return `
+        <details class="edit-off deed">
+            <summary><i class="bi bi-exclamation-triangle-fill me-1"></i>แปลงที่เนื้อที่โฉนดไม่ตรงเป้า <b>${s.deed_off_total}</b> แปลง
+                <span class="off-hint">พื้นที่รูปแปลง เทียบ Deed_total เกิน ±100 ตร.ม. (ไม่นับแปลงที่ไม่มีเนื้อที่โฉนด / เลขโฉนดมี "/" แบ่งแปลง)</span></summary>
             <div class="off-list">${rows}${more}</div>
         </details>`;
 }
@@ -433,6 +474,8 @@ async function loadEditProjectSummary(tb) {
         const s = await r.json();
         if (!r.ok) throw new Error(s.error || r.statusText);
         const pct = s.plots ? Math.round((s.reached / s.plots) * 100) : 0;
+        const deedChecked = s.deed_checked ?? s.plots;
+        const deedPct = deedChecked ? Math.round(((s.deed_reached || 0) / deedChecked) * 100) : 0;
         box.innerHTML = `
             <div class="edit-stat"><small>แปลง</small><b>${s.plots.toLocaleString()}</b></div>
             <div class="edit-stat"><small><span class="edit-dot" style="background:#006d2c"></span>ยางลงทะเบียน</small><b>${rai(s.rubber)}<em>ไร่</em></b></div>
@@ -442,6 +485,12 @@ async function loadEditProjectSummary(tb) {
                 <b>${s.reached}<em>/ ${s.plots}</em></b>
                 <div class="edit-progress" title="${pct}%"><span style="width:${pct}%"></span></div>
             </div>
+            <div class="edit-stat">
+                <small>โฉนดตรงเป้า ±100 ตร.ม.</small>
+                <b>${s.deed_reached ?? 0}<em>/ ${deedChecked}</em></b>
+                <div class="edit-progress deed" title="${deedPct}%"><span style="width:${deedPct}%"></span></div>
+            </div>
+            ${renderDeedOff(tb, s)}
             ${renderOffTarget(tb, s)}`;
     } catch (e) {
         box.innerHTML = `<div class="edit-note text-danger">โหลดสรุปไม่ได้: ${String(e.message).replace(/</g, '&lt;')}</div>`;
@@ -519,7 +568,7 @@ const initApp = async () => {
                         ${item.created_by ? `<span><i class="bi bi-person"></i>${escHtml(item.created_by)}</span>` : ''}
                     </div>
                     <div class="edit-stats mb-3" id="edit_stats_${tb_name}">
-                        <div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div>
+                        <div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div><div class="edit-stat skeleton"></div>
                     </div>` : `
                     <div class="d-flex justify-content-between align-items-center mb-3">
 
