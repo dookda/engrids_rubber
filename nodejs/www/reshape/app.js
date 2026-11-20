@@ -1073,6 +1073,8 @@ const onEachFeature = (feature, layer) => {
         highlightSelectedLayer(layer);
         layerEdited = false; // reset on new selection
         selectedLayer = layer;
+        // คำนวณ "เนื้อที่ขณะนี้" สดจากรูปที่อยู่บนแผนที่ (ไม่ใช้ค่าที่เก็บไว้ซึ่งอาจค้าง)
+        if (!(layer instanceof L.Marker)) updateAreaLabel();
     });
 
     // Listen to pm:enable to attach a real-time change listener.

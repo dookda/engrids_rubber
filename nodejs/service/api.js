@@ -433,13 +433,18 @@ app.get('/api/getfeaturesv3/:tb', async (req, res) => {
                 t."Farmer_ID",
                 t."Regis_No",
                 t."Deed_Sqm",
-                t."Deed_Area",
+                CASE WHEN t.geom IS NOT NULL AND NOT ST_IsEmpty(t.geom)
+                     THEN ROUND((ST_Area(ST_Transform(t.geom, ${UTM_SRID_SQL('t.geom')})) / 1600.0)::numeric, 2)
+                     ELSE t."Deed_Area" END AS "Deed_Area",
                 t."Deed_total",
                 t."Deed_ID",
                 t."Rubr_Sqm",
                 t."Rubr_total",
                 t."Full_nam",
-                t."Sqm_Deed",
+                -- เนื้อที่ขณะนี้: คำนวณสดจากรูปแปลงจริง (UTM) — ค่า Sqm_Deed ที่เก็บไว้อาจค้างไม่ตรงรูป
+                CASE WHEN t.geom IS NOT NULL AND NOT ST_IsEmpty(t.geom)
+                     THEN ST_Area(ST_Transform(t.geom, ${UTM_SRID_SQL('t.geom')}))
+                     ELSE t."Sqm_Deed" END AS "Sqm_Deed",
                 t.classified,
                 (pl.id IS NOT NULL) AS locked,
                 ST_AsGeoJSON(t.geom) AS geom,
@@ -784,8 +789,9 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
                 const geojsonStr = JSON.stringify(geometry);
 
                 let area;
-                if (geometryChanged) {
-                    // ✅ คำนวณพื้นที่ใหม่เมื่อผู้ใช้แก้ไข geometry จริงๆ
+                // คำนวณพื้นที่จากรูป polygon ที่บันทึกจริงทุกครั้ง (ไม่พึ่ง flag geometryChanged จากหน้าเว็บ
+                // — เคยพลาดแล้วเก็บ Sqm_Deed ค่าเก่าค้างไว้ ทำให้ "เนื้อที่ขณะนี้" ไม่ตรงกับรูปแปลงจริง)
+                if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') {
                     const epsg = getEPSGFromGeoJSON(geometry);
                     const areaSql = `
                         SELECT ST_Area(
@@ -797,9 +803,9 @@ app.post('/api/updatefeatures/:tb', async (req, res) => {
                     `;
                     const areaResult = await client.query(areaSql, [geojsonStr]);
                     area = areaResult.rows[0].area;
-                    console.log(`Geometry changed for ID ${id}, recalculating area: ${area}`);
+                    console.log(`Save ID ${id} (geometryChanged=${!!geometryChanged}), area from polygon: ${area}`);
                 } else {
-                    // ✅ ใช้ค่าจากฐานข้อมูลเดิม ไม่คำนวณใหม่ (ดึงจาก Sqm_Deed ซึ่งเก็บ m²)
+                    // จุด (ยังไม่มีรูปแปลง) — ใช้ค่าเดิมในฐานข้อมูล
                     const existingRes = await client.query(`SELECT "Sqm_Deed" FROM ${tb} WHERE id = $1`, [id]);
                     area = existingRes.rows[0]?.['Sqm_Deed'] || currentShpareaSq || 0;
                     console.log(`Geometry unchanged for ID ${id}, preserving area: ${area}`);
