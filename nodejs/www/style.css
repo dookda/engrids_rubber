@@ -791,9 +791,14 @@ body:not(.is-logged-in) .project-section-edit-empty { display: none; }
     margin-bottom: 14px;
 }
 .edit-totals-title { font-size: .82rem; font-weight: 700; color: #bf5b04; margin-bottom: 8px; }
-.edit-stats.edit-totals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* กล่องรวมโครงการหลัก — โทนเขียว แยกจากโครงการแก้ไขคลาส */
+.edit-totals.main-totals { background: linear-gradient(135deg, #f3faf3, #e8f5e9); border-color: #c8e6c9; }
+.main-totals .edit-totals-title { color: #2e7d32; }
+.main-totals .edit-stat:not(.total) { border-color: #dcefdc; }
+.edit-stats.edit-totals-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 768px) { .edit-stats.edit-totals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .edit-stat.total { background: #e65100; border-color: #e65100; }
+.edit-stat.total.rubber { background: #006d2c; border-color: #006d2c; }
 .edit-stat.total small, .edit-stat.total b, .edit-stat.total em { color: #fff; }
 .edit-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 768px) { .edit-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

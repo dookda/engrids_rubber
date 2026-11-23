@@ -499,9 +499,20 @@ async function loadEditProjectSummary(tb) {
     }
 }
 
-// รวมเนื้อที่ทุกโครงการแก้ไขคลาส: ยางลงทะเบียน + พื้นที่กันออก (ไร่)
-function renderEditTotals(summaries, projectCount) {
-    const box = document.getElementById('editTotals');
+// ดึงตัวเลขสรุปของโครงการ (ไม่วาดลงการ์ด) — ใช้รวมยอดโครงการหลัก
+async function fetchProjectSummary(tb) {
+    try {
+        const r = await fetch(`/rub/api/project-summary/${encodeURIComponent(tb)}`);
+        if (!r.ok) return null;
+        return await r.json();
+    } catch (e) {
+        return null;
+    }
+}
+
+// รวมเนื้อที่ทุกโครงการในกลุ่ม: ยางลงทะเบียน + พื้นที่กันออก (ไร่) — โครงการหลัก / โครงการแก้ไขคลาส แยกกล่องกัน
+function renderEditTotals(summaries, projectCount, boxId = 'editTotals', groupName = 'โครงการแก้ไขคลาส') {
+    const box = document.getElementById(boxId);
     if (!box) return;
     const ok = summaries.filter(Boolean);
     if (!ok.length) { box.innerHTML = ''; return; }
@@ -509,13 +520,15 @@ function renderEditTotals(summaries, projectCount) {
     const plots = ok.reduce((a, s) => a + Number(s.plots || 0), 0);
     const rubber = ok.reduce((a, s) => a + Number(s.rubber || 0), 0);
     const ex = ok.reduce((a, s) => a + Number(s.ex || 0), 0);
+    const target = ok.reduce((a, s) => a + Number(s.target || 0), 0);
     const failed = projectCount - ok.length;
     box.innerHTML = `
-        <div class="edit-totals-title"><i class="bi bi-calculator me-1"></i>รวมทุกโครงการแก้ไขคลาส (${ok.length} โครงการ${failed ? ` · โหลดไม่ได้ ${failed}` : ''})</div>
+        <div class="edit-totals-title"><i class="bi bi-calculator me-1"></i>รวมทุก${groupName} (${ok.length} โครงการ${failed ? ` · โหลดไม่ได้ ${failed}` : ''})</div>
         <div class="edit-stats edit-totals-grid">
             <div class="edit-stat"><small>แปลง</small><b>${plots.toLocaleString()}</b></div>
-            <div class="edit-stat"><small><span class="edit-dot" style="background:#006d2c"></span>ยางลงทะเบียน</small><b>${rai(rubber)}<em>ไร่</em></b></div>
             <div class="edit-stat"><small><span class="edit-dot" style="background:#AACDDC"></span>พื้นที่กันออก</small><b>${rai(ex)}<em>ไร่</em></b></div>
+            <div class="edit-stat target" title="ผลรวมเป้าหมายทุกแปลง (Rubr_Sqm/1600 ถ้ามี ไม่งั้นใช้ Rubr_total) — ชุดเดียวกับที่ใช้เช็ค ±600"><small><i class="bi bi-bullseye"></i>เป้าหมายยางพารา (Rubr_total)</small><b>${rai(target)}<em>ไร่</em></b></div>
+            <div class="edit-stat total rubber"><small>ยางลงทะเบียนเฉพาะ (ไม่รวมกันออก)</small><b>${rai(rubber)}<em>ไร่</em></b></div>
             <div class="edit-stat total"><small>ยาง + กันออก รวม</small><b>${rai(rubber + ex)}<em>ไร่</em></b></div>
         </div>`;
 }
@@ -542,6 +555,7 @@ const initApp = async () => {
                     <span class="project-section-title">โครงการหลัก</span>
                     <span class="project-section-count">${mainItems.length}</span>
                 </div>
+                ${mainItems.length ? '<div id="mainTotals" class="edit-totals main-totals"></div>' : ''}
                 <div id="layerListMain">${mainItems.length ? '' : '<div class="project-section-empty">ยังไม่มีโครงการ</div>'}</div>
             </div>
             <div class="col-12 project-section ${editItems.length ? '' : 'project-section-edit-empty'}">
@@ -660,6 +674,8 @@ const initApp = async () => {
 
         await Promise.all(promises);
         Promise.all(editSummaryPromises).then(list => renderEditTotals(list, editItems.length));
+        Promise.all(mainItems.map(i => fetchProjectSummary(i.tb_name)))
+            .then(list => renderEditTotals(list, mainItems.length, 'mainTotals', 'โครงการหลัก'));
 
         // Event listeners for premium buttons
         const reshapeBtns = document.querySelectorAll('.reshape');
