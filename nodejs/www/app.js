@@ -492,9 +492,32 @@ async function loadEditProjectSummary(tb) {
             </div>
             ${renderDeedOff(tb, s)}
             ${renderOffTarget(tb, s)}`;
+        return s;
     } catch (e) {
         box.innerHTML = `<div class="edit-note text-danger">โหลดสรุปไม่ได้: ${String(e.message).replace(/</g, '&lt;')}</div>`;
+        return null;
     }
+}
+
+// รวมเนื้อที่ทุกโครงการแก้ไขคลาส: ยางลงทะเบียน + พื้นที่กันออก (ไร่)
+function renderEditTotals(summaries, projectCount) {
+    const box = document.getElementById('editTotals');
+    if (!box) return;
+    const ok = summaries.filter(Boolean);
+    if (!ok.length) { box.innerHTML = ''; return; }
+    const rai = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const plots = ok.reduce((a, s) => a + Number(s.plots || 0), 0);
+    const rubber = ok.reduce((a, s) => a + Number(s.rubber || 0), 0);
+    const ex = ok.reduce((a, s) => a + Number(s.ex || 0), 0);
+    const failed = projectCount - ok.length;
+    box.innerHTML = `
+        <div class="edit-totals-title"><i class="bi bi-calculator me-1"></i>รวมทุกโครงการแก้ไขคลาส (${ok.length} โครงการ${failed ? ` · โหลดไม่ได้ ${failed}` : ''})</div>
+        <div class="edit-stats edit-totals-grid">
+            <div class="edit-stat"><small>แปลง</small><b>${plots.toLocaleString()}</b></div>
+            <div class="edit-stat"><small><span class="edit-dot" style="background:#006d2c"></span>ยางลงทะเบียน</small><b>${rai(rubber)}<em>ไร่</em></b></div>
+            <div class="edit-stat"><small><span class="edit-dot" style="background:#AACDDC"></span>พื้นที่กันออก</small><b>${rai(ex)}<em>ไร่</em></b></div>
+            <div class="edit-stat total"><small>ยาง + กันออก รวม</small><b>${rai(rubber + ex)}<em>ไร่</em></b></div>
+        </div>`;
 }
 
 const initApp = async () => {
@@ -539,6 +562,7 @@ const initApp = async () => {
                         </button>
                     </span>
                 </div>
+                ${editItems.length ? '<div id="editTotals" class="edit-totals"></div>' : ''}
                 <div id="layerListEdit">${editItems.length ? '' : '<div class="project-section-empty">ยังไม่มีโครงการแก้ไขคลาส — กด “แก้ไขคลาส” เพื่อสร้างจากไฟล์</div>'}</div>
             </div>`;
         const mainBox = document.getElementById('layerListMain');
@@ -546,6 +570,7 @@ const initApp = async () => {
         const fmtDateTh = (d) => d ? new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '-';
         const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
+        const editSummaryPromises = [];
         const promises = result.map(async (item) => {
             const { tb_name } = item;
             const isEdit = isEditProject(item);
@@ -629,11 +654,12 @@ const initApp = async () => {
                 </div>
             `;
             (isEdit ? editBox : mainBox).appendChild(wrapper);
-            if (isEdit) loadEditProjectSummary(tb_name);
+            if (isEdit) editSummaryPromises.push(loadEditProjectSummary(tb_name));
             await loadAssignmentHome(tb_name);
         });
 
         await Promise.all(promises);
+        Promise.all(editSummaryPromises).then(list => renderEditTotals(list, editItems.length));
 
         // Event listeners for premium buttons
         const reshapeBtns = document.querySelectorAll('.reshape');

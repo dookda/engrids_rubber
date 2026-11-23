@@ -781,6 +781,20 @@ body:not(.is-logged-in) .project-section-edit-empty { display: none; }
 .edit-card-title .bi { color: #ffa726; }
 .edit-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: #8a6f55; }
 .edit-meta span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* กล่องรวมเนื้อที่ทุกโครงการแก้ไขคลาส */
+.edit-totals:empty { display: none; }
+.edit-totals {
+    background: linear-gradient(135deg, #fff8ef, #fff1e0);
+    border: 1px solid #ffd8a8;
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+}
+.edit-totals-title { font-size: .82rem; font-weight: 700; color: #bf5b04; margin-bottom: 8px; }
+.edit-stats.edit-totals-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 768px) { .edit-stats.edit-totals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.edit-stat.total { background: #e65100; border-color: #e65100; }
+.edit-stat.total small, .edit-stat.total b, .edit-stat.total em { color: #fff; }
 .edit-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 768px) { .edit-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .edit-stat {
