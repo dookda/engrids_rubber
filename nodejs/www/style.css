@@ -795,21 +795,23 @@ body:not(.is-logged-in) .project-section-edit-empty { display: none; }
 .edit-totals.main-totals { background: linear-gradient(135deg, #f3faf3, #e8f5e9); border-color: #c8e6c9; }
 .main-totals .edit-totals-title { color: #2e7d32; }
 .main-totals .edit-stat:not(.total) { border-color: #dcefdc; }
-.edit-stats.edit-totals-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 768px) { .edit-stats.edit-totals-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .edit-stat.total { background: #e65100; border-color: #e65100; }
 .edit-stat.total.rubber { background: #006d2c; border-color: #006d2c; }
 .edit-stat.total small, .edit-stat.total b, .edit-stat.total em { color: #fff; }
-.edit-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
-@media (max-width: 768px) { .edit-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 3 ช่องเท่ากันเต็มความกว้าง (แปลง / ยาง / กันออก หรือ แปลง / กันออก / เป้าหมาย) */
+.edit-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 576px) { .edit-stats { grid-template-columns: 1fr; } }
 .edit-stat {
     background: rgba(255, 255, 255, .8);
     border: 1px solid #ffecd2;
     border-radius: 12px;
-    padding: 8px 10px;
-    min-height: 58px;
+    padding: 10px 14px;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
 }
-.edit-stat small { display: flex; align-items: center; gap: 4px; font-size: .7rem; color: #97795c; }
+.edit-stat small { display: flex; align-items: center; gap: 4px; font-size: .72rem; color: #97795c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .edit-stat b { display: block; font-size: 1.15rem; color: #3e2a1a; font-variant-numeric: tabular-nums; line-height: 1.3; }
 .edit-stat b em { font-style: normal; font-weight: 500; font-size: .72rem; color: #97795c; margin-left: 3px; }
 .edit-dot { width: 9px; height: 9px; border-radius: 2px; border: 1px solid rgba(0, 0, 0, .25); display: inline-block; }
